@@ -135,3 +135,61 @@ func TestResultCache_WaitingCallerCanLeave(t *testing.T) {
 		t.Errorf("got %v, %v; want a fresh computation", v, err)
 	}
 }
+
+// When the caller that created an entry leaves before computing, callers
+// that joined it still get a real result, not its cancellation.
+func TestResultCache_WaitersDontInheritCancellation(t *testing.T) {
+	c := &resultCache{}
+	release := make(chan struct{})
+	for i := 0; i < resultCacheMaxComputes; i++ {
+		go c.get(context.Background(), fmt.Sprint("busy", i), func(context.Context) (any, error) { <-release; return nil, nil })
+	}
+	time.Sleep(20 * time.Millisecond)
+
+	leaderCtx, cancel := context.WithCancel(context.Background())
+	compute := func(context.Context) (any, error) { return "v", nil }
+	leaderDone := make(chan error, 1)
+	go func() { _, err := c.get(leaderCtx, "k", compute); leaderDone <- err }()
+	time.Sleep(20 * time.Millisecond)
+
+	waiterDone := make(chan any, 1)
+	go func() {
+		v, err := c.get(context.Background(), "k", compute)
+		if err != nil {
+			t.Errorf("waiter got %v", err)
+		}
+		waiterDone <- v
+	}()
+	time.Sleep(20 * time.Millisecond)
+
+	cancel()
+	if err := <-leaderDone; err == nil {
+		t.Error("leader: expected its own context error")
+	}
+	close(release)
+	select {
+	case v := <-waiterDone:
+		if v != "v" {
+			t.Errorf("waiter got %v, want the computed value", v)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("waiter never answered")
+	}
+}
+
+// A panicking computation becomes an error, frees its slot and doesn't
+// leave the key stuck.
+func TestResultCache_PanicReleasesSlot(t *testing.T) {
+	c := &resultCache{}
+	for i := 0; i < resultCacheMaxComputes+1; i++ {
+		if _, err := c.get(context.Background(), "k", func(context.Context) (any, error) { panic("boom") }); err == nil {
+			t.Fatal("expected an error from a panicking compute")
+		}
+	}
+	if n := len(c.slots); n != 0 {
+		t.Errorf("%d slots still taken after panics", n)
+	}
+	if v, err := c.get(context.Background(), "k", func(context.Context) (any, error) { return "v", nil }); v != "v" || err != nil {
+		t.Errorf("got %v, %v; want a fresh computation", v, err)
+	}
+}

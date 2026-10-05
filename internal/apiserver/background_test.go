@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -12,17 +13,22 @@ import (
 func TestBackgroundJobs_Bounded(t *testing.T) {
 	var b backgroundJobs
 	release := make(chan struct{})
-	started := 0
+	var started atomic.Int32
 	for i := 0; i < 100; i++ {
-		if b.start(fmt.Sprint("run", i), time.Minute, time.Minute, func(context.Context) (bool, error) {
+		pending := b.start(fmt.Sprint("run", i), time.Minute, time.Minute, func(context.Context) (bool, error) {
+			started.Add(1)
 			<-release
 			return true, nil
-		}) {
-			started++
+		})
+		// Past the cap a job isn't started but still reported pending, so
+		// the client polls again instead of settling on old data.
+		if !pending {
+			t.Fatalf("run %d: reported not pending", i)
 		}
 	}
-	if started != maxRunningJobs {
-		t.Errorf("started %d runs, want the cap of %d", started, maxRunningJobs)
+	time.Sleep(20 * time.Millisecond)
+	if n := started.Load(); n != maxRunningJobs {
+		t.Errorf("started %d runs, want the cap of %d", n, maxRunningJobs)
 	}
 	close(release)
 	waitIdle(t, &b)

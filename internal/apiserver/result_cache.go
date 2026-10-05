@@ -2,6 +2,8 @@ package apiserver
 
 import (
 	"context"
+	"fmt"
+	"log"
 	"sync"
 	"time"
 )
@@ -38,6 +40,10 @@ type resultCacheEntry struct {
 	val   any
 	err   error
 	at    time.Time
+	// abandoned is set when the caller that created the entry left before
+	// a computation slot freed up: nothing was computed, so waiters retry
+	// rather than inherit that caller's cancellation.
+	abandoned bool
 }
 
 func (c *resultCache) get(ctx context.Context, key string, compute func(context.Context) (any, error)) (any, error) {
@@ -46,56 +52,82 @@ func (c *resultCache) get(ctx context.Context, key string, compute func(context.
 		now = c.now
 	}
 
-	c.mu.Lock()
-	if c.entries == nil {
-		c.entries = map[string]*resultCacheEntry{}
-		c.slots = make(chan struct{}, resultCacheMaxComputes)
-	}
-	e := c.entries[key]
-	if e != nil {
-		select {
-		case <-e.ready:
-			if e.err != nil || now().Sub(e.at) >= resultCacheTTL {
-				e = nil // failed or expired: recompute
-			}
-		default: // in flight: wait for it below
+	for {
+		c.mu.Lock()
+		if c.entries == nil {
+			c.entries = map[string]*resultCacheEntry{}
+			c.slots = make(chan struct{}, resultCacheMaxComputes)
 		}
-	}
-	if e == nil {
-		c.evictLocked(now())
-		e = &resultCacheEntry{ready: make(chan struct{})}
-		c.entries[key] = e
+		e := c.entries[key]
+		if e != nil {
+			select {
+			case <-e.ready:
+				if e.err != nil || now().Sub(e.at) >= resultCacheTTL {
+					e = nil // failed or expired: recompute
+				}
+			default: // in flight: wait for it below
+			}
+		}
+		if e == nil {
+			c.evictLocked(now())
+			e = &resultCacheEntry{ready: make(chan struct{})}
+			c.entries[key] = e
+			c.mu.Unlock()
+			return c.compute(ctx, key, e, compute, now)
+		}
 		c.mu.Unlock()
 
-		// Wait for a computation slot (giving up if the caller leaves),
-		// then compute detached from the request: a caller hanging up
-		// mustn't fail a computation that other waiters share.
 		select {
-		case c.slots <- struct{}{}:
-			e.val, e.err = compute(context.WithoutCancel(ctx))
-			<-c.slots
-		case <-ctx.Done():
-			e.err = ctx.Err()
-		}
-		e.at = now()
-		if e.err != nil {
-			c.mu.Lock()
-			if c.entries[key] == e {
-				delete(c.entries, key)
+		case <-e.ready:
+			if e.abandoned {
+				continue // its creator left before computing: try again
 			}
-			c.mu.Unlock()
+			return e.val, e.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		}
-		close(e.ready)
-		return e.val, e.err
 	}
-	c.mu.Unlock()
+}
 
+// compute fills in e, the entry this caller created for key, and closes
+// e.ready whatever happens, so waiters are never left blocked.
+func (c *resultCache) compute(ctx context.Context, key string, e *resultCacheEntry, compute func(context.Context) (any, error), now func() time.Time) (any, error) {
+	defer close(e.ready)
+	drop := func() {
+		c.mu.Lock()
+		if c.entries[key] == e {
+			delete(c.entries, key)
+		}
+		c.mu.Unlock()
+	}
+
+	// Wait for a computation slot, giving up if the caller leaves.
 	select {
-	case <-e.ready:
-		return e.val, e.err
+	case c.slots <- struct{}{}:
 	case <-ctx.Done():
+		e.abandoned = true
+		drop()
 		return nil, ctx.Err()
 	}
+
+	// Detached from the request: a caller hanging up mustn't fail a
+	// computation that other waiters share. A panic is turned into an error
+	// so the slot is released and waiters are answered.
+	func() {
+		defer func() {
+			<-c.slots
+			if r := recover(); r != nil {
+				log.Printf("result cache %s: compute panicked: %v", key, r)
+				e.val, e.err = nil, fmt.Errorf("compute %s panicked: %v", key, r)
+			}
+		}()
+		e.val, e.err = compute(context.WithoutCancel(ctx))
+	}()
+	e.at = now()
+	if e.err != nil {
+		drop()
+	}
+	return e.val, e.err
 }
 
 // evictLocked makes room for one more entry: it drops expired entries, and

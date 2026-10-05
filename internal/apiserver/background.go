@@ -31,8 +31,8 @@ const (
 	maxFailedJobs = 1000
 	// maxRunningJobs caps runs in flight. Each waits on the shared Riot
 	// rate limiter, so requests for many distinct keys would otherwise pile
-	// up goroutines; past the cap, start declines and the client's next
-	// poll tries again.
+	// up goroutines; past the cap, start declines but still reports the job
+	// as pending, so the client keeps polling and its next poll tries again.
 	maxRunningJobs = 32
 )
 
@@ -42,8 +42,9 @@ const (
 type jobFunc func(ctx context.Context) (complete bool, err error)
 
 // start runs fn in the background under key unless a run is already in
-// flight or key is cooling down. It reports whether a run is in flight after
-// the call.
+// flight or key is cooling down. It reports whether the job is pending
+// after the call: running, or declined only because too many runs are in
+// flight (so the caller tells the client to poll again).
 func (b *backgroundJobs) start(key string, timeout, cooldown time.Duration, fn jobFunc) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -54,8 +55,11 @@ func (b *backgroundJobs) start(key string, timeout, cooldown time.Duration, fn j
 	if b.running[key] {
 		return true
 	}
-	if time.Now().Before(b.failed[key].retryAt) || len(b.running) >= maxRunningJobs {
+	if time.Now().Before(b.failed[key].retryAt) {
 		return false
+	}
+	if len(b.running) >= maxRunningJobs {
+		return true // busy: pending, retried on the client's next poll
 	}
 	b.running[key] = true
 
