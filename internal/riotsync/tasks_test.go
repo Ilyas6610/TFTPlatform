@@ -88,7 +88,7 @@ func TestCloseStale_OnlyTouchesUnfinishedRiotsyncRuns(t *testing.T) {
 		st.Pool.QueryRow(ctx, `SELECT status FROM ingest_runs WHERE id=$1`, id).Scan(&s)
 		return
 	}
-	if got := status(stale); got != "failed_interrupted" {
+	if got := status(stale); got != "interrupted" {
 		t.Errorf("stale run status = %q", got)
 	}
 	if got := status(done); got != "completed" {

@@ -64,10 +64,20 @@ func main() {
 		keySource = riotapi.EnvKeySource{Key: cfg.RiotAPIKey}
 	}
 	limiter := riotapi.NewRateLimiter(cfg.RiotAppRateLimitPerSec, cfg.RiotAppRateLimitPer2Min)
-	// The watcher lets the scheduler honor Riot's Retry-After after a 429.
-	watcher := &riotsync.RateLimitWatcher{}
-	riot := riotapi.NewClient(keySource, limiter,
-		riotapi.WithHTTPClient(&http.Client{Timeout: 10 * time.Second, Transport: watcher}))
+	// Transport chain: Throttle keeps riotsync under its own share of the
+	// key (leaving headroom for the API server), and the watcher lets the
+	// scheduler honor Riot's Retry-After after a 429. No Client.Timeout: it
+	// would also cut off a throttle wait, so the transport times out the
+	// response instead.
+	watcher := &riotsync.RateLimitWatcher{Base: &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 10 * time.Second,
+		MaxIdleConns:          4,
+		IdleConnTimeout:       90 * time.Second,
+	}}
+	throttle := &riotsync.Throttle{Base: watcher, PerSec: syncCfg.RateLimitPerSec, Per2Min: syncCfg.RateLimitPer2Min}
+	riot := riotapi.NewClient(keySource, limiter, riotapi.WithHTTPClient(&http.Client{Transport: throttle}))
 
 	sched := &riotsync.Scheduler{
 		Tasks:          riotsync.BuildTasks(syncCfg, riot, st),

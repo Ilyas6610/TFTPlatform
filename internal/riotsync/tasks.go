@@ -78,14 +78,15 @@ func (r StoreRecorder) Start(ctx context.Context, name string) (int64, error) {
 	return r.Store.StartIngestRun(ctx, runTypePrefix+name)
 }
 
-// CloseStale marks riotsync runs still "running" as interrupted. Call it at
+// CloseStale marks riotsync runs still "running" as interrupted (the same
+// status a graceful shutdown records). Call it at
 // startup while holding the singleton lock: any such row was left by an
 // earlier instance that died (kill -9, OOM, power loss) mid-run. It returns
 // how many rows it closed.
 func (r StoreRecorder) CloseStale(ctx context.Context) (int64, error) {
 	tag, err := r.Store.Pool.Exec(ctx, `
 		UPDATE ingest_runs
-		SET finished_at = now(), status = 'failed_interrupted',
+		SET finished_at = now(), status = 'interrupted',
 		    error_detail = 'riotsync stopped before this run finished'
 		WHERE finished_at IS NULL AND run_type LIKE $1
 	`, runTypePrefix+"%")

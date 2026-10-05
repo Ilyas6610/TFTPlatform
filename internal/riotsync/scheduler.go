@@ -99,7 +99,7 @@ func (s *Scheduler) pauseFor(o Outcome) time.Duration {
 	var keyExpired *riotapi.ErrKeyExpired
 	var rateLimited *riotapi.ErrRateLimited
 	switch {
-	case errors.As(o.Err, &keyExpired):
+	case errors.As(o.Err, &keyExpired), o.Stopped == "key_expired":
 		return s.KeyRetry
 	case o.Stopped == "rate_limited" || errors.As(o.Err, &rateLimited):
 		d := s.RateLimitPause
@@ -136,7 +136,7 @@ func (s *Scheduler) runTask(ctx context.Context, t Task) Outcome {
 		// "context canceled" error) is not a real failure.
 		status = "interrupted"
 		o.Err = nil
-	case errors.As(o.Err, &keyExpired):
+	case errors.As(o.Err, &keyExpired), o.Stopped == "key_expired":
 		status = "failed_key_expired"
 	case o.Err != nil:
 		status = "failed_error"

@@ -1,5 +1,5 @@
 # Production stack: Postgres, migrations, API server, frontend (nginx) and
-# an optional ingestion worker. From the repo root:
+# an optional riotsync ingestion service. From the repo root:
 #
 #   cp deploy/.env.example deploy/.env      # then edit it
 #   mkdir -p deploy/.secrets && echo "RGAPI-..." > deploy/.secrets/riot-api-key.txt
@@ -101,7 +101,9 @@ services:
       RIOTSYNC_SEED_INTERVAL: ${RIOTSYNC_SEED_INTERVAL:-6h}
       RIOTSYNC_CRAWL_INTERVAL: ${RIOTSYNC_CRAWL_INTERVAL:-5m}
       RIOTSYNC_NAMES_INTERVAL: ${RIOTSYNC_NAMES_INTERVAL:-10m}
-      RIOTSYNC_AGGREGATE_INTERVAL: ${RIOTSYNC_AGGREGATE_INTERVAL:-10m}
+      RIOTSYNC_AGGREGATE_INTERVAL: ${RIOTSYNC_AGGREGATE_INTERVAL:-1h}
+      RIOTSYNC_RATE_LIMIT_PER_SEC: ${RIOTSYNC_RATE_LIMIT_PER_SEC:-10}
+      RIOTSYNC_RATE_LIMIT_PER_2MIN: ${RIOTSYNC_RATE_LIMIT_PER_2MIN:-50}
     secrets:
       - riot_api_key
     depends_on:

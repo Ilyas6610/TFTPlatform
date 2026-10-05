@@ -136,10 +136,16 @@ Optional, once:
 docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env run --rm api ingestcli sync-setdata --versions 16.17,16.18,latest
 ```
 
-To keep match data and meta stats fresh, start the ingestion worker. It re-seeds the ladders every 6 hours and crawls a bounded batch every 5 minutes; tune it with the `INGEST_*` settings in `.env`:
+To keep match data and meta stats fresh, start the `riotsync` background service. It re-seeds the ladders every 6 hours, crawls a bounded batch every 5 minutes, resolves Riot IDs, and recomputes the precomputed meta stats hourly. It caps its own Riot traffic at 10 requests/s and 50 per 2 minutes (`RIOTSYNC_RATE_LIMIT_*`), below a personal key's 20/s and 100 per 2 minutes, so the API server's live fetches keep headroom on the shared key. Tune it with `INGEST_PLATFORMS` and the `RIOTSYNC_*` settings in `.env`:
 
 ```bash
 docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env --profile ingest up -d
+```
+
+**Upgrading from the old `ingest` service:** the shell-loop service named `ingest` was replaced by `riotsync`, and its `INGEST_SEED_INTERVAL` / `INGEST_CRAWL_INTERVAL` settings by `RIOTSYNC_SEED_INTERVAL` / `RIOTSYNC_CRAWL_INTERVAL` (durations such as `6h` and `5m`, not seconds). Compose doesn't stop services it no longer knows about, and the old loop isn't covered by riotsync's single-instance lock, so remove it when you upgrade or both will ingest:
+
+```bash
+docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env --profile ingest up -d --remove-orphans
 ```
 
 To update after pulling new code, run the same `up -d --build` command.
