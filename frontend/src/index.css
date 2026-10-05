@@ -1280,3 +1280,170 @@ details.patch[open] > summary::before {
   font-size: 0.75rem;
   line-height: 1.2;
 }
+
+/* Explorer: "What can I build?" advisor */
+.advisor h2 {
+  margin-top: 0;
+}
+
+.advisor-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-bottom: 10px;
+}
+
+.advisor-label {
+  width: 48px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg);
+  border: 1px solid var(--accent-dim);
+  border-radius: 999px;
+  padding: 3px 10px 3px 6px;
+  color: var(--text);
+}
+
+.chip-step {
+  background: none;
+  border: none;
+  padding: 0 4px;
+  color: var(--text-dim);
+  line-height: 1;
+}
+
+.advisor-results.stale {
+  opacity: 0.6;
+}
+
+.advisor-section {
+  margin-top: 20px;
+}
+
+.advisor-section h3 {
+  margin: 0 0 8px;
+}
+
+.plan-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.plan-row .game-label {
+  min-width: 170px;
+}
+
+.build-items {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.build-item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.build-item.held {
+  border-color: var(--placement-good);
+}
+
+.build-item.combine {
+  border-color: var(--accent);
+  border-style: dashed;
+}
+
+.build-item.missing {
+  opacity: 0.4;
+  border-style: dotted;
+}
+
+.build-from {
+  position: absolute;
+  right: -4px;
+  bottom: -6px;
+  display: inline-flex;
+  background: var(--panel);
+  border-radius: 4px;
+}
+
+.legend {
+  font-size: 0.85rem;
+}
+
+.legend .build-item {
+  padding: 0 6px;
+}
+
+.leftover {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.advisor-unit {
+  border-top: 1px solid var(--border);
+  padding: 6px 0;
+}
+
+.advisor-unit summary {
+  cursor: pointer;
+}
+
+.advisor-comps {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.advisor-comp {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.advisor-comp-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-bottom: 8px;
+}
+
+.advisor-comp-units {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.adv-unit {
+  display: inline-flex;
+  border-radius: 6px;
+  border: 2px solid transparent;
+}
+
+.adv-unit.have {
+  border-color: var(--placement-good);
+}
+
+.adv-unit.need {
+  opacity: 0.45;
+}
+
+.advisor-fits {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 0.9rem;
+}
