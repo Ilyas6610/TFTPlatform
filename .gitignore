@@ -1,0 +1,18 @@
+/deploy/.secrets/
+*.env
+.env.local
+
+# Go
+/bin/
+*.test
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# OS
+.DS_Store
+frontend/*.tsbuildinfo
+
+# Claude Code local settings
+.claude/settings.local.json

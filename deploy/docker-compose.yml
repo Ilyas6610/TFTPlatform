@@ -1,0 +1,33 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: tft
+      POSTGRES_PASSWORD: tft
+      POSTGRES_DB: tft
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tft -d tft"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  migrate:
+    image: migrate/migrate:v4.17.1
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../internal/db/migrations:/migrations:ro
+    command:
+      [
+        "-path", "/migrations",
+        "-database", "postgres://tft:tft@postgres:5432/tft?sslmode=disable",
+        "up"
+      ]
+
+volumes:
+  postgres-data:
