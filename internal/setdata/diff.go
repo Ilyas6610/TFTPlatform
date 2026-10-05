@@ -8,7 +8,7 @@ import (
 
 // Change is one line of generated patch notes.
 type Change struct {
-	Category string `json:"category"` // "unit", "trait", "augment" or "item"
+	Category string `json:"category"` // "unit", "trait", "augment", "item" or "wisp"
 	APIName  string `json:"apiName"`
 	Name     string `json:"name"`
 	// Kind is "changed" for a value that moved, "added"/"removed" for a
@@ -21,13 +21,14 @@ type Change struct {
 }
 
 // Diff returns what changed from old to new, grouped by category (units,
-// traits, augments, items) and then by name.
+// traits, augments, items, wisps) and then by name.
 func Diff(old, new *SetData) []Change {
 	var out []Change
 	out = append(out, diffEntities("unit", toEntities(old.Units, unitEntity), toEntities(new.Units, unitEntity))...)
 	out = append(out, diffEntities("trait", toEntities(old.Traits, traitEntity), toEntities(new.Traits, traitEntity))...)
 	out = append(out, diffEntities("augment", toEntities(old.Augments, augmentEntity), toEntities(new.Augments, augmentEntity))...)
 	out = append(out, diffEntities("item", toEntities(old.Items, itemEntity), toEntities(new.Items, itemEntity))...)
+	out = append(out, diffEntities("wisp", toEntities(old.Wisps, itemEntity), toEntities(new.Wisps, itemEntity))...)
 	return out
 }
 

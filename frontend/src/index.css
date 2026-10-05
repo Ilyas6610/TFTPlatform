@@ -546,3 +546,15 @@ td a:hover {
 .change-down { color: var(--accent); }
 .change-added { color: var(--placement-good); }
 .change-removed { color: var(--placement-bad); }
+
+/* A value the game computes at runtime and doesn't publish. */
+.unknown-value {
+  display: inline-block;
+  padding: 0 5px;
+  border: 1px dashed var(--accent-dim);
+  border-radius: 4px;
+  color: var(--accent);
+  font-size: 0.85em;
+  line-height: 1.4;
+  cursor: help;
+}

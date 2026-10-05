@@ -177,7 +177,8 @@ export function staleSuffix(reason: string | undefined): string {
 
 // Set data (units, traits, augments, items) as of one patch — see
 // internal/setdata. Descriptions are pre-rendered plain text with "\n"
-// line breaks; "?" marks values the game computes at runtime.
+// line breaks; "[[Label]]" marks a value the game computes at runtime that
+// isn't in the published data.
 export interface SetUnit {
   apiName: string;
   name: string;
@@ -241,6 +242,8 @@ export interface SetData {
   traits: SetTrait[];
   augments: SetAugment[];
   items: SetItem[];
+  // Set 18's set-mechanic items, kept apart from regular items.
+  wisps: SetItem[];
 }
 
 export function getSetData(set: number, version?: string) {
@@ -249,7 +252,7 @@ export function getSetData(set: number, version?: string) {
 }
 
 export interface PatchChange {
-  category: "unit" | "trait" | "augment" | "item";
+  category: "unit" | "trait" | "augment" | "item" | "wisp";
   apiName: string;
   name: string;
   kind: "changed" | "added" | "removed" | "text";

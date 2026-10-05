@@ -20,6 +20,7 @@ const TABS = [
   ["traits", "Traits"],
   ["augments", "Augments"],
   ["items", "Items"],
+  ["wisps", "Wisps"],
   ["patches", "Patch notes"],
 ] as const;
 
@@ -30,6 +31,7 @@ const ICON_KIND: Record<PatchChange["category"], AssetKind> = {
   trait: "traits",
   augment: "augments",
   item: "items",
+  wisp: "items",
 };
 
 const CATEGORY_TAB: Record<PatchChange["category"], Tab> = {
@@ -37,6 +39,7 @@ const CATEGORY_TAB: Record<PatchChange["category"], Tab> = {
   trait: "traits",
   augment: "augments",
   item: "items",
+  wisp: "wisps",
 };
 
 export default function SetInfoPage() {
@@ -133,6 +136,7 @@ export default function SetInfoPage() {
       {data && tab === "traits" && <TraitsTab data={data} query={query} />}
       {data && tab === "augments" && <AugmentsTab augments={data.augments} query={query} />}
       {data && tab === "items" && <ItemsTab items={data.items} query={query} />}
+      {data && tab === "wisps" && <WispsTab wisps={data.wisps ?? []} query={query} />}
       {data && tab === "patches" && <PatchesTab data={data} patches={patches} setNumber={setNumber} />}
     </div>
   );
@@ -147,9 +151,26 @@ function fmt(n: number): string {
   return String(Math.round(n * 100) / 100);
 }
 
-/** Description text with line breaks preserved. */
+/**
+ * Description text with line breaks preserved. "[[Label]]" segments are
+ * values the game computes at runtime and doesn't publish; they render as a
+ * styled label rather than a number.
+ */
 function Desc({ text }: { text: string }) {
-  return <p className="set-desc">{text}</p>;
+  const parts = text.split(/(\[\[[^\]]+\]\])/);
+  return (
+    <p className="set-desc">
+      {parts.map((part, i) =>
+        part.startsWith("[[") && part.endsWith("]]") ? (
+          <span key={i} className="unknown-value" title="Not in Riot's published game data">
+            {part.slice(2, -2)}
+          </span>
+        ) : (
+          part
+        ),
+      )}
+    </p>
+  );
 }
 
 const STAT_LABELS: [key: string, label: string, format?: (n: number) => string][] = [
@@ -175,8 +196,9 @@ function UnitsTab({ data, query }: { data: SetData; query: string }) {
   return (
     <>
       <p className="muted">
-        Ability numbers the game calculates at runtime aren&apos;t in Riot&apos;s published data for this set, so
-        they show as &quot;?&quot;. Stats, traits and costs are exact.
+        Some ability numbers are calculated by the game at runtime and aren&apos;t in Riot&apos;s published data
+        for this set; those show as <span className="unknown-value">labels</span> naming the value. Stats,
+        traits and costs are exact.
       </p>
       {units.length === 0 && <p className="muted">No units match.</p>}
       <div className="set-grid">
@@ -315,7 +337,6 @@ const ITEM_SECTIONS: [kind: string, title: string][] = [
   ["artifact", "Artifacts"],
   ["radiant", "Radiant items"],
   ["consumable", "Consumables"],
-  ["special", "Set-specific"],
   ["other", "Other"],
 ];
 
@@ -372,6 +393,46 @@ function ItemsTab({ items, query }: { items: SetItem[]; query: string }) {
   );
 }
 
+const WISP_VARIANTS = ["", "upgraded", "prismatic", "charm"];
+
+function WispsTab({ wisps, query }: { wisps: SetItem[]; query: string }) {
+  // Same-named wisps (base / upgraded / prismatic / charm) share one card.
+  const groups = new Map<string, SetItem[]>();
+  for (const w of wisps.filter((w) => matches(query, w.name, w.desc))) {
+    groups.set(w.name, [...(groups.get(w.name) ?? []), w]);
+  }
+  for (const variants of groups.values()) {
+    variants.sort((a, b) => WISP_VARIANTS.indexOf(a.variant ?? "") - WISP_VARIANTS.indexOf(b.variant ?? ""));
+  }
+  return (
+    <>
+      <p className="muted">
+        {groups.size} wisps{groups.size !== wisps.length ? ` (${wisps.length} including variants)` : ""}.
+      </p>
+      {groups.size === 0 && <p className="muted">No wisps match.</p>}
+      <div className="set-list">
+        {[...groups.values()].map((variants) => {
+          const first = variants[0];
+          return (
+            <div className="panel set-row" key={first.apiName} id={first.apiName}>
+              <GameIcon kind="items" id={first.apiName} size={40} fallbackSrc={first.icon} fallbackName={first.name} />
+              <div>
+                <h4>{first.name}</h4>
+                {variants.map((v) => (
+                  <div key={v.apiName}>
+                    {variants.length > 1 && <span className="tag">{v.variant || "base"}</span>}
+                    <Desc text={v.desc} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 const FIELD_LABELS: Record<string, string> = Object.fromEntries(STAT_LABELS.map(([k, label]) => [k, label]));
 
 /** "InvokerManaBonus" -> "Invoker Mana Bonus"; keeps a "(5) " breakpoint prefix. */
@@ -385,6 +446,7 @@ const CATEGORY_TITLES: Record<PatchChange["category"], string> = {
   trait: "Traits",
   augment: "Augments",
   item: "Items",
+  wisp: "Wisps",
 };
 
 function PatchesTab({ data, patches, setNumber }: { data: SetData; patches: PatchNotes[] | null; setNumber: number }) {
@@ -392,7 +454,9 @@ function PatchesTab({ data, patches, setNumber }: { data: SetData; patches: Patc
   // fall back to text).
   const icons = useMemo(() => {
     const m = new Map<string, string | undefined>();
-    for (const x of [...data.units, ...data.traits, ...data.augments, ...data.items]) m.set(x.apiName, x.icon);
+    for (const x of [...data.units, ...data.traits, ...data.augments, ...data.items, ...(data.wisps ?? [])]) {
+      m.set(x.apiName, x.icon);
+    }
     return m;
   }, [data]);
 
@@ -412,7 +476,7 @@ function PatchesTab({ data, patches, setNumber }: { data: SetData; patches: Patc
             Patch {p.patch} <span className="muted patch-sub">vs {p.previousPatch} · {p.changes.length} changes</span>
           </h2>
           {p.changes.length === 0 && <p className="muted">No changes to this set's numbers.</p>}
-          {(["unit", "trait", "augment", "item"] as const).map((category) => {
+          {(["unit", "trait", "augment", "item", "wisp"] as const).map((category) => {
             const changes = p.changes.filter((c) => c.category === category);
             if (changes.length === 0) return null;
             const entities = new Map<string, PatchChange[]>();

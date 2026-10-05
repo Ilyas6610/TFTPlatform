@@ -21,7 +21,50 @@ var (
 	htmlTag = regexp.MustCompile(`<[^>]*>`)
 	blanks  = regexp.MustCompile(`[ \t]+`)
 	breaks  = regexp.MustCompile(`\n{3,}`)
+
+	// Live in-game counters ("Current Bonus: @TFTUnitProperty.item:X@") have
+	// no static value, so their lines and parentheticals are dropped.
+	tracker      = regexp.MustCompile(`@TFTUnitProperty[^@]*@`)
+	trackerParen = regexp.MustCompile(`\s*\([^()]*@TFTUnitProperty[^@]*@[^()]*\)`)
+	lineBreak    = regexp.MustCompile(`(?i)<br\s*/?>|\r?\n|\\n`)
+
+	calcSuffix = regexp.MustCompile(`(Calc)?\d*$`)
+	camelBreak = regexp.MustCompile(`([a-z])([A-Z])`)
 )
+
+// Unknown values render as "[[Label]]": the UI shows the label styled as
+// unknown instead of a bare "?". Values the game computes at runtime (Set 18
+// abilities) aren't in any export, so they can't be filled in.
+const unknownOpen, unknownClose = "[[", "]]"
+
+// unknownValue names an unresolved variable for display:
+// "MagicDamageCalc1" -> "[[Magic Damage]]".
+func unknownValue(name string) string {
+	label := calcSuffix.ReplaceAllString(name, "")
+	// Hashed names and "GenericCalcN" carry no meaning worth showing.
+	if label == "" || label == "Generic" || strings.HasPrefix(label, "{") {
+		label = "value"
+	}
+	label = camelBreak.ReplaceAllString(strings.ReplaceAll(label, "_", " "), "$1 $2")
+	return unknownOpen + label + unknownClose
+}
+
+// stripTrackers removes the parts of a template that only show live
+// in-game counters.
+func stripTrackers(tmpl string) string {
+	if !tracker.MatchString(tmpl) {
+		return tmpl
+	}
+	tmpl = trackerParen.ReplaceAllString(tmpl, "")
+	lines := lineBreak.Split(tmpl, -1)
+	kept := lines[:0]
+	for _, l := range lines {
+		if !tracker.MatchString(l) {
+			kept = append(kept, l)
+		}
+	}
+	return strings.Join(kept, "<br>")
+}
 
 // iconLabels names the stat icons that matter for reading a description
 // ("deals 200 (AP) magic damage"); other icons are dropped.
@@ -41,11 +84,11 @@ var iconLabels = map[string]string{
 // render fills a CommunityDragon description template and reduces its
 // markup to plain text with "\n" line breaks.
 func render(tmpl string, lookup varLookup) string {
-	s := templateVar.ReplaceAllStringFunc(tmpl, func(m string) string {
+	s := templateVar.ReplaceAllStringFunc(stripTrackers(tmpl), func(m string) string {
 		parts := templateVar.FindStringSubmatch(m)
 		text, ok := lookup(parts[1])
 		if !ok {
-			return "?"
+			return unknownValue(parts[1])
 		}
 		if parts[2] != "" {
 			mult, _ := strconv.ParseFloat(parts[2], 64)

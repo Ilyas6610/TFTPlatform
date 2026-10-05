@@ -156,7 +156,12 @@ func Extract(raw []byte, set int, version string) (*SetData, error) {
 		if !ok || it.Name == "" || it.Desc == "" || isRewardPlaceholder(api) {
 			continue
 		}
-		out.Items = append(out.Items, extractItem(it, components[api], patch))
+		item := extractItem(it, components[api], patch)
+		if item.Kind == "wisp" {
+			out.Wisps = append(out.Wisps, item)
+		} else {
+			out.Items = append(out.Items, item)
+		}
 	}
 
 	sort.Slice(out.Units, func(i, j int) bool {
@@ -175,6 +180,13 @@ func Extract(raw []byte, set int, version string) (*SetData, error) {
 		return a.APIName < b.APIName
 	})
 	sort.Slice(out.Items, func(i, j int) bool { return out.Items[i].Name < out.Items[j].Name })
+	sort.Slice(out.Wisps, func(i, j int) bool {
+		a, b := out.Wisps[i], out.Wisps[j]
+		if a.Name != b.Name {
+			return a.Name < b.Name
+		}
+		return a.APIName < b.APIName
+	})
 	return out, nil
 }
 
@@ -202,7 +214,7 @@ func extractUnit(c cdChampion, patch string) Unit {
 	}
 	u.Ability.Desc = render(c.Ability.Desc, func(name string) (string, bool) {
 		for k, vals := range u.Ability.Values {
-			if strings.EqualFold(k, name) {
+			if strings.EqualFold(k, name) && len(vals) > 0 {
 				return starValues(vals), true
 			}
 		}
@@ -212,11 +224,9 @@ func extractUnit(c cdChampion, patch string) Unit {
 }
 
 // starValues renders 1-3 star values as "a/b/c", or "a" if all equal.
+// vals must be non-empty.
 func starValues(vals []float64) string {
 	if len(vals) < 4 {
-		if len(vals) == 0 {
-			return "?"
-		}
 		return formatNumber(vals[len(vals)-1])
 	}
 	stars := []string{formatNumber(vals[1]), formatNumber(vals[2]), formatNumber(vals[3])}
@@ -329,6 +339,7 @@ func classifyItem(api string, isComponent, isCompleted bool) (kind, variant stri
 	case strings.Contains(lower, "consumable"):
 		return "consumable", ""
 	case strings.HasPrefix(api, "DA_"):
+		// Set 18's remaining DA_* items are Wisps, its set mechanic.
 		switch {
 		case strings.Contains(lower, "_prismatic"):
 			variant = "prismatic"
@@ -337,7 +348,7 @@ func classifyItem(api string, isComponent, isCompleted bool) (kind, variant stri
 		case strings.Contains(lower, "_charm"):
 			variant = "charm"
 		}
-		return "special", variant
+		return "wisp", variant
 	}
 	return "other", ""
 }

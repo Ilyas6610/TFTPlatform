@@ -17,6 +17,9 @@ type SetData struct {
 	Traits    []Trait   `json:"traits"`
 	Augments  []Augment `json:"augments"`
 	Items     []Item    `json:"items"`
+	// Wisps are Set 18's set-mechanic items (DA_* items that aren't
+	// components, completed items or emblems), kept apart from real items.
+	Wisps []Item `json:"wisps"`
 }
 
 type Unit struct {
@@ -33,7 +36,7 @@ type Ability struct {
 	Name string `json:"name"`
 	// Desc is the rendered description; star-scaled values read "a/b/c".
 	// Values the game computes at runtime (e.g. "@MagicDamageCalc1@") aren't
-	// in the export and render as "?".
+	// in the export and render as "[[Magic Damage]]" (see unknownValue).
 	Desc string `json:"desc"`
 	// Values are the ability's variables by name, indexed by star level
 	// (1-3), so index 0 is unused.
@@ -72,10 +75,9 @@ type Item struct {
 	Icon    string `json:"icon,omitempty"`
 	Desc    string `json:"desc"`
 	// Kind is "component", "completed", "emblem", "artifact", "radiant",
-	// "consumable", "special" (set-specific, e.g. Set 18's DA_* items) or
-	// "other".
+	// "consumable", "wisp" (see SetData.Wisps) or "other".
 	Kind string `json:"kind"`
-	// Variant distinguishes same-named versions of a special item:
+	// Variant distinguishes same-named versions of a wisp:
 	// "", "upgraded", "prismatic" or "charm".
 	Variant     string             `json:"variant,omitempty"`
 	Composition []string           `json:"composition,omitempty"`

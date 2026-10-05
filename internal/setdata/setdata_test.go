@@ -11,12 +11,34 @@ func TestRender(t *testing.T) {
 		"Deal @Damage@ damage":                    "Deal 120 damage",
 		"Gain @Ratio*100@% speed":                 "Gain 25% speed",
 		"Deal @damage@ (case-insensitive)":        "Deal 120 (case-insensitive)",
-		"Deal @Unknown@ damage":                   "Deal ? damage",
+		"Deal @MagicDamageCalc1@ damage":          "Deal [[Magic Damage]] damage",
+		"Gain @{0f90e7a4}@ stacks":                "Gain [[value]] stacks",
+		"Start with @GenericCalc1@ Armor":         "Start with [[value]] Armor",
+		"Leap @LeapHexRadius@ hexes":              "Leap [[Leap Hex Radius]] hexes",
 		"Deal 5 %i:scaleHealth%%i:scaleAP% magic": "Deal 5 (HP, AP) magic",
 		"Gold %i:someUnknownIcon% here":           "Gold here",
 		"<Bright>Bold</Bright> text":              "Bold text",
 		`Line one<br>Line two\nLine three`:        "Line one\nLine two\nLine three",
 		"A<br><br><br><br>B":                      "A\n\nB",
+	}
+	for tmpl, want := range cases {
+		if got := render(tmpl, lookupIn(values)); got != want {
+			t.Errorf("render(%q) = %q, want %q", tmpl, got, want)
+		}
+	}
+}
+
+func TestRender_DropsLiveTrackers(t *testing.T) {
+	values := map[string]float64{"Gold": 2, "AttackSpeed": 0.1}
+	cases := map[string]string{
+		// A tracker on its own line goes, with any markup around it.
+		"Gain @Gold@ gold.<br>Total Payouts: @TFTUnitProperty.item:TFT11_BloodBankPayoutTotal@ Gold<br>": "Gain 2 gold.",
+		"Roll dice.<br><br>Reward: @TFTUnitProperty.item:TFT_Augment_MagicRoll@":                         "Roll dice.",
+		"Win fights.<br><br><rules>Foes vanquished: @TFTUnitProperty.item:TFT15_X@</rules>":              "Win fights.",
+		// A tracker in parentheses goes without taking the sentence with it.
+		"Gain @AttackSpeed*100@% (Current: @TFTUnitProperty.item:TFT9_PumpingUpRounds@%) each round.": "Gain 10% each round.",
+		// Unit-scoped trackers have no "item" segment.
+		"Equip it.<br>@TFTUnitProperty.:TFT_Augment_TragicalBlade_TRAKey@": "Equip it.",
 	}
 	for tmpl, want := range cases {
 		if got := render(tmpl, lookupIn(values)); got != want {
@@ -57,7 +79,7 @@ func TestExtract_Units(t *testing.T) {
 	if _, ok := akali.Stats["armor"]; ok {
 		t.Error("null stats should be dropped")
 	}
-	if want := "Deal 100/150/225 (AD, AP) damage and ? more."; akali.Ability.Desc != want {
+	if want := "Deal 100/150/225 (AD, AP) damage and [[Magic Damage]] more."; akali.Ability.Desc != want {
 		t.Errorf("ability desc = %q, want %q", akali.Ability.Desc, want)
 	}
 	if want := "https://raw.communitydragon.org/16.19/game/assets/characters/da_18_akali_square.png"; akali.Icon != want {
@@ -102,14 +124,17 @@ func TestExtract_AugmentsAndItems(t *testing.T) {
 	variants := map[string]string{}
 	for _, it := range d.Items {
 		kinds[it.APIName] = it.Kind
-		variants[it.APIName] = it.Variant
+	}
+	for _, w := range d.Wisps {
+		if w.Kind != "wisp" {
+			t.Errorf("%s in Wisps has kind %q", w.APIName, w.Kind)
+		}
+		variants[w.APIName] = w.Variant
 	}
 	want := map[string]string{
-		"TFT_Item_BFSword":     "component",
-		"TFT_Item_Deathblade":  "completed",
-		"DA_Barrier18":         "special",
-		"DA_Barrier18_Upgrade": "special",
-		"DA_PhantomEmblem18":   "emblem",
+		"TFT_Item_BFSword":    "component",
+		"TFT_Item_Deathblade": "completed",
+		"DA_PhantomEmblem18":  "emblem",
 	}
 	if len(kinds) != len(want) {
 		t.Errorf("expected reward placeholders dropped, got kinds %v", kinds)
@@ -119,8 +144,8 @@ func TestExtract_AugmentsAndItems(t *testing.T) {
 			t.Errorf("%s kind = %q, want %q", api, kinds[api], kind)
 		}
 	}
-	if variants["DA_Barrier18_Upgrade"] != "upgraded" || variants["DA_Barrier18"] != "" {
-		t.Errorf("unexpected variants: %v", variants)
+	if len(variants) != 2 || variants["DA_Barrier18_Upgrade"] != "upgraded" || variants["DA_Barrier18"] != "" {
+		t.Errorf("expected both Barrier variants as wisps, got %v", variants)
 	}
 }
 
@@ -206,5 +231,16 @@ func TestCompareVersionsAndPatchOf(t *testing.T) {
 	}
 	if got := PatchOf("16.19.8230722"); got != "16.19" {
 		t.Errorf("PatchOf = %q", got)
+	}
+}
+
+func TestDiff_WispsAreTheirOwnCategory(t *testing.T) {
+	oldD := mustExtract(t, defaultFixture(), "1")
+	newD := mustExtract(t, defaultFixture(), "2")
+	newD.Wisps[0].Desc = "Reworded wisp"
+
+	changes := Diff(oldD, newD)
+	if len(changes) != 1 || changes[0].Category != "wisp" || changes[0].Kind != "text" || changes[0].APIName != newD.Wisps[0].APIName {
+		t.Errorf("expected one wisp text change, got %+v", changes)
 	}
 }
