@@ -1,6 +1,8 @@
 package apiserver
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"testing"
@@ -57,6 +59,17 @@ func TestParseExploreFilter_Rejects(t *testing.T) {
 		q, _ := url.ParseQuery(raw)
 		if _, err := parseExploreFilter(q); err == nil {
 			t.Errorf("%q: expected an error", raw)
+		}
+	}
+}
+
+func TestMetaBuilds_RejectsBoardConditions(t *testing.T) {
+	s := &Server{} // validation runs before the store is touched
+	for _, q := range []string{"set=18&unit=A", "set=18&item=I", "set=18&trait=T", "set=0"} {
+		rec := httptest.NewRecorder()
+		NewRouter(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/meta/builds?"+q, nil))
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: got %d, want 400", q, rec.Code)
 		}
 	}
 }

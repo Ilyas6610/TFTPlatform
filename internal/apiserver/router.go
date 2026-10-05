@@ -28,6 +28,7 @@ func NewRouter(s *Server) http.Handler {
 	mux.HandleFunc("GET /api/v1/meta/units", s.handleMetaUnits)
 	mux.HandleFunc("GET /api/v1/meta/traits", s.handleMetaTraits)
 	mux.HandleFunc("GET /api/v1/meta/augments", s.handleMetaAugments)
+	mux.HandleFunc("GET /api/v1/meta/builds", s.handleMetaBuilds)
 	mux.HandleFunc("GET /api/v1/explore", s.handleExplore)
 	mux.HandleFunc("GET /api/v1/explore/options", s.handleExploreOptions)
 	mux.HandleFunc("GET /api/v1/sets/{set}/data", s.handleSetData)

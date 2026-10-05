@@ -125,43 +125,6 @@ export function getLeaderboard(platform: string, limit = 100) {
   return get<Leaderboard>(`/api/v1/leaderboard/${encodeURIComponent(platform)}?limit=${limit}`);
 }
 
-export interface UnitStat {
-  characterId: string;
-  gamesPlayed: number;
-  avgPlacement: number;
-  top4Rate: number;
-  winRate: number;
-  pickRate: number;
-}
-
-export function getMetaUnits(set: number) {
-  return get<UnitStat[]>(`/api/v1/meta/units?set=${set}`);
-}
-
-export interface TraitStat {
-  traitName: string;
-  traitTier: number;
-  gamesPlayed: number;
-  avgPlacement: number;
-  top4Rate: number;
-  winRate: number;
-}
-
-export function getMetaTraits(set: number) {
-  return get<TraitStat[]>(`/api/v1/meta/traits?set=${set}`);
-}
-
-export interface AugmentStat {
-  augmentId: string;
-  gamesPlayed: number;
-  avgPlacement: number;
-  top4Rate: number;
-  winRate: number;
-}
-
-export function getMetaAugments(set: number) {
-  return get<AugmentStat[]>(`/api/v1/meta/augments?set=${set}`);
-}
 
 const STALE_REASONS: Record<string, string> = {
   riot_api_key_expired: "the Riot API key needs rotation",
@@ -342,4 +305,26 @@ export function getExploreOptions(set: number) {
 /** query is the explorer's URL search string (set, queue, level, unit, item, trait). */
 export function explore(query: string) {
   return get<ExploreResult>(`/api/v1/explore?${query}`);
+}
+
+// Meta page — see internal/store/meta.go.
+export interface MetaBuild extends PlacementStats {
+  items: string[]; // exact 3-item build, sorted
+}
+
+export interface MetaUnit extends PlacementStats {
+  id: string;
+  pickRate: number;
+  builds: MetaBuild[]; // most common exact builds (seen 3+ times)
+  items: ExploreRow[]; // most-held items
+}
+
+export interface MetaResult {
+  boards: number;
+  units: MetaUnit[];
+}
+
+/** query: set and optional queue/level parameters, as for explore(). */
+export function getMetaBuilds(query: string) {
+  return get<MetaResult>(`/api/v1/meta/builds?${query}`);
 }

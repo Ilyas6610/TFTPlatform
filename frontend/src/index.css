@@ -1008,3 +1008,137 @@ details.patch[open] > summary::before {
   padding: 0 6px;
   font-size: 0.78rem;
 }
+
+/* ---- Meta (src/pages/MetaStatsPage.tsx) ---- */
+
+.meta-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.meta-header h2 {
+  margin-bottom: 4px;
+}
+
+.meta-header p {
+  margin: 0;
+  max-width: 640px;
+}
+
+.meta-page select,
+.meta-search {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.meta-search {
+  width: 180px;
+}
+
+.meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  gap: 12px;
+  align-items: start;
+  margin-bottom: 12px;
+}
+
+.meta-card {
+  margin-bottom: 0;
+  padding: 12px;
+}
+
+.meta-card-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.meta-card-head:hover strong {
+  color: var(--accent);
+}
+
+.meta-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 0.82rem;
+  margin-top: 2px;
+}
+
+.meta-section-title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 10px 0 4px;
+}
+
+.meta-build {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 3px 6px;
+  margin: 0 -6px;
+  border-radius: 6px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.meta-build:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.build-items {
+  display: flex;
+  gap: 3px;
+}
+
+.build-stats {
+  display: grid;
+  /* px, not em: the header row uses a smaller font and must line up. */
+  grid-template-columns: 40px 46px 46px;
+  text-align: right;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.meta-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.meta-items a {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.78rem;
+  text-decoration: none;
+}
+
+.meta-build-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.meta-build-head .build-stats {
+  font-size: 0.68rem;
+  white-space: nowrap;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* One trait table reads better at a table's width than stretched across
+   the page. */
+.meta-traits {
+  max-width: 760px;
+}

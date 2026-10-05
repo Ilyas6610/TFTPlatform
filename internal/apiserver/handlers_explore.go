@@ -155,3 +155,36 @@ func parseBounded(s string, lo, hi int) (int, error) {
 	}
 	return n, nil
 }
+
+const (
+	metaMinBuildGames = 3 // an exact build must appear this often to be listed
+	metaBuildsPerUnit = 5
+	metaItemsPerUnit  = 6
+)
+
+// handleMetaBuilds serves GET /api/v1/meta/builds?set=18[&queue=1100][&level=8-]:
+// every unit's stats over the matching boards, with its most common exact
+// 3-item builds and most-held items. Computed live from match data, like
+// the explorer.
+func (s *Server) handleMetaBuilds(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	// Only scope parameters apply here; board conditions are rejected rather
+	// than silently ignored.
+	for _, k := range []string{"unit", "item", "trait"} {
+		if q.Has(k) {
+			writeError(w, http.StatusBadRequest, "invalid_filter", k+" isn't supported here; use /api/v1/explore")
+			return
+		}
+	}
+	f, err := parseExploreFilter(q)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_filter", err.Error())
+		return
+	}
+	res, err := s.Store.MetaBuilds(r.Context(), f, metaMinBuildGames, metaBuildsPerUnit, metaItemsPerUnit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
