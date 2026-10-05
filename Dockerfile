@@ -15,7 +15,7 @@ RUN go mod download
 
 COPY cmd ./cmd
 COPY internal ./internal
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/ ./cmd/api ./cmd/ingestcli ./cmd/aggregator
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/ ./cmd/api ./cmd/ingestcli ./cmd/aggregator ./cmd/riotsync
 
 FROM alpine:3.21
 # CA certificates for HTTPS to the Riot API and CommunityDragon; wget (from

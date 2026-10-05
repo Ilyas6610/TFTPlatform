@@ -60,21 +60,34 @@ func (s *Store) ExistingMatchIDs(ctx context.Context, ids []string) (map[string]
 
 // InsertMatchWithParticipants stores a match and all of its participants in
 // a single transaction, so a mid-crawl crash (or a rate-limit stop between
-// matches) never leaves a match half-written.
+// matches) never leaves a match half-written. A match that is already stored
+// is left untouched.
 func (s *Store) InsertMatchWithParticipants(ctx context.Context, m Match, participants map[string]MatchParticipant) error {
+	_, err := s.InsertMatchIfNew(ctx, m, participants)
+	return err
+}
+
+// InsertMatchIfNew is InsertMatchWithParticipants that also reports whether
+// the match was new. If another writer stored it first (matches.match_id is
+// the primary key) nothing is written and inserted is false, so callers
+// count only matches they actually added.
+func (s *Store) InsertMatchIfNew(ctx context.Context, m Match, participants map[string]MatchParticipant) (inserted bool, err error) {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer tx.Rollback(ctx)
 
-	_, err = tx.Exec(ctx, `
+	tag, err := tx.Exec(ctx, `
 		INSERT INTO matches (match_id, routing_region, game_datetime, game_length, game_version, tft_set_number, queue_id, tft_game_type, raw_payload)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (match_id) DO NOTHING
 	`, m.MatchID, m.RoutingRegion, m.GameDatetime, m.GameLength, m.GameVersion, m.TFTSetNumber, m.QueueID, m.TFTGameType, m.RawPayload)
 	if err != nil {
-		return err
+		return false, err
+	}
+	if tag.RowsAffected() == 0 {
+		return false, nil
 	}
 
 	for puuid, p := range participants {
@@ -87,11 +100,14 @@ func (s *Store) InsertMatchWithParticipants(ctx context.Context, m Match, partic
 		`, m.MatchID, puuid, p.Placement, p.Level, p.LastRound, p.PlayersEliminated,
 			p.TotalDamageToPlayers, p.GoldLeft, p.TimeEliminated, p.Units, p.Traits, p.Augments, p.Companion, p.RawParticipant)
 		if err != nil {
-			return err
+			return false, err
 		}
 	}
 
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // GetMatchRaw returns (nil, "", false, nil) on a cache miss, not an error.
