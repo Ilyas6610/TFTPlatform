@@ -48,7 +48,11 @@ export default function LeaderboardPage() {
     };
   }, [platform]);
 
-  const entries = board?.entries ?? [];
+  // Show the top 50 first; the rest of the fetched 100 on request.
+  const [showAll, setShowAll] = useState(false);
+  useEffect(() => setShowAll(false), [platform]);
+  const allEntries = board?.entries ?? [];
+  const entries = showAll ? allEntries : allEntries.slice(0, 50);
 
   return (
     <div>
@@ -119,6 +123,11 @@ export default function LeaderboardPage() {
               ))}
             </tbody>
           </table>
+          {!showAll && allEntries.length > entries.length && (
+            <button type="button" className="show-more" onClick={() => setShowAll(true)}>
+              Show top {allEntries.length}
+            </button>
+          )}
         </div>
       )}
     </div>

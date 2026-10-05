@@ -23,7 +23,7 @@ body {
 }
 
 .app {
-  max-width: 960px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 0 16px 48px;
 }
@@ -464,8 +464,18 @@ td a:hover {
   line-height: 1.45;
 }
 
+/* Card lists flow into as many columns as fit (3 on desktop, 1 on phones). */
+.set-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  gap: 10px;
+  align-items: start;
+  margin-bottom: 12px;
+}
+
 .set-list .panel {
-  margin-bottom: 8px;
+  margin-bottom: 0;
+  padding: 12px;
 }
 
 .set-row {
@@ -628,3 +638,71 @@ td a:hover {
 .value-ap { color: #6fb6ff; }
 .value-hp { color: #6fd18a; }
 .value-defense { color: #d8c27a; }
+
+/* ---- Compact set pages ---- */
+
+.set-grid {
+  align-items: start;
+}
+
+.set-card .ability-name {
+  margin-top: 8px;
+}
+
+.stats-toggle,
+.variants {
+  margin: 4px 0;
+  font-size: 0.85rem;
+}
+
+.stats-toggle summary,
+.variants summary {
+  cursor: pointer;
+  color: var(--accent);
+}
+
+.stats-toggle summary .muted {
+  font-size: 0.8rem;
+}
+
+.stats-toggle .set-stats {
+  margin-top: 6px;
+}
+
+.show-more {
+  display: block;
+  width: 100%;
+  margin: 0 0 16px;
+}
+
+details.patch > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+details.patch > summary::-webkit-details-marker {
+  display: none;
+}
+
+details.patch > summary h2 {
+  display: inline;
+}
+
+details.patch > summary::before {
+  content: "▸ ";
+  color: var(--accent);
+}
+
+details.patch[open] > summary::before {
+  content: "▾ ";
+}
+
+/* Changed entities flow into columns instead of one long list. */
+.patch-list {
+  columns: 3 280px;
+  column-gap: 24px;
+}
+
+.patch-list > li {
+  break-inside: avoid;
+}

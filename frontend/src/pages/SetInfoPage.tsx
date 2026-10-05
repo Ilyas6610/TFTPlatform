@@ -151,6 +151,24 @@ function matches(query: string, ...fields: (string | undefined)[]): boolean {
   return !q || fields.some((f) => f?.toLowerCase().includes(q));
 }
 
+/**
+ * Limits a long list to its first `pageSize` entries plus a "Show all"
+ * button. While searching everything matching is shown, since the search
+ * already narrows the list; changing `resetKey` (tab filters) collapses it
+ * again.
+ */
+function useShowMore<T>(list: T[], pageSize: number, query: string, resetKey = ""): [T[], JSX.Element | null] {
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => setExpanded(false), [resetKey]);
+  if (expanded || query.trim() || list.length <= pageSize) return [list, null];
+  return [
+    list.slice(0, pageSize),
+    <button key="more" type="button" className="show-more" onClick={() => setExpanded(true)}>
+      Show all {list.length}
+    </button>,
+  ];
+}
+
 function fmt(n: number): string {
   return String(Math.round(n * 100) / 100);
 }
@@ -161,6 +179,11 @@ function fmt(n: number): string {
  * styled label rather than a number.
  */
 function Desc({ text, source }: { text: string; source?: DescSource }) {
+  if (!text.trim()) {
+    // Set 18 item text isn't in Riot's export; the live patch gets it from
+    // tactics.tools, but older patches have none.
+    return <p className="muted set-desc">No description available for this patch.</p>;
+  }
   const parts = text.split(/(\[\[[^\]]+\]\])/);
   return (
     <>
@@ -255,21 +278,33 @@ function traitLookup(traits: SetTrait[]) {
 
 function UnitsTab({ data, query }: { data: SetData; query: string }) {
   const traits = useMemo(() => traitLookup(data.traits), [data.traits]);
-  const units = data.units.filter((u) => matches(query, u.name, u.ability.name, u.ability.desc, ...u.traits));
+  const [cost, setCost] = useState<number | null>(null);
+  const units = data.units.filter(
+    (u) => (cost === null || u.cost === cost) && matches(query, u.name, u.ability.name, u.ability.desc, ...u.traits),
+  );
+  const [visible, more] = useShowMore(units, 24, query, String(cost));
   return (
     <>
-      <p className="muted">
-        Set 18&apos;s ability numbers aren&apos;t in Riot&apos;s exported game data. For the latest patch they come from
-        tactics.tools (credited on each ability); where no value is available it shows as a{" "}
-        <span className="unknown-value">label</span> naming the value. Stats, traits and costs come from Riot&apos;s
-        data. Ability numbers show the 1/2/3/4-star values.
-      </p>
+      <div className="set-picker">
+        {[null, 1, 2, 3, 4, 5].map((c) => (
+          <button key={String(c)} type="button" disabled={cost === c} onClick={() => setCost(c)}>
+            {c === null ? "All" : `${c}-cost`}
+          </button>
+        ))}
+        <span
+          className="muted"
+          title="Ability values for the latest patch come from tactics.tools; star values read 1/2/3/4."
+        >
+          {units.length} units · ability values ★1/2/3/4
+        </span>
+      </div>
       {units.length === 0 && <p className="muted">No units match.</p>}
       <div className="set-grid">
-        {units.map((u) => (
+        {visible.map((u) => (
           <UnitCard key={u.apiName} unit={u} traits={traits} />
         ))}
       </div>
+      {more}
     </>
   );
 }
@@ -302,17 +337,25 @@ function UnitCard({ unit: u, traits }: { unit: SetUnit; traits: Map<string, SetT
           </div>
         </div>
       </div>
-      <dl className="set-stats">
-        {STAT_LABELS.filter(([k]) => u.stats[k] !== undefined).map(([k, label, format]) => (
-          <div key={k}>
-            <dt>{label}</dt>
-            <dd>{(format ?? fmt)(u.stats[k])}</dd>
-          </div>
-        ))}
-      </dl>
+      <details className="stats-toggle">
+        <summary>
+          Stats{" "}
+          <span className="muted">
+            · {u.stats.hp} HP · {u.stats.damage} AD · {u.stats.mana} mana
+          </span>
+        </summary>
+        <dl className="set-stats">
+          {STAT_LABELS.filter(([k]) => u.stats[k] !== undefined).map(([k, label, format]) => (
+            <div key={k}>
+              <dt>{label}</dt>
+              <dd>{(format ?? fmt)(u.stats[k])}</dd>
+            </div>
+          ))}
+        </dl>
+      </details>
       {u.ability.name && (
         <>
-          <h4>{u.ability.name}</h4>
+          <h4 className="ability-name">{u.ability.name}</h4>
           <Desc text={u.ability.desc} source={u.ability.descSource} />
         </>
       )}
@@ -333,47 +376,51 @@ const BREAKPOINT_STYLE: Record<number, number> = {
 
 function TraitsTab({ data, query }: { data: SetData; query: string }) {
   const traits = data.traits.filter((t) => matches(query, t.name, t.desc, ...t.breakpoints.map((b) => b.text)));
+  const [visible, more] = useShowMore(traits, 18, query);
   return (
-    <div className="set-list">
+    <>
       {traits.length === 0 && <p className="muted">No traits match.</p>}
-      {traits.map((t) => {
-        const units = data.units.filter((u) => u.traits.includes(t.name));
-        return (
-          <div className="panel" key={t.apiName} id={t.apiName}>
-            <div className="set-card-head">
-              <GameIcon kind="traits" id={t.apiName} size={40} fallbackSrc={t.icon} fallbackName={t.name} />
-              <h3>{t.name}</h3>
-            </div>
-            {t.desc && <Desc text={t.desc} />}
-            {t.breakpoints.some((b) => b.text) && (
-              <ul className="breakpoints">
-                {t.breakpoints.map((b, i) => (
-                  <li key={i}>
-                    <span className={`trait-badge trait-style-${BREAKPOINT_STYLE[b.style] ?? 1}`}>{b.minUnits}</span>
-                    <span className="set-desc">{highlightNumbers(b.text?.replace(/^\(\d+\)\s*/, "") ?? "", i)}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {units.length > 0 && (
-              <div className="unit-grid">
-                {units.map((u) => (
-                  <GameIcon
-                    key={u.apiName}
-                    kind="champions"
-                    id={u.apiName}
-                    size={36}
-                    fallbackSrc={u.icon}
-                    fallbackName={u.name}
-                    className={`cost-${u.cost}`}
-                  />
-                ))}
+      <div className="set-list">
+        {visible.map((t) => {
+          const units = data.units.filter((u) => u.traits.includes(t.name));
+          return (
+            <div className="panel" key={t.apiName} id={t.apiName}>
+              <div className="set-card-head">
+                <GameIcon kind="traits" id={t.apiName} size={40} fallbackSrc={t.icon} fallbackName={t.name} />
+                <h3>{t.name}</h3>
               </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
+              {t.desc && <Desc text={t.desc} />}
+              {t.breakpoints.some((b) => b.text) && (
+                <ul className="breakpoints">
+                  {t.breakpoints.map((b, i) => (
+                    <li key={i}>
+                      <span className={`trait-badge trait-style-${BREAKPOINT_STYLE[b.style] ?? 1}`}>{b.minUnits}</span>
+                      <span className="set-desc">{highlightNumbers(b.text?.replace(/^\(\d+\)\s*/, "") ?? "", i)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {units.length > 0 && (
+                <div className="unit-grid">
+                  {units.map((u) => (
+                    <GameIcon
+                      key={u.apiName}
+                      kind="champions"
+                      id={u.apiName}
+                      size={36}
+                      fallbackSrc={u.icon}
+                      fallbackName={u.name}
+                      className={`cost-${u.cost}`}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {more}
+    </>
   );
 }
 
@@ -384,6 +431,7 @@ function AugmentsTab({ augments, query }: { augments: SetAugment[]; query: strin
   const shown = augments.filter(
     (a) => (tier === null || a.tier === tier) && matches(query, a.name, a.desc, ...(a.traits ?? [])),
   );
+  const [visible, more] = useShowMore(shown, 45, query, String(tier));
   return (
     <>
       <div className="set-picker">
@@ -395,7 +443,7 @@ function AugmentsTab({ augments, query }: { augments: SetAugment[]; query: strin
         <span className="muted">{shown.length} augments</span>
       </div>
       <div className="set-list">
-        {shown.map((a) => (
+        {visible.map((a) => (
           <div className="panel set-row" key={a.apiName} id={a.apiName}>
             <GameIcon kind="augments" id={a.apiName} size={40} fallbackSrc={a.icon} fallbackName={a.name} />
             <div>
@@ -413,6 +461,7 @@ function AugmentsTab({ augments, query }: { augments: SetAugment[]; query: strin
           </div>
         ))}
       </div>
+      {more}
     </>
   );
 }
@@ -476,11 +525,23 @@ const ITEM_SECTIONS: [kind: string, title: string][] = [
 
 function ItemsTab({ items, query }: { items: SetItem[]; query: string }) {
   const byApi = useMemo(() => new Map(items.map((i) => [i.apiName, i])), [items]);
+  const [section, setSection] = useState<string | null>(null);
   const shown = items.filter((i) => matches(query, i.name, i.desc));
+  const present = ITEM_SECTIONS.filter(([kind]) => items.some((i) => i.kind === kind));
   return (
     <>
+      <div className="set-picker">
+        <button type="button" disabled={section === null} onClick={() => setSection(null)}>
+          All
+        </button>
+        {present.map(([kind, title]) => (
+          <button key={kind} type="button" disabled={section === kind} onClick={() => setSection(kind)}>
+            {title}
+          </button>
+        ))}
+      </div>
       {shown.length === 0 && <p className="muted">No items match.</p>}
-      {ITEM_SECTIONS.map(([kind, title]) => {
+      {ITEM_SECTIONS.filter(([kind]) => section === null || section === kind).map(([kind, title]) => {
         // Same-named variants (base / upgraded / prismatic) share one card.
         const groups = new Map<string, SetItem[]>();
         for (const it of shown.filter((i) => i.kind === kind)) {
@@ -488,57 +549,79 @@ function ItemsTab({ items, query }: { items: SetItem[]; query: string }) {
         }
         if (groups.size === 0) return null;
         return (
-          <section key={kind}>
-            <h3>
-              {title} <span className="muted">({groups.size})</span>
-            </h3>
-            <div className="set-list">
-              {[...groups.values()].map((variants) => {
-                const first = variants[0];
-                return (
-                  <div className="panel set-row" key={first.apiName} id={first.apiName}>
-                    <GameIcon
-                      kind="items"
-                      id={first.apiName}
-                      size={40}
-                      fallbackSrc={first.icon}
-                      fallbackName={first.name}
-                    />
-                    <div>
-                      <h4>
-                        {first.name}
-                        {first.composition && first.composition.length === 2 && (
-                          <span className="item-recipe">
-                            {first.composition.map((c, i) => (
-                              <GameIcon
-                                key={i}
-                                kind="items"
-                                id={c}
-                                size={20}
-                                fallbackSrc={byApi.get(c)?.icon}
-                                fallbackName={byApi.get(c)?.name}
-                              />
-                            ))}
-                          </span>
-                        )}
-                      </h4>
-                      {variants.map((v) => (
-                        <div key={v.apiName}>
-                          {variants.length > 1 && (
-                            <span className="tag">{v.variant === "augment" ? "from augment" : v.variant || "base"}</span>
-                          )}
-                          <Desc text={v.desc} source={v.descSource} />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
+          <ItemSection
+            key={kind}
+            title={title}
+            groups={[...groups.values()]}
+            byApi={byApi}
+            query={query}
+            // A single chosen section shows in full; "All" previews each.
+            pageSize={section === null ? 6 : Infinity}
+          />
         );
       })}
     </>
+  );
+}
+
+function ItemSection({
+  title,
+  groups,
+  byApi,
+  query,
+  pageSize,
+}: {
+  title: string;
+  groups: SetItem[][];
+  byApi: Map<string, SetItem>;
+  query: string;
+  pageSize: number;
+}) {
+  const [visible, more] = useShowMore(groups, pageSize, query);
+  return (
+    <section>
+      <h3>
+        {title} <span className="muted">({groups.length})</span>
+      </h3>
+      <div className="set-list">
+        {visible.map((variants) => {
+          const first = variants[0];
+          return (
+            <div className="panel set-row" key={first.apiName} id={first.apiName}>
+              <GameIcon kind="items" id={first.apiName} size={40} fallbackSrc={first.icon} fallbackName={first.name} />
+              <div>
+                <h4>
+                  {first.name}
+                  {first.composition && first.composition.length === 2 && (
+                    <span className="item-recipe">
+                      {first.composition.map((c, i) => (
+                        <GameIcon
+                          key={i}
+                          kind="items"
+                          id={c}
+                          size={20}
+                          fallbackSrc={byApi.get(c)?.icon}
+                          fallbackName={byApi.get(c)?.name}
+                        />
+                      ))}
+                    </span>
+                  )}
+                </h4>
+                {variants.map((v) => (
+                  <div key={v.apiName}>
+                    {variants.length > 1 && (
+                      <span className="tag">{v.variant === "augment" ? "from augment" : v.variant || "base"}</span>
+                    )}
+                    <Desc text={v.desc} source={v.descSource} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {more}
+    </section>
   );
 }
 
@@ -553,6 +636,7 @@ function WispsTab({ wisps, query }: { wisps: SetItem[]; query: string }) {
   for (const variants of groups.values()) {
     variants.sort((a, b) => WISP_VARIANTS.indexOf(a.variant ?? "") - WISP_VARIANTS.indexOf(b.variant ?? ""));
   }
+  const [visible, more] = useShowMore([...groups.values()], 45, query);
   return (
     <>
       <p className="muted">
@@ -561,24 +645,31 @@ function WispsTab({ wisps, query }: { wisps: SetItem[]; query: string }) {
       </p>
       {groups.size === 0 && <p className="muted">No wisps match.</p>}
       <div className="set-list">
-        {[...groups.values()].map((variants) => {
-          const first = variants[0];
+        {visible.map((variants) => {
+          const [first, ...others] = variants;
           return (
             <div className="panel set-row" key={first.apiName} id={first.apiName}>
               <GameIcon kind="items" id={first.apiName} size={40} fallbackSrc={first.icon} fallbackName={first.name} />
               <div>
                 <h4>{first.name}</h4>
-                {variants.map((v) => (
-                  <div key={v.apiName}>
-                    {variants.length > 1 && <span className="tag">{v.variant || "base"}</span>}
-                    <Desc text={v.desc} source={v.descSource} />
-                  </div>
-                ))}
+                <Desc text={first.desc} source={first.descSource} />
+                {others.length > 0 && (
+                  <details className="variants">
+                    <summary>{others.map((v) => v.variant || "other").join(" · ")}</summary>
+                    {others.map((v) => (
+                      <div key={v.apiName}>
+                        <span className="tag">{v.variant || "other"}</span>
+                        <Desc text={v.desc} source={v.descSource} />
+                      </div>
+                    ))}
+                  </details>
+                )}
               </div>
             </div>
           );
         })}
       </div>
+      {more}
     </>
   );
 }
@@ -623,22 +714,24 @@ function PatchesTab({ data, patches, setNumber }: { data: SetData; patches: Patc
         anything added, removed or renamed. Some balance changes aren&apos;t in the published game files, so these notes
         can miss changes — check Riot&apos;s official notes for the full list.
       </p>
-      {patches.map((p) => (
-        <div className="panel" key={p.version}>
-          <h2>
-            Patch {p.tftPatch ?? p.patch}{" "}
-            <span className="muted patch-sub">
-              {p.tftPatch && `game ${p.patch} · `}vs {p.previousPatch} · {p.changes.length} changes
-              {p.officialNotesUrl && (
-                <>
-                  {" · "}
-                  <a href={p.officialNotesUrl} target="_blank" rel="noreferrer">
-                    Riot&apos;s official notes
-                  </a>
-                </>
-              )}
-            </span>
-          </h2>
+      {patches.map((p, index) => (
+        <details className="panel patch" key={p.version} open={index === 0}>
+          <summary>
+            <h2>
+              Patch {p.tftPatch ?? p.patch}{" "}
+              <span className="muted patch-sub">
+                {p.tftPatch && `game ${p.patch} · `}vs {p.previousPatch} · {p.changes.length} changes
+                {p.officialNotesUrl && (
+                  <>
+                    {" · "}
+                    <a href={p.officialNotesUrl} target="_blank" rel="noreferrer">
+                      Riot&apos;s official notes
+                    </a>
+                  </>
+                )}
+              </span>
+            </h2>
+          </summary>
           {p.changes.length === 0 && <p className="muted">No changes to this set's numbers.</p>}
           {(["unit", "trait", "augment", "item", "wisp"] as const).map((category) => {
             const changes = p.changes.filter((c) => c.category === category);
@@ -677,7 +770,7 @@ function PatchesTab({ data, patches, setNumber }: { data: SetData; patches: Patc
               </section>
             );
           })}
-        </div>
+        </details>
       ))}
     </div>
   );
