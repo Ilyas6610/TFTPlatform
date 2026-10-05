@@ -90,4 +90,4 @@ The live TFT set number is `CURRENT_TFT_SET` in `frontend/src/config.ts` — the
 Exactly one `riotapi.Client`/`RateLimiter` is built at startup and injected (e.g. into `apiserver.Server`). Handlers and other code must never construct their own client, so live fetches and ingestion can't jointly exceed Riot's rate limits.
 
 ### Deploy
-`deploy/docker-compose.yml` for local Postgres + migrations. `deploy/k8s/` (base + `overlays/local`) is scaffolded but currently empty.
+`deploy/docker-compose.yml` is local dev (Postgres + migrations). `deploy/docker-compose.prod.yml` is the production stack: images from `Dockerfile` (backend: `api`/`ingestcli`/`aggregator` + `scripts/ingest-loop.sh`), `frontend/Dockerfile` (nginx; `nginx.conf.template` proxies `/api` to `API_UPSTREAM`; icons fetched at build unless `FETCH_ASSETS=0`) and `deploy/migrate/Dockerfile` (migrations baked in). The Riot key is a Compose secret mounted with host permissions, so backend containers run as `APP_UID:APP_GID` (the key file's owner) and the key stays `chmod 600`. Dockerfiles avoid BuildKit-only syntax (no buildx on the dev machine).

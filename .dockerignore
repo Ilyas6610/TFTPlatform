@@ -1,0 +1,12 @@
+# Keep build contexts small and free of secrets.
+.git
+.claude
+bin
+deploy/.secrets
+**/*.env
+**/.env*
+!deploy/.env.example
+frontend/node_modules
+frontend/dist
+frontend/public/tft
+frontend/*.tsbuildinfo
