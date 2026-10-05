@@ -1,13 +1,16 @@
 package apiserver
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
+	"tft-platform/internal/comps"
 	"tft-platform/internal/store"
 )
 
@@ -37,7 +40,7 @@ func (s *Server) handleExplore(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := s.Store.Explore(r.Context(), f, exploreLimit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", err.Error())
+		writeDBError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
@@ -53,7 +56,7 @@ func (s *Server) handleExploreOptions(w http.ResponseWriter, r *http.Request) {
 	}
 	opts, err := s.Store.ExploreOptions(r.Context(), set)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", err.Error())
+		writeDBError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, opts)
@@ -67,6 +70,9 @@ func parseExploreFilter(q url.Values) (store.ExploreFilter, error) {
 	}
 	f.Set = set
 
+	if len(q["queue"]) > exploreMaxConds {
+		return f, fmt.Errorf("at most %d queues", exploreMaxConds)
+	}
 	for _, v := range q["queue"] {
 		id, err := strconv.Atoi(v)
 		if err != nil || id < 0 {
@@ -154,4 +160,87 @@ func parseBounded(s string, lo, hi int) (int, error) {
 		return 0, fmt.Errorf("%q not in %d-%d", s, lo, hi)
 	}
 	return n, nil
+}
+
+const (
+	metaMinBuildGames = 3 // an exact build must appear this often to be listed
+	metaBuildsPerUnit = 5
+	metaItemsPerUnit  = 6
+)
+
+// handleMetaBuilds serves GET /api/v1/meta/builds?set=18[&queue=1100][&level=8-]:
+// every unit's stats over the matching boards, with its most common exact
+// 3-item builds and most-held items. Computed live from match data, like
+// the explorer.
+func (s *Server) handleMetaBuilds(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	// Only scope parameters apply here; board conditions are rejected rather
+	// than silently ignored.
+	for _, k := range []string{"unit", "item", "trait"} {
+		if q.Has(k) {
+			writeError(w, http.StatusBadRequest, "invalid_filter", k+" isn't supported here; use /api/v1/explore")
+			return
+		}
+	}
+	f, err := parseExploreFilter(q)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_filter", err.Error())
+		return
+	}
+	res, err := s.meta.get(r.Context(), metaCacheKey("builds", f), func(ctx context.Context) (any, error) {
+		return s.Store.MetaBuilds(ctx, f, metaMinBuildGames, metaBuildsPerUnit, metaItemsPerUnit)
+	})
+	if err != nil {
+		writeDBError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// compMinLevel: comps are built from final boards, those of players who
+// reached at least this level.
+const compMinLevel = 8
+
+type MetaCompsResponse struct {
+	Boards int          `json:"boards"` // final boards considered
+	Comps  []comps.Comp `json:"comps"`
+}
+
+// handleMetaComps serves GET /api/v1/meta/comps?set=18[&queue=1100]: team
+// compositions grouped from final boards (level 8+), each with its exact
+// most-played board, variants and flex units (see internal/comps).
+func (s *Server) handleMetaComps(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	for _, k := range []string{"unit", "item", "trait", "level"} {
+		if q.Has(k) {
+			writeError(w, http.StatusBadRequest, "invalid_filter", k+" isn't supported here")
+			return
+		}
+	}
+	f, err := parseExploreFilter(q)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_filter", err.Error())
+		return
+	}
+	res, err := s.meta.get(r.Context(), metaCacheKey("comps", f), func(ctx context.Context) (any, error) {
+		boards, err := s.Store.FinalBoards(ctx, f, compMinLevel)
+		if err != nil {
+			return nil, err
+		}
+		return MetaCompsResponse{Boards: len(boards), Comps: comps.Build(boards, comps.Options{})}, nil
+	})
+	if err != nil {
+		writeDBError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// metaCacheKey identifies a meta result by kind and scope (set, queues in
+// any order, level range). Board conditions never reach here.
+func metaCacheKey(kind string, f store.ExploreFilter) string {
+	queues := slices.Clone(f.Queues)
+	slices.Sort(queues)
+	queues = slices.Compact(queues)
+	return fmt.Sprintf("%s|%d|%v|%d-%d", kind, f.Set, queues, f.LevelMin, f.LevelMax)
 }

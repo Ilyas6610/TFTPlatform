@@ -73,6 +73,19 @@ func (f ExploreFilter) whereClause(args *[]any) string {
 		if len(u.Items) > 0 {
 			items, _ := json.Marshal(u.Items)
 			elem = append(elem, "e->'itemNames' @> "+arg(string(items))+"::jsonb")
+			// Containment ignores duplicates, so an item listed twice (two
+			// Archangel's) also needs a count.
+			counts := map[string]int{}
+			for _, it := range u.Items {
+				counts[it]++
+			}
+			for _, it := range u.Items {
+				if n := counts[it]; n > 1 {
+					elem = append(elem, fmt.Sprintf(
+						"(SELECT count(*) FROM jsonb_array_elements_text(e->'itemNames') i WHERE i = %s) >= %s", arg(it), arg(n)))
+					counts[it] = 0 // once per distinct item
+				}
+			}
 		}
 		conds = append(conds, fmt.Sprintf(
 			"mp.units @> %s::jsonb AND EXISTS (SELECT 1 FROM jsonb_array_elements("+arrayOr("mp.units")+") e WHERE %s)",

@@ -1,17 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   ApiError,
   ExploreOptions,
   ExploreResult,
   ExploreRow,
-  PlacementStats,
   SetData,
   explore,
   getExploreOptions,
   getSetData,
 } from "../api/client";
 import { AssetKind, GameIcon } from "../assets/tft";
+import {
+  Names,
+  StatCells,
+  TIER_STYLE,
+  TraitsBreakdown,
+  avg,
+  buildNames,
+  pct,
+  placementTone,
+  tierLabel,
+} from "../components/stats";
 import { CURRENT_TFT_SET } from "../config";
 
 // The page URL holds the search in the API's own format (see
@@ -64,9 +74,6 @@ function formatTrait(t: TraitCond): string {
 const traitRangeValue = (t: { minUnits: number; maxUnits: number }) =>
   t.minUnits > 0 ? `${t.minUnits}-${t.maxUnits || ""}` : "";
 
-const pct = (n: number) => `${Math.round(n * 100)}%`;
-const avg = (n: number) => n.toFixed(2);
-
 export default function ExplorerPage() {
   const [params, setParams] = useSearchParams();
   const set = Number(params.get("set")) || CURRENT_TFT_SET;
@@ -75,6 +82,12 @@ export default function ExplorerPage() {
   const traits = params.getAll("trait").map(parseTrait);
   const queues = params.getAll("queue");
   const level = params.get("level") ?? "";
+
+  // Conditions already applied show at 100% in their own tables, so they're
+  // left out of the breakdowns; with no conditions the results would just
+  // repeat the Meta tab, so they're hidden.
+  const hasConditions = units.length > 0 || items.length > 0 || traits.length > 0;
+  const requiredItems = new Set([...items, ...units.flatMap((u) => u.items)]);
 
   const [options, setOptions] = useState<ExploreOptions | null>(null);
   const [setData, setSetData] = useState<SetData | null>(null);
@@ -111,8 +124,9 @@ export default function ExplorerPage() {
 
   useEffect(() => {
     // Wait for options: they decide the default queue, and searching before
-    // that would run (and show) an unfiltered search first.
-    if (!options) return;
+    // that would run (and show) an unfiltered search first. Without
+    // conditions there's nothing to show (see hasConditions).
+    if (!options || !hasConditions) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -123,7 +137,7 @@ export default function ExplorerPage() {
     return () => {
       cancelled = true;
     };
-  }, [apiQuery, options]);
+  }, [apiQuery, options, hasConditions]);
 
   function update(fn: (p: URLSearchParams) => void) {
     const next = new URLSearchParams(params);
@@ -145,7 +159,6 @@ export default function ExplorerPage() {
   const addItem = (id: string) => !items.includes(id) && setAll("item", [...items, id]);
   const addTrait = (id: string, minUnits = 0, maxUnits = 0) =>
     setTraits([...traits.filter((t) => t.id !== id), { id, minUnits, maxUnits }]);
-
   return (
     <div className="explorer">
       <div className="panel explorer-controls">
@@ -347,7 +360,16 @@ export default function ExplorerPage() {
       {error && <div className="error-box">{error}</div>}
       {loading && !result && <p className="muted">Loading...</p>}
 
-      {result && (
+      {!hasConditions && (
+        <div className="panel explorer-empty">
+          <p>Add a unit, item or trait above to see how boards running it place, and what else they play.</p>
+          <p className="muted">
+            For the overall picture without conditions, see the <Link to={`/meta/${set}`}>Meta</Link> tab.
+          </p>
+        </div>
+      )}
+
+      {result && hasConditions && (
         <div className={loading ? "explorer-results stale" : "explorer-results"}>
           <Summary result={result} />
 
@@ -378,7 +400,7 @@ export default function ExplorerPage() {
                     ))}
                   </div>
                   <Breakdown
-                    rows={rows}
+                    rows={rows.filter((r) => !units[i].items.includes(r.id))}
                     kind="items"
                     names={names}
                     total={result.summary.boards}
@@ -394,7 +416,7 @@ export default function ExplorerPage() {
             <div className="panel">
               <h3>Units</h3>
               <Breakdown
-                rows={result.units}
+                rows={result.units.filter((r) => !units.some((u) => u.id === r.id))}
                 kind="champions"
                 names={names}
                 total={result.summary.boards}
@@ -404,7 +426,7 @@ export default function ExplorerPage() {
             <div className="panel">
               <h3>Items</h3>
               <Breakdown
-                rows={result.items}
+                rows={result.items.filter((r) => !requiredItems.has(r.id))}
                 kind="items"
                 names={names}
                 total={result.summary.boards}
@@ -414,7 +436,7 @@ export default function ExplorerPage() {
             <div className="panel">
               <h3>Traits</h3>
               <TraitsBreakdown
-                rows={result.traits}
+                rows={result.traits.filter((r) => !traits.some((t) => t.id === r.id))}
                 names={names}
                 total={result.summary.boards}
                 onPick={(id, tier) => addTrait(id, tier?.minUnits ?? 0, tier?.maxUnits ?? 0)}
@@ -534,127 +556,7 @@ function Breakdown({
   );
 }
 
-function StatCells({ row: r, total }: { row: PlacementStats; total: number }) {
-  return (
-    <>
-      <td className="num">
-        {r.boards} <span className="muted share">{pct(r.boards / Math.max(1, total))}</span>
-      </td>
-      <td className={`num ${placementTone(r)}`}>{avg(r.avgPlacement)}</td>
-      <td className="num">{pct(r.top4Rate)}</td>
-    </>
-  );
-}
-
-// Trait style -> the bronze/silver/gold/prismatic badge classes (as in
 // SetInfoPage).
-const TIER_STYLE: Record<number, number> = { 1: 1, 2: 2, 3: 2, 4: 3, 5: 3, 6: 4 };
-
-/**
- * Traits grouped by trait: a summary row (any active tier) followed by one
- * row per tier reached. Clicking a tier filters to exactly that tier.
- */
-function TraitsBreakdown({
-  rows,
-  names,
-  total,
-  onPick,
-}: {
-  rows: ExploreRow[];
-  names: Names;
-  total: number;
-  onPick: (id: string, tier?: TraitTier) => void;
-}) {
-  const [all, setAll] = useState(false);
-  useEffect(() => setAll(false), [rows]);
-  const groups = useMemo(() => {
-    const byTrait = new Map<string, ExploreRow[]>();
-    for (const r of rows) byTrait.set(r.id, [...(byTrait.get(r.id) ?? []), r]);
-    return [...byTrait.entries()]
-      .map(([id, tiers]) => {
-        // A board has one tier per trait, so tier rows add up exactly.
-        const boards = tiers.reduce((n, t) => n + t.boards, 0);
-        const weighted = (k: "avgPlacement" | "top4Rate" | "winRate") =>
-          tiers.reduce((n, t) => n + t[k] * t.boards, 0) / Math.max(1, boards);
-        const summary: PlacementStats = {
-          boards,
-          avgPlacement: weighted("avgPlacement"),
-          top4Rate: weighted("top4Rate"),
-          winRate: weighted("winRate"),
-        };
-        return { id, summary, tiers: [...tiers].sort((a, b) => (a.tier ?? 0) - (b.tier ?? 0)) };
-      })
-      .sort((a, b) => b.summary.boards - a.summary.boards);
-  }, [rows]);
-  if (groups.length === 0) return <p className="muted">Nothing to show.</p>;
-  const shown = all ? groups : groups.slice(0, 8);
-  return (
-    <>
-      <table className="breakdown traits-breakdown">
-        <thead>
-          <tr>
-            <th></th>
-            <th>Boards</th>
-            <th>Avg</th>
-            <th>Top 4</th>
-          </tr>
-        </thead>
-        {shown.map((g) => (
-          <tbody key={g.id} className="trait-group">
-            <tr
-              className="clickable explore-trait-row"
-              title={`${names.name(g.id)}, any tier — add as a condition`}
-              onClick={() => onPick(g.id)}
-            >
-              <td className="name-cell">
-                <GameIcon
-                  kind="traits"
-                  id={g.id}
-                  size={20}
-                  fallbackSrc={names.icon(g.id)}
-                  fallbackName={names.name(g.id)}
-                />
-                <span>{names.name(g.id)}</span>
-              </td>
-              <StatCells row={g.summary} total={total} />
-            </tr>
-            {g.tiers.map((r) => {
-              const tier = names.tier(g.id, r.tier ?? 0);
-              const label = tier ? tierLabel(tier) : `tier ${r.tier}`;
-              return (
-                <tr
-                  key={r.tier}
-                  className="clickable explore-tier-row"
-                  title={`${names.name(g.id)} ${label} — add as a condition`}
-                  onClick={() => onPick(g.id, tier)}
-                >
-                  <td className="name-cell">
-                    <span className={`trait-badge trait-style-${TIER_STYLE[tier?.style ?? 1] ?? 1}`}>{label}</span>
-                  </td>
-                  <StatCells row={r} total={total} />
-                </tr>
-              );
-            })}
-          </tbody>
-        ))}
-      </table>
-      {groups.length > 8 && (
-        <button type="button" className="show-more" onClick={() => setAll(!all)}>
-          {all ? "Show less" : `Show all ${groups.length} traits`}
-        </button>
-      )}
-    </>
-  );
-}
-
-const tierLabel = (t: TraitTier) =>
-  t.maxUnits === 0 ? `${t.minUnits}+` : t.minUnits === t.maxUnits ? `${t.minUnits}` : `${t.minUnits}–${t.maxUnits}`;
-
-function placementTone(r: PlacementStats): string {
-  if (r.boards < 5) return "muted";
-  return r.avgPlacement <= 4 ? "good" : r.avgPlacement >= 5 ? "bad" : "";
-}
-
 /** Searchable dropdown over ids present in the match data, most common first. */
 interface PickerOption {
   id: string;
@@ -759,50 +661,4 @@ function Picker({
       )}
     </div>
   );
-}
-
-interface TraitTier {
-  index: number; // 1-based, as tier_current
-  minUnits: number;
-  maxUnits: number; // 0 for the top tier (no upper bound)
-  style: number;
-}
-
-interface Names {
-  name: (id: string) => string;
-  icon: (id: string) => string | undefined;
-  tiers: (traitId: string) => TraitTier[];
-  /** The breakpoint for tier_current = tier (1-based). */
-  tier: (traitId: string, tier: number) => TraitTier | undefined;
-}
-
-/** Display names, icons and trait tiers from the set data. */
-function buildNames(d: SetData | null): Names {
-  const byId = new Map<string, { name: string; icon?: string }>();
-  const traitTiers = new Map<string, TraitTier[]>();
-  if (d) {
-    for (const x of [...d.units, ...d.items, ...(d.wisps ?? []), ...d.augments]) byId.set(x.apiName, x);
-    for (const t of d.traits) {
-      byId.set(t.apiName, t);
-      const bps = t.breakpoints.filter((b) => b.minUnits > 0);
-      traitTiers.set(
-        t.apiName,
-        bps.map((b, i) => ({
-          index: i + 1,
-          minUnits: b.minUnits,
-          // A tier runs up to the next breakpoint; the last one is open.
-          // Some traits repeat a breakpoint (Rival: 1, 1, 2), so a tier
-          // never ends below where it starts.
-          maxUnits: i + 1 < bps.length ? Math.max(b.minUnits, bps[i + 1].minUnits - 1) : 0,
-          style: b.style,
-        })),
-      );
-    }
-  }
-  return {
-    name: (id) => byId.get(id)?.name ?? id.replace(/^(DA_18_|DA_|TFT\d*_Item_|TFT\d*_)/, ""),
-    icon: (id) => byId.get(id)?.icon,
-    tiers: (id) => traitTiers.get(id) ?? [],
-    tier: (id, tier) => traitTiers.get(id)?.[tier - 1],
-  };
 }

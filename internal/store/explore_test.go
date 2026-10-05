@@ -257,3 +257,19 @@ func TestExplore_TraitBreakdownIncludesEveryTier(t *testing.T) {
 		t.Errorf("other breakdowns keep the limit")
 	}
 }
+
+func TestExplore_DuplicateItemsNeedEveryCopy(t *testing.T) {
+	st := storetest.New(t)
+	seedExplore(t, st, "M1", 1100, []board{
+		{1, 9, []map[string]any{unit("Zyra", 2, "AA", "AA", "Gunblade")}, nil},
+		{2, 9, []map[string]any{unit("Zyra", 2, "AA", "Gunblade", "Shojin")}, nil},
+	})
+	exact := explore(t, st, store.ExploreFilter{Units: []store.UnitCond{{ID: "Zyra", Items: []string{"AA", "AA", "Gunblade"}}}})
+	if exact.Summary.Boards != 1 {
+		t.Errorf("two Archangel's: got %d boards, want only the board holding both", exact.Summary.Boards)
+	}
+	single := explore(t, st, store.ExploreFilter{Units: []store.UnitCond{{ID: "Zyra", Items: []string{"AA"}}}})
+	if single.Summary.Boards != 2 {
+		t.Errorf("one Archangel's: got %d boards, want 2", single.Summary.Boards)
+	}
+}
