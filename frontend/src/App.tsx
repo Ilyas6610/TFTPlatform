@@ -3,6 +3,7 @@ import ProfilePage from "./pages/ProfilePage";
 import MatchDetailPage from "./pages/MatchDetailPage";
 import LeaderboardPage from "./pages/LeaderboardPage";
 import MetaStatsPage from "./pages/MetaStatsPage";
+import { CURRENT_TFT_SET } from "./config";
 
 export default function App() {
   return (
@@ -14,7 +15,7 @@ export default function App() {
             Profile
           </NavLink>
           <NavLink to="/leaderboard/na1">Leaderboard</NavLink>
-          <NavLink to="/meta/17">Meta</NavLink>
+          <NavLink to={`/meta/${CURRENT_TFT_SET}`}>Meta</NavLink>
         </nav>
       </header>
       <main className="app-main">

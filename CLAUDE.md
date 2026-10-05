@@ -36,7 +36,11 @@ Personal Riot API keys expire every 24h — refresh `deploy/.secrets/riot-api-ke
 npm install
 npm run dev      # Vite dev server on :5173, proxies /api to localhost:8080
 npm run build    # tsc -b && vite build
+npm run assets   # download TFT icons + manifest from Data Dragon into public/tft/ (gitignored, ~100 MB; re-run after a patch)
 ```
+Game icons are looked up through `src/assets/tft.tsx` (`GameIcon`, `GameLabel`, `lookup`), keyed by Riot API id (`TFT17_Jinx`, `TFT_Item_InfinityEdge`). Without downloaded assets the UI falls back to text names. Profile icons load from the Data Dragon CDN rather than being downloaded.
+
+The live TFT set number is `CURRENT_TFT_SET` in `frontend/src/config.ts` — the only place to bump when a new set launches. The backend is set-agnostic (aggregation runs for every `tft_set_number` present in `matches`).
 
 ## Architecture
 

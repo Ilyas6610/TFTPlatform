@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ApiError, PlayerMatchSummary, PlayerProfile, getPlayerMatches, getPlayerProfile } from "../api/client";
+import { profileIconUrl, useManifest } from "../assets/tft";
 
 const PLATFORMS = ["na1", "euw1", "eun1", "kr", "jp1", "br1", "la1", "la2", "oc1", "tr1", "ru"];
 
@@ -15,6 +16,7 @@ export default function ProfilePage() {
   const [matches, setMatches] = useState<PlayerMatchSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const manifest = useManifest();
 
   useEffect(() => {
     if (!region || !name || !tag) return;
@@ -68,15 +70,26 @@ export default function ProfilePage() {
       {error && <div className="error-box">{error}</div>}
 
       {profile && (
-        <div className="panel">
-          <h2>
-            {profile.gameName}
-            <span className="tag">#{profile.tagLine}</span>
-          </h2>
-          <p className="muted">
-            {profile.platformRegion.toUpperCase()} &middot; Level {profile.summonerLevel} &middot; source:{" "}
-            {profile.source}
-          </p>
+        <div className="panel profile-header">
+          {profileIconUrl(manifest, profile.profileIconId) && (
+            <img
+              className="profile-icon"
+              src={profileIconUrl(manifest, profile.profileIconId)!}
+              alt=""
+              width={64}
+              height={64}
+            />
+          )}
+          <div>
+            <h2>
+              {profile.gameName}
+              <span className="tag">#{profile.tagLine}</span>
+            </h2>
+            <p className="muted">
+              {profile.platformRegion.toUpperCase()} &middot; Level {profile.summonerLevel} &middot; source:{" "}
+              {profile.source}
+            </p>
+          </div>
         </div>
       )}
 

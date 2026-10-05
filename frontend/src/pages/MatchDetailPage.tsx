@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { ApiError, MatchDetail, getMatch } from "../api/client";
+import { GameIcon } from "../assets/tft";
 
 export default function MatchDetailPage() {
   const { matchId } = useParams();
@@ -39,29 +40,35 @@ export default function MatchDetailPage() {
           <h3>
             <span className={`placement placement-${p.placement}`}>#{p.placement}</span> Level {p.level}
           </h3>
-          <div className="unit-grid">
-            {p.units.map((u, i) => (
-              <span className="unit-chip" key={i}>
-                {formatId(u.character_id)} {"★".repeat(u.tier)}
-              </span>
-            ))}
-          </div>
-          <div className="unit-grid" style={{ marginTop: 8 }}>
+          <div className="trait-row">
             {p.traits
               .filter((t) => t.tier_current > 0)
-              .map((t, i) => (
-                <span className="unit-chip" key={i}>
-                  {formatId(t.name)} ({t.num_units})
+              .sort((a, b) => b.style - a.style || b.num_units - a.num_units)
+              .map((t) => (
+                <span className={`trait-badge trait-style-${t.style}`} key={t.name}>
+                  <GameIcon kind="traits" id={t.name} size={20} />
+                  {t.num_units}
                 </span>
               ))}
+            {p.augments?.map((a) => (
+              <GameIcon kind="augments" id={a} size={28} key={a} className="augment-icon" />
+            ))}
+          </div>
+          <div className="unit-grid">
+            {p.units.map((u, i) => (
+              <div className="unit-card" key={i}>
+                <span className="unit-stars">{"★".repeat(u.tier)}</span>
+                <GameIcon kind="champions" id={u.character_id} size={48} />
+                <span className="unit-items">
+                  {u.itemNames.map((item, j) => (
+                    <GameIcon kind="items" id={item} size={16} key={j} />
+                  ))}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       ))}
     </div>
   );
-}
-
-function formatId(id: string): string {
-  const idx = id.indexOf("_");
-  return idx >= 0 ? id.slice(idx + 1) : id;
 }

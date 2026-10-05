@@ -9,11 +9,13 @@ import {
   getMetaTraits,
   getMetaUnits,
 } from "../api/client";
+import { GameLabel } from "../assets/tft";
+import { CURRENT_TFT_SET } from "../config";
 
 type Tab = "units" | "traits" | "augments";
 
 export default function MetaStatsPage() {
-  const { set = "17" } = useParams();
+  const { set = String(CURRENT_TFT_SET) } = useParams();
   const navigate = useNavigate();
   const setNumber = Number(set);
 
@@ -66,59 +68,69 @@ export default function MetaStatsPage() {
 
       {!loading && !error && tab === "units" && (
         <div className="panel">
-          <table>
-            <thead>
-              <tr>
-                <th>Unit</th>
-                <th>Games</th>
-                <th>Avg Place</th>
-                <th>Win %</th>
-                <th>Top 4 %</th>
-                <th>Pick %</th>
-              </tr>
-            </thead>
-            <tbody>
-              {units.map((u) => (
-                <tr key={u.characterId}>
-                  <td>{formatId(u.characterId)}</td>
-                  <td>{u.gamesPlayed}</td>
-                  <td>{u.avgPlacement.toFixed(2)}</td>
-                  <td>{pct(u.winRate)}</td>
-                  <td>{pct(u.top4Rate)}</td>
-                  <td>{pct(u.pickRate)}</td>
+          {units.length === 0 && <p className="muted">No unit data for this set yet.</p>}
+          {units.length > 0 && (
+            <table>
+              <thead>
+                <tr>
+                  <th>Unit</th>
+                  <th>Games</th>
+                  <th>Avg Place</th>
+                  <th>Win %</th>
+                  <th>Top 4 %</th>
+                  <th>Pick %</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {units.map((u) => (
+                  <tr key={u.characterId}>
+                    <td>
+                      <GameLabel kind="champions" id={u.characterId} />
+                    </td>
+                    <td>{u.gamesPlayed}</td>
+                    <td>{u.avgPlacement.toFixed(2)}</td>
+                    <td>{pct(u.winRate)}</td>
+                    <td>{pct(u.top4Rate)}</td>
+                    <td>{pct(u.pickRate)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
 
       {!loading && !error && tab === "traits" && (
         <div className="panel">
-          <table>
-            <thead>
-              <tr>
-                <th>Trait</th>
-                <th>Tier</th>
-                <th>Games</th>
-                <th>Avg Place</th>
-                <th>Win %</th>
-                <th>Top 4 %</th>
-              </tr>
-            </thead>
-            <tbody>
-              {traits.map((t, i) => (
-                <tr key={`${t.traitName}-${t.traitTier}-${i}`}>
-                  <td>{formatId(t.traitName)}</td>
-                  <td>{t.traitTier}</td>
-                  <td>{t.gamesPlayed}</td>
-                  <td>{t.avgPlacement.toFixed(2)}</td>
-                  <td>{pct(t.winRate)}</td>
-                  <td>{pct(t.top4Rate)}</td>
+          {traits.length === 0 && <p className="muted">No trait data for this set yet.</p>}
+          {traits.length > 0 && (
+            <table>
+              <thead>
+                <tr>
+                  <th>Trait</th>
+                  <th>Tier</th>
+                  <th>Games</th>
+                  <th>Avg Place</th>
+                  <th>Win %</th>
+                  <th>Top 4 %</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {traits.map((t, i) => (
+                  <tr key={`${t.traitName}-${t.traitTier}-${i}`}>
+                    <td>
+                      <GameLabel kind="traits" id={t.traitName} />
+                    </td>
+                    <td>{t.traitTier}</td>
+                    <td>{t.gamesPlayed}</td>
+                    <td>{t.avgPlacement.toFixed(2)}</td>
+                    <td>{pct(t.winRate)}</td>
+                    <td>{pct(t.top4Rate)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
 
@@ -139,7 +151,9 @@ export default function MetaStatsPage() {
               <tbody>
                 {augments.map((a) => (
                   <tr key={a.augmentId}>
-                    <td>{formatId(a.augmentId)}</td>
+                    <td>
+                      <GameLabel kind="augments" id={a.augmentId} />
+                    </td>
                     <td>{a.gamesPlayed}</td>
                     <td>{a.avgPlacement.toFixed(2)}</td>
                     <td>{pct(a.winRate)}</td>
@@ -157,9 +171,4 @@ export default function MetaStatsPage() {
 
 function pct(n: number): string {
   return `${(n * 100).toFixed(1)}%`;
-}
-
-function formatId(id: string): string {
-  const idx = id.indexOf("_");
-  return idx >= 0 ? id.slice(idx + 1) : id;
 }

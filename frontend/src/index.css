@@ -202,3 +202,112 @@ tr.clickable:hover {
   gap: 8px;
   margin-bottom: 16px;
 }
+
+/* ---- Game icons (see src/assets/tft.tsx) ---- */
+
+.game-icon {
+  display: inline-block;
+  flex-shrink: 0;
+  border-radius: 4px;
+  object-fit: cover;
+  vertical-align: middle;
+  background: var(--bg);
+}
+
+/* Data Dragon champion art is a 2:1 splash crop; keep the face in frame. */
+.game-icon-champions {
+  object-position: 75% center;
+  border: 2px solid var(--border);
+}
+
+.game-icon-champions.cost-1 { border-color: #9aa4af; }
+.game-icon-champions.cost-2 { border-color: #1bc660; }
+.game-icon-champions.cost-3 { border-color: #1b8ae0; }
+.game-icon-champions.cost-4 { border-color: #c440da; }
+.game-icon-champions.cost-5 { border-color: #ffb93b; }
+
+.game-icon-traits {
+  object-fit: contain;
+  background: none;
+}
+
+.game-icon-missing {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+}
+
+.game-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.unit-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 52px;
+}
+
+.unit-stars {
+  color: var(--accent);
+  font-size: 0.7rem;
+  line-height: 1;
+  min-height: 0.7rem;
+}
+
+.unit-items {
+  display: flex;
+  gap: 1px;
+  min-height: 16px;
+}
+
+.trait-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.trait-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px 2px 4px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 0.8rem;
+}
+
+/* Riot's trait "style": 1 bronze, 2 silver, 3 gold, 4 prismatic/chromatic */
+.trait-style-1 { border-color: #8c5a3c; background: #2a1d14; }
+.trait-style-2 { border-color: #8a9aa8; background: #1f252b; }
+.trait-style-3 { border-color: #d4a640; background: #2e2510; }
+.trait-style-4 { border-color: #b98af2; background: #261d33; }
+
+.augment-icon {
+  margin-left: 4px;
+}
+
+.profile-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.profile-header h2 {
+  margin-bottom: 4px;
+}
+
+.profile-icon {
+  border-radius: 50%;
+  border: 2px solid var(--accent-dim);
+}

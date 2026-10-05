@@ -60,7 +60,8 @@ export interface MatchParticipant {
   last_round: number;
   total_damage_to_players: number;
   units: { character_id: string; tier: number; itemNames: string[] }[];
-  traits: { name: string; num_units: number; tier_current: number; tier_total: number }[];
+  traits: { name: string; num_units: number; style: number; tier_current: number; tier_total: number }[];
+  augments?: string[];
 }
 
 export interface MatchDetail {

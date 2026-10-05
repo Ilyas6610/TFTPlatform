@@ -16,3 +16,6 @@ frontend/*.tsbuildinfo
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Downloaded TFT assets (regenerate with: cd frontend && npm run assets)
+frontend/public/tft/
