@@ -71,6 +71,8 @@ h3 {
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 16px;
+  /* Wide tables (leaderboard, stats) scroll inside the panel on phones. */
+  overflow-x: auto;
 }
 
 .search-form {
@@ -198,6 +200,7 @@ tr.clickable:hover {
 
 .set-picker {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin-bottom: 16px;
@@ -558,3 +561,70 @@ td a:hover {
   line-height: 1.4;
   cursor: help;
 }
+
+.rewards {
+  margin-top: 6px;
+}
+
+.rewards summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+
+.reward-table h5 {
+  margin: 10px 0 4px;
+  font-size: 0.85rem;
+}
+
+.reward-table table {
+  font-size: 0.82rem;
+}
+
+.reward-table th,
+.reward-table td {
+  padding: 4px 8px;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.reward-note {
+  font-size: 0.78rem;
+  margin: 4px 0;
+}
+
+.reward-note a {
+  color: var(--accent);
+}
+
+.app-footer {
+  border-top: 1px solid var(--border);
+  margin-top: 32px;
+  padding-top: 16px;
+  font-size: 0.78rem;
+}
+
+.patch-sub a {
+  color: var(--accent);
+}
+
+.desc-source {
+  font-size: 0.75rem;
+  margin: 0 0 4px;
+}
+
+.desc-source a {
+  color: var(--accent);
+}
+
+/* Numbers in descriptions, colored by what they scale with. */
+.desc-value {
+  font-weight: 600;
+}
+.value-plain { color: var(--text); }
+.value-ad { color: #f0a050; }
+.value-ap { color: #6fb6ff; }
+.value-hp { color: #6fd18a; }
+.value-defense { color: #d8c27a; }

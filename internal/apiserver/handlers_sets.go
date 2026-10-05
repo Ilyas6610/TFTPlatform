@@ -23,12 +23,16 @@ type SetDataResponse struct {
 }
 
 type PatchNotesResponse struct {
-	Patch           string           `json:"patch"`
-	Version         string           `json:"version"`
-	PreviousPatch   string           `json:"previousPatch"`
-	PreviousVersion string           `json:"previousVersion"`
-	FetchedAt       string           `json:"fetchedAt"`
-	Changes         []setdata.Change `json:"changes"`
+	Patch string `json:"patch"`
+	// TFTPatch is Riot's TFT numbering for Patch ("18.3"), and
+	// OfficialNotesURL its official notes; both empty when unknown.
+	TFTPatch         string           `json:"tftPatch,omitempty"`
+	OfficialNotesURL string           `json:"officialNotesUrl,omitempty"`
+	Version          string           `json:"version"`
+	PreviousPatch    string           `json:"previousPatch"`
+	PreviousVersion  string           `json:"previousVersion"`
+	FetchedAt        string           `json:"fetchedAt"`
+	Changes          []setdata.Change `json:"changes"`
 }
 
 // loadSetSnapshots parses {set} and loads its snapshots, writing the error
@@ -74,6 +78,13 @@ func (s *Server) handleSetData(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	setdata.AttachRewards(chosen.SetData)
+	overrides, err := setdata.LoadTextOverrides(r.Context(), s.Store, chosen.SetNumber)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	setdata.AttachTextOverrides(chosen.SetData, overrides)
 	resp := SetDataResponse{SetData: chosen.SetData, Patch: chosen.Patch, FetchedAt: chosen.FetchedAt.Format(time.RFC3339)}
 	for i := len(snaps) - 1; i >= 0; i-- {
 		resp.Versions = append(resp.Versions, SetVersionResponse{
@@ -102,13 +113,16 @@ func (s *Server) handleSetPatches(w http.ResponseWriter, r *http.Request) {
 		if changes == nil {
 			changes = []setdata.Change{}
 		}
+		tftPatch := setdata.TFTPatch(cur.SetNumber, cur.Patch)
 		out = append(out, PatchNotesResponse{
-			Patch:           cur.Patch,
-			Version:         cur.Version,
-			PreviousPatch:   prev.Patch,
-			PreviousVersion: prev.Version,
-			FetchedAt:       cur.FetchedAt.Format(time.RFC3339),
-			Changes:         changes,
+			Patch:            cur.Patch,
+			TFTPatch:         tftPatch,
+			OfficialNotesURL: setdata.OfficialNotesURL(tftPatch),
+			Version:          cur.Version,
+			PreviousPatch:    prev.Patch,
+			PreviousVersion:  prev.Version,
+			FetchedAt:        cur.FetchedAt.Format(time.RFC3339),
+			Changes:          changes,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)

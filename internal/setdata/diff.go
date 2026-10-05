@@ -12,8 +12,8 @@ type Change struct {
 	APIName  string `json:"apiName"`
 	Name     string `json:"name"`
 	// Kind is "changed" for a value that moved, "added"/"removed" for a
-	// whole entity, or "text" for a description reworded without a tracked
-	// number changing.
+	// whole entity, "renamed" (Field holds the old name), or "text" for a
+	// description reworded without a tracked number changing.
 	Kind  string   `json:"kind"`
 	Field string   `json:"field,omitempty"` // e.g. "hp", "cost", "(5) StonebarkTreeBonusHealth"
 	Old   *float64 `json:"old,omitempty"`
@@ -90,18 +90,69 @@ func itemEntity(it Item) entity {
 	return entity{it.APIName, it.Name, it.Values, it.Desc}
 }
 
+// pairEntities matches new entities to old ones: by apiName first (so a
+// rename is a change, not an add + remove), then — among what's left — by
+// name when the name is unique on both sides. The second pass catches Riot
+// swapping an entity's id between patches (16.18
+// TFT_Augment_ExpectedUnexpectedness -> 16.19 DA_ExpectedUnexpectedness).
+// It returns new apiName -> old apiName, plus which pairs were id swaps.
+func pairEntities(old, new map[string]entity) (pairs map[string]string, swapped map[string]bool) {
+	pairs, swapped = map[string]string{}, map[string]bool{}
+	pairedOld := map[string]bool{}
+	for api := range new {
+		if _, ok := old[api]; ok {
+			pairs[api] = api
+			pairedOld[api] = true
+		}
+	}
+	byName := func(m map[string]entity, skip func(string) bool) map[string][]string {
+		out := map[string][]string{}
+		for api, e := range m {
+			if !skip(api) {
+				out[augmentKey(e.name)] = append(out[augmentKey(e.name)], api)
+			}
+		}
+		return out
+	}
+	oldLeft := byName(old, func(api string) bool { return pairedOld[api] })
+	newLeft := byName(new, func(api string) bool { _, ok := pairs[api]; return ok })
+	for name, news := range newLeft {
+		if olds := oldLeft[name]; len(news) == 1 && len(olds) == 1 {
+			pairs[news[0]] = olds[0]
+			swapped[news[0]] = true
+		}
+	}
+	return pairs, swapped
+}
+
 func diffEntities(category string, old, new map[string]entity) []Change {
+	pairs, swapped := pairEntities(old, new)
+	pairedOld := map[string]bool{}
+	for _, o := range pairs {
+		pairedOld[o] = true
+	}
+
 	var out []Change
-	for _, n := range sortedByName(new) {
-		o, existed := old[n.apiName]
+	for _, api := range sortedKeysByName(new) {
+		n := new[api]
+		oldAPI, existed := pairs[api]
 		if !existed {
 			out = append(out, Change{Category: category, APIName: n.apiName, Name: n.name, Kind: "added"})
 			continue
+		}
+		o := old[oldAPI]
+		if o.name != n.name {
+			out = append(out, Change{Category: category, APIName: n.apiName, Name: n.name, Kind: "renamed", Field: o.name})
 		}
 		numberChanged := false
 		for _, field := range sortedKeys(n.numbers, o.numbers) {
 			ov, inOld := o.numbers[field]
 			nv, inNew := n.numbers[field]
+			// Across an id swap the two objects define different fields;
+			// only values both define are comparable.
+			if swapped[api] && !(inOld && inNew) {
+				continue
+			}
 			if inOld && inNew && roundTo(ov, 4) == roundTo(nv, 4) {
 				continue
 			}
@@ -121,26 +172,29 @@ func diffEntities(category string, old, new map[string]entity) []Change {
 			out = append(out, Change{Category: category, APIName: n.apiName, Name: n.name, Kind: "text"})
 		}
 	}
-	for _, o := range sortedByName(old) {
-		if _, ok := new[o.apiName]; !ok {
+	for _, api := range sortedKeysByName(old) {
+		if !pairedOld[api] {
+			o := old[api]
 			out = append(out, Change{Category: category, APIName: o.apiName, Name: o.name, Kind: "removed"})
 		}
 	}
 	return out
 }
 
-func sortedByName(m map[string]entity) []entity {
-	out := make([]entity, 0, len(m))
-	for _, e := range m {
-		out = append(out, e)
+// sortedKeysByName returns m's keys ordered by entity name, then apiName.
+func sortedKeysByName(m map[string]entity) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].name != out[j].name {
-			return out[i].name < out[j].name
+	sort.Slice(keys, func(i, j int) bool {
+		a, b := m[keys[i]], m[keys[j]]
+		if a.name != b.name {
+			return a.name < b.name
 		}
-		return out[i].apiName < out[j].apiName
+		return a.apiName < b.apiName
 	})
-	return out
+	return keys
 }
 
 func sortedKeys(maps ...map[string]float64) []string {

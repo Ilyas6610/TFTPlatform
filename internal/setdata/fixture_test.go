@@ -36,7 +36,12 @@ func (f fixture) json(t *testing.T) []byte {
 			},
 		}
 	}
-	augments := []any{"DA_18_ItemExtraction", "DA_18_SilverThing"}
+	augments := []any{
+		"DA_18_ItemExtraction", "DA_18_SilverThing",
+		"TFT_Augment_ItemExtraction",                 // legacy copy of Item Extraction
+		"TFT9_Augment_OldFavorite",                   // legacy, no set-specific twin
+		"DA_18_Primal_Nidalee", "DA_18_Primal_Sivir", // distinct same-named variants
+	}
 	if f.extraAugment {
 		augments = append(augments, "DA_18_NewAugment")
 	}
@@ -68,7 +73,8 @@ func (f fixture) json(t *testing.T) []byte {
 					},
 				},
 				"augments": augments,
-				"items":    []any{"TFT_Item_BFSword", "TFT_Item_Deathblade", "DA_Barrier18", "DA_Barrier18_Upgrade", "TFT_Assist_Gold_1", "DA_PhantomEmblem18"},
+				"items": []any{"TFT_Item_BFSword", "TFT_Item_Deathblade", "DA_Barrier18", "DA_Barrier18_Upgrade", "TFT_Assist_Gold_1", "DA_PhantomEmblem18",
+					"DA_Component_BFSword", "DA_Deathblade", "DA_HealthPotion18", "TFT_Item_DebugBase"},
 			},
 			map[string]any{"number": 17, "mutator": "TFTSet17", "champions": []any{}, "traits": []any{}, "augments": []any{}, "items": []any{}},
 		},
@@ -86,12 +92,21 @@ func (f fixture) json(t *testing.T) []byte {
 				"associatedTraits": []any{"DA_18_Elderwood"},
 			},
 			map[string]any{"apiName": "DA_18_NewAugment", "name": "Brand New", "desc": "New!", "icon": "assets/x/new-iii.tex", "effects": map[string]any{}},
+			map[string]any{"apiName": "TFT_Augment_ItemExtraction", "name": "An item extraction", "desc": "Old text.", "icon": "assets/x/a-ii.tex", "effects": map[string]any{}},
+			map[string]any{"apiName": "TFT9_Augment_OldFavorite", "name": "Old Favorite", "desc": "Still here.", "icon": "assets/x/b-ii.tex", "effects": map[string]any{}},
+			map[string]any{"apiName": "DA_18_Primal_Nidalee", "name": "Beast Within", "desc": "Nidalee.", "icon": "assets/x/c-ii.tex", "effects": map[string]any{}},
+			map[string]any{"apiName": "DA_18_Primal_Sivir", "name": "Beast Within", "desc": "Sivir.", "icon": "assets/x/d-ii.tex", "effects": map[string]any{}},
 			map[string]any{"apiName": "TFT_Item_BFSword", "name": "B.F. Sword", "desc": "+10 AD", "effects": map[string]any{}},
 			map[string]any{"apiName": "TFT_Item_Deathblade", "name": "Deathblade", "desc": "Big damage", "composition": []any{"TFT_Item_BFSword", "TFT_Item_BFSword"}, "effects": map[string]any{}},
 			map[string]any{"apiName": "DA_Barrier18", "name": "Barrier", "desc": "Shield", "effects": map[string]any{}},
 			map[string]any{"apiName": "DA_Barrier18_Upgrade", "name": "Barrier", "desc": "Bigger shield", "effects": map[string]any{}},
 			map[string]any{"apiName": "TFT_Assist_Gold_1", "name": "1 gold", "desc": "Gain 1 gold", "effects": map[string]any{}},
 			map[string]any{"apiName": "DA_PhantomEmblem18", "name": "Phantom Emblem", "desc": "Holder gains Phantom", "effects": map[string]any{}},
+			// Set 18's own items: no description in the export.
+			map[string]any{"apiName": "DA_Component_BFSword", "name": "B.F. Sword", "desc": nil, "effects": map[string]any{}},
+			map[string]any{"apiName": "DA_Deathblade", "name": "Deathblade", "desc": nil, "composition": []any{"DA_Component_BFSword", "DA_Component_BFSword"}, "effects": map[string]any{}},
+			map[string]any{"apiName": "DA_HealthPotion18", "name": "Health Potion", "desc": nil, "effects": map[string]any{}},
+			map[string]any{"apiName": "TFT_Item_DebugBase", "name": "MissingNo", "desc": "Error 404.", "effects": map[string]any{}},
 		},
 	}
 	b, err := json.Marshal(export)
@@ -103,9 +118,48 @@ func (f fixture) json(t *testing.T) []byte {
 
 func mustExtract(t *testing.T, f fixture, version string) *SetData {
 	t.Helper()
-	d, err := Extract(f.json(t), 18, version)
+	d, err := Extract(f.json(t), 18, version, nil)
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
 	return d
+}
+
+// fixtureMap22 is a minimal map22.bin.json: Set 18's definition pointing at
+// its own lists plus a shared one, keyed by hash like the real file.
+func fixtureMap22(t *testing.T) []byte {
+	t.Helper()
+	items := map[string]string{} // entry key -> apiName
+	entries := map[string]any{}
+	addItem := func(api string) string {
+		key := varHash("Items/" + api)
+		items[key] = api
+		entries[key] = map[string]any{"mName": api, "__type": "TftItemData"}
+		return key
+	}
+	list := func(name string, apis ...string) string {
+		var refs []string
+		for _, a := range apis {
+			refs = append(refs, addItem(a))
+		}
+		key := varHash("Lists/" + name)
+		entries[key] = map[string]any{"name": name, "mItems": refs, "__type": "TFTItemList"}
+		return key
+	}
+	entries["Maps/Shipping/Map22/Sets/TFTSet18"] = map[string]any{
+		"name": "TFTSet18", "__type": "TFTSetData",
+		"itemLists": []string{
+			list("Common_Items", "TFT_Item_BFSword", "TFT_Item_Deathblade", "TFT_Item_DebugBase", "TFT_Assist_Gold_1"),
+			list("Set18_Items", "DA_Component_BFSword", "DA_Deathblade", "DA_HealthPotion18"),
+			list("Set18_Items_Augments", "DA_18_ItemExtraction", "DA_18_SilverThing", "DA_18_Primal_Nidalee", "DA_18_Primal_Sivir"),
+			list("TFTSet18_Items_Charms", "DA_Barrier18", "DA_Barrier18_Upgrade", "DA_PhantomEmblem18"),
+		},
+	}
+	entries["Some/Vfx"] = map[string]any{"__type": "VfxSystemDefinitionData", "huge": []int{1, 2, 3}}
+	entries["{deadbeef}"] = "not an object"
+	b, err := json.Marshal(entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }

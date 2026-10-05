@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, NavLink, useParams, useSearchParams } from "react-router-dom";
 import {
   ApiError,
+  AugmentRewards,
+  DescSource,
   PatchChange,
   PatchNotes,
   SetAugment,
@@ -98,7 +100,9 @@ export default function SetInfoPage() {
             <select
               id="patch-select"
               value={data.version}
-              onChange={(e) => updateParam("version", e.target.value === data.versions[0].version ? "" : e.target.value)}
+              onChange={(e) =>
+                updateParam("version", e.target.value === data.versions[0].version ? "" : e.target.value)
+              }
             >
               {data.versions.map((v, i) => (
                 <option key={v.version} value={v.version}>
@@ -156,21 +160,80 @@ function fmt(n: number): string {
  * values the game computes at runtime and doesn't publish; they render as a
  * styled label rather than a number.
  */
-function Desc({ text }: { text: string }) {
+function Desc({ text, source }: { text: string; source?: DescSource }) {
   const parts = text.split(/(\[\[[^\]]+\]\])/);
   return (
-    <p className="set-desc">
-      {parts.map((part, i) =>
-        part.startsWith("[[") && part.endsWith("]]") ? (
-          <span key={i} className="unknown-value" title="Not in Riot's published game data">
-            {part.slice(2, -2)}
-          </span>
-        ) : (
-          part
-        ),
+    <>
+      <p className="set-desc">
+        {parts.map((part, i) =>
+          part.startsWith("[[") && part.endsWith("]]") ? (
+            <span key={i} className="unknown-value" title="Not in Riot's published game data">
+              {part.slice(2, -2)}
+            </span>
+          ) : (
+            highlightNumbers(part, i)
+          ),
+        )}
+      </p>
+      {source && (
+        <p className="muted desc-source">
+          Values from{" "}
+          {source.url ? (
+            <a href={source.url} target="_blank" rel="noreferrer">
+              {source.name}
+            </a>
+          ) : (
+            source.name
+          )}
+        </p>
       )}
-    </p>
+    </>
   );
+}
+
+// A value in a description: a number or star-level run ("145/220/380/645",
+// "25%", "1.5"), optionally followed by its scaling label ("(AD)",
+// "(HP, AP)"). Each term of "X (AD) + Y (AP)" is its own value, so each gets
+// its own color. Numbers inside words ("TFT18", "2-star", "4-cost") aren't
+// values and stay plain.
+const NUMBER = String.raw`\d+(?:\.\d+)?%?(?:/\d+(?:\.\d+)?%?)*`;
+const TERM = String.raw`${NUMBER}(?:\s*\((?:AD|AP|HP|Armor|MR|AS|Mana|Mana Regen|Durability|gold)(?:, (?:AD|AP|HP|Armor|MR|AS|Mana|Mana Regen|Durability|gold))*\))?`;
+const VALUE_RE = new RegExp(String.raw`(?<![\w.\-/])(${TERM})(?![\w\-/])`, "g");
+
+/** Which stat a value scales with, for coloring: the first label wins. */
+function scalingClass(value: string): string {
+  const label = value.match(/\((AD|AP|HP|Armor|MR|AS|Mana|Mana Regen|Durability|gold)/)?.[1];
+  switch (label) {
+    case "AD":
+      return "value-ad";
+    case "AP":
+      return "value-ap";
+    case "HP":
+      return "value-hp";
+    case "Armor":
+    case "MR":
+    case "Durability":
+      return "value-defense";
+    default:
+      return "value-plain";
+  }
+}
+
+function highlightNumbers(text: string, keyPrefix: number) {
+  const out: (string | JSX.Element)[] = [];
+  let last = 0;
+  for (const m of text.matchAll(VALUE_RE)) {
+    const start = m.index ?? 0;
+    if (start > last) out.push(text.slice(last, start));
+    out.push(
+      <span key={`${keyPrefix}-${start}`} className={`desc-value ${scalingClass(m[1])}`}>
+        {m[1]}
+      </span>,
+    );
+    last = start + m[1].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
 }
 
 const STAT_LABELS: [key: string, label: string, format?: (n: number) => string][] = [
@@ -196,9 +259,10 @@ function UnitsTab({ data, query }: { data: SetData; query: string }) {
   return (
     <>
       <p className="muted">
-        Some ability numbers are calculated by the game at runtime and aren&apos;t in Riot&apos;s published data
-        for this set; those show as <span className="unknown-value">labels</span> naming the value. Stats,
-        traits and costs are exact.
+        Set 18&apos;s ability numbers aren&apos;t in Riot&apos;s exported game data. For the latest patch they come from
+        tactics.tools (credited on each ability); where no value is available it shows as a{" "}
+        <span className="unknown-value">label</span> naming the value. Stats, traits and costs come from Riot&apos;s
+        data. Ability numbers show the 1/2/3/4-star values.
       </p>
       {units.length === 0 && <p className="muted">No units match.</p>}
       <div className="set-grid">
@@ -214,7 +278,14 @@ function UnitCard({ unit: u, traits }: { unit: SetUnit; traits: Map<string, SetT
   return (
     <div className="panel set-card" id={u.apiName}>
       <div className="set-card-head">
-        <GameIcon kind="champions" id={u.apiName} size={56} fallbackSrc={u.icon} fallbackName={u.name} className={`cost-${u.cost}`} />
+        <GameIcon
+          kind="champions"
+          id={u.apiName}
+          size={56}
+          fallbackSrc={u.icon}
+          fallbackName={u.name}
+          className={`cost-${u.cost}`}
+        />
         <div>
           <h3>{u.name}</h3>
           <span className="muted">{u.cost}-cost</span>
@@ -242,7 +313,7 @@ function UnitCard({ unit: u, traits }: { unit: SetUnit; traits: Map<string, SetT
       {u.ability.name && (
         <>
           <h4>{u.ability.name}</h4>
-          <Desc text={u.ability.desc} />
+          <Desc text={u.ability.desc} source={u.ability.descSource} />
         </>
       )}
     </div>
@@ -251,12 +322,17 @@ function UnitCard({ unit: u, traits }: { unit: SetUnit; traits: Map<string, SetT
 
 // CommunityDragon trait styles -> the bronze/silver/gold/prismatic classes
 // used for match traits.
-const BREAKPOINT_STYLE: Record<number, number> = { 1: 1, 2: 2, 3: 2, 4: 3, 5: 3, 6: 4 };
+const BREAKPOINT_STYLE: Record<number, number> = {
+  1: 1,
+  2: 2,
+  3: 2,
+  4: 3,
+  5: 3,
+  6: 4,
+};
 
 function TraitsTab({ data, query }: { data: SetData; query: string }) {
-  const traits = data.traits.filter((t) =>
-    matches(query, t.name, t.desc, ...t.breakpoints.map((b) => b.text)),
-  );
+  const traits = data.traits.filter((t) => matches(query, t.name, t.desc, ...t.breakpoints.map((b) => b.text)));
   return (
     <div className="set-list">
       {traits.length === 0 && <p className="muted">No traits match.</p>}
@@ -274,7 +350,7 @@ function TraitsTab({ data, query }: { data: SetData; query: string }) {
                 {t.breakpoints.map((b, i) => (
                   <li key={i}>
                     <span className={`trait-badge trait-style-${BREAKPOINT_STYLE[b.style] ?? 1}`}>{b.minUnits}</span>
-                    <span className="set-desc">{b.text?.replace(/^\(\d+\)\s*/, "")}</span>
+                    <span className="set-desc">{highlightNumbers(b.text?.replace(/^\(\d+\)\s*/, "") ?? "", i)}</span>
                   </li>
                 ))}
               </ul>
@@ -282,7 +358,15 @@ function TraitsTab({ data, query }: { data: SetData; query: string }) {
             {units.length > 0 && (
               <div className="unit-grid">
                 {units.map((u) => (
-                  <GameIcon key={u.apiName} kind="champions" id={u.apiName} size={36} fallbackSrc={u.icon} fallbackName={u.name} className={`cost-${u.cost}`} />
+                  <GameIcon
+                    key={u.apiName}
+                    kind="champions"
+                    id={u.apiName}
+                    size={36}
+                    fallbackSrc={u.icon}
+                    fallbackName={u.name}
+                    className={`cost-${u.cost}`}
+                  />
                 ))}
               </div>
             )}
@@ -297,7 +381,9 @@ const TIER_NAMES = ["Other", "Silver", "Gold", "Prismatic"];
 
 function AugmentsTab({ augments, query }: { augments: SetAugment[]; query: string }) {
   const [tier, setTier] = useState<number | null>(null);
-  const shown = augments.filter((a) => (tier === null || a.tier === tier) && matches(query, a.name, a.desc, ...(a.traits ?? [])));
+  const shown = augments.filter(
+    (a) => (tier === null || a.tier === tier) && matches(query, a.name, a.desc, ...(a.traits ?? [])),
+  );
   return (
     <>
       <div className="set-picker">
@@ -321,12 +407,58 @@ function AugmentsTab({ augments, query }: { augments: SetAugment[]; query: strin
                   </span>
                 ))}
               </h4>
-              <Desc text={a.desc} />
+              <Desc text={a.desc} source={a.descSource} />
+              {a.rewards && <RewardsSection rewards={a.rewards} />}
             </div>
           </div>
         ))}
       </div>
     </>
+  );
+}
+
+function RewardsSection({ rewards }: { rewards: AugmentRewards }) {
+  return (
+    <details className="rewards">
+      <summary>Possible rewards</summary>
+      {rewards.tables.map((t) => (
+        <div key={t.title} className="reward-table">
+          <h5>{t.title}</h5>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  {t.columns.map((c) => (
+                    <th key={c}>{c}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {t.rows.map((row, i) => (
+                  <tr key={i}>
+                    {row.map((cell, j) => (
+                      <td key={j}>{cell}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {t.notes?.map((n) => (
+            <p key={n} className="muted reward-note">
+              {n}
+            </p>
+          ))}
+        </div>
+      ))}
+      <p className="muted reward-note">
+        Source:{" "}
+        <a href={rewards.sourceUrl} target="_blank" rel="noreferrer">
+          {rewards.sourceName}
+        </a>
+        {rewards.updated && ` (updated ${rewards.updated})`}
+      </p>
+    </details>
   );
 }
 
@@ -337,6 +469,8 @@ const ITEM_SECTIONS: [kind: string, title: string][] = [
   ["artifact", "Artifacts"],
   ["radiant", "Radiant items"],
   ["consumable", "Consumables"],
+  ["booster", "Boosters"],
+  ["potion", "Potions"],
   ["other", "Other"],
 ];
 
@@ -363,22 +497,37 @@ function ItemsTab({ items, query }: { items: SetItem[]; query: string }) {
                 const first = variants[0];
                 return (
                   <div className="panel set-row" key={first.apiName} id={first.apiName}>
-                    <GameIcon kind="items" id={first.apiName} size={40} fallbackSrc={first.icon} fallbackName={first.name} />
+                    <GameIcon
+                      kind="items"
+                      id={first.apiName}
+                      size={40}
+                      fallbackSrc={first.icon}
+                      fallbackName={first.name}
+                    />
                     <div>
                       <h4>
                         {first.name}
                         {first.composition && first.composition.length === 2 && (
                           <span className="item-recipe">
                             {first.composition.map((c, i) => (
-                              <GameIcon key={i} kind="items" id={c} size={20} fallbackSrc={byApi.get(c)?.icon} fallbackName={byApi.get(c)?.name} />
+                              <GameIcon
+                                key={i}
+                                kind="items"
+                                id={c}
+                                size={20}
+                                fallbackSrc={byApi.get(c)?.icon}
+                                fallbackName={byApi.get(c)?.name}
+                              />
                             ))}
                           </span>
                         )}
                       </h4>
                       {variants.map((v) => (
                         <div key={v.apiName}>
-                          {variants.length > 1 && <span className="tag">{v.variant || "base"}</span>}
-                          <Desc text={v.desc} />
+                          {variants.length > 1 && (
+                            <span className="tag">{v.variant === "augment" ? "from augment" : v.variant || "base"}</span>
+                          )}
+                          <Desc text={v.desc} source={v.descSource} />
                         </div>
                       ))}
                     </div>
@@ -407,7 +556,8 @@ function WispsTab({ wisps, query }: { wisps: SetItem[]; query: string }) {
   return (
     <>
       <p className="muted">
-        {groups.size} wisps{groups.size !== wisps.length ? ` (${wisps.length} including variants)` : ""}.
+        {groups.size} wisps
+        {groups.size !== wisps.length ? ` (${wisps.length} including variants)` : ""}.
       </p>
       {groups.size === 0 && <p className="muted">No wisps match.</p>}
       <div className="set-list">
@@ -421,7 +571,7 @@ function WispsTab({ wisps, query }: { wisps: SetItem[]; query: string }) {
                 {variants.map((v) => (
                   <div key={v.apiName}>
                     {variants.length > 1 && <span className="tag">{v.variant || "base"}</span>}
-                    <Desc text={v.desc} />
+                    <Desc text={v.desc} source={v.descSource} />
                   </div>
                 ))}
               </div>
@@ -462,18 +612,32 @@ function PatchesTab({ data, patches, setNumber }: { data: SetData; patches: Patc
 
   if (!patches) return <p className="muted">Loading...</p>;
   if (patches.length === 0) {
-    return <p className="muted">Only one patch has been recorded for this set so far — notes appear after the next patch.</p>;
+    return (
+      <p className="muted">Only one patch has been recorded for this set so far — notes appear after the next patch.</p>
+    );
   }
   return (
     <div>
       <p className="muted">
         Generated by comparing each patch&apos;s game data with the previous one: every number that changed, plus
-        anything added or removed.
+        anything added, removed or renamed. Some balance changes aren&apos;t in the published game files, so these notes
+        can miss changes — check Riot&apos;s official notes for the full list.
       </p>
       {patches.map((p) => (
         <div className="panel" key={p.version}>
           <h2>
-            Patch {p.patch} <span className="muted patch-sub">vs {p.previousPatch} · {p.changes.length} changes</span>
+            Patch {p.tftPatch ?? p.patch}{" "}
+            <span className="muted patch-sub">
+              {p.tftPatch && `game ${p.patch} · `}vs {p.previousPatch} · {p.changes.length} changes
+              {p.officialNotesUrl && (
+                <>
+                  {" · "}
+                  <a href={p.officialNotesUrl} target="_blank" rel="noreferrer">
+                    Riot&apos;s official notes
+                  </a>
+                </>
+              )}
+            </span>
           </h2>
           {p.changes.length === 0 && <p className="muted">No changes to this set's numbers.</p>}
           {(["unit", "trait", "augment", "item", "wisp"] as const).map((category) => {
@@ -491,7 +655,13 @@ function PatchesTab({ data, patches, setNumber }: { data: SetData; patches: Patc
                         className="game-label"
                         to={`/set/${setNumber}/${CATEGORY_TAB[category]}?q=${encodeURIComponent(cs[0].name)}`}
                       >
-                        <GameIcon kind={ICON_KIND[category]} id={cs[0].apiName} size={24} fallbackSrc={icons.get(cs[0].apiName)} fallbackName={cs[0].name} />
+                        <GameIcon
+                          kind={ICON_KIND[category]}
+                          id={cs[0].apiName}
+                          size={24}
+                          fallbackSrc={icons.get(cs[0].apiName)}
+                          fallbackName={cs[0].name}
+                        />
                         {cs[0].name}
                       </Link>
                       <ul>
@@ -517,11 +687,11 @@ function ChangeLine({ change: c }: { change: PatchChange }) {
   if (c.kind === "added") return <span className="change-added">New</span>;
   if (c.kind === "removed") return <span className="change-removed">Removed</span>;
   if (c.kind === "text") return <span className="muted">Description updated</span>;
+  if (c.kind === "renamed") return <span className="muted">Renamed from &quot;{c.field}&quot;</span>;
   const direction = c.old !== undefined && c.new !== undefined ? (c.new > c.old ? "up" : "down") : null;
   return (
     <span>
-      {fieldLabel(c.field ?? "")}:{" "}
-      <span className="muted">{c.old !== undefined ? fmt(c.old) : "—"}</span> →{" "}
+      {fieldLabel(c.field ?? "")}: <span className="muted">{c.old !== undefined ? fmt(c.old) : "—"}</span> →{" "}
       <strong>{c.new !== undefined ? fmt(c.new) : "—"}</strong>
       {direction && <span className={`change-${direction}`}>{direction === "up" ? " ▲" : " ▼"}</span>}
     </span>

@@ -41,6 +41,15 @@ type Ability struct {
 	// Values are the ability's variables by name, indexed by star level
 	// (1-3), so index 0 is unused.
 	Values map[string][]float64 `json:"values"`
+	// DescSource is set when Desc came from a third-party override (see
+	// AttachTextOverrides) rather than Riot's export. Never stored.
+	DescSource DescSource `json:"descSource,omitzero"`
+}
+
+// DescSource attributes a description taken from a third-party source.
+type DescSource struct {
+	Name string `json:"name"`
+	URL  string `json:"url,omitempty"`
 }
 
 type Trait struct {
@@ -67,6 +76,9 @@ type Augment struct {
 	Tier    int                `json:"tier"` // 1 silver, 2 gold, 3 prismatic; 0 if unknown
 	Traits  []string           `json:"traits,omitempty"`
 	Values  map[string]float64 `json:"values"`
+	// Rewards is filled in when serving (see AttachRewards), never stored.
+	Rewards    *Rewards   `json:"rewards,omitempty"`
+	DescSource DescSource `json:"descSource,omitzero"`
 }
 
 type Item struct {
@@ -77,9 +89,11 @@ type Item struct {
 	// Kind is "component", "completed", "emblem", "artifact", "radiant",
 	// "consumable", "wisp" (see SetData.Wisps) or "other".
 	Kind string `json:"kind"`
-	// Variant distinguishes same-named versions of a wisp:
-	// "", "upgraded", "prismatic" or "charm".
+	// Variant distinguishes same-named versions: a wisp's "upgraded",
+	// "prismatic" or "charm", or "augment" for the enhanced emblem an
+	// augment grants; "" for the base version.
 	Variant     string             `json:"variant,omitempty"`
 	Composition []string           `json:"composition,omitempty"`
 	Values      map[string]float64 `json:"values"`
+	DescSource  DescSource         `json:"descSource,omitzero"`
 }

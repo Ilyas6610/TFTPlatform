@@ -121,7 +121,14 @@ func Sync(ctx context.Context, src Source, st *store.Store, set int, channel str
 	}
 	result := SyncResult{SetNumber: set, Version: version}
 
-	data, err := Extract(raw, set, version)
+	// The set's own augment/item/wisp lists; a failure here fails the sync
+	// rather than storing a snapshot extracted differently from its
+	// neighbors (which would show up as spurious patch-note changes).
+	pools, err := src.FetchPools(ctx, channel, set)
+	if err != nil {
+		return result, fmt.Errorf("set %d pools: %w", set, err)
+	}
+	data, err := Extract(raw, set, version, pools)
 	if err != nil {
 		return result, err
 	}
@@ -189,4 +196,41 @@ func sameContent(a, b *SetData) bool {
 	aj, _ := json.Marshal(ac)
 	bj, _ := json.Marshal(bc)
 	return bytes.Equal(aj, bj)
+}
+
+// firstGamePatch is the game patch each set's first TFT patch shipped on
+// (game 16.17 = TFT 18.1). Riot numbers TFT patches per set, so this is
+// the anchor for converting between the two; add a set's entry when it
+// launches.
+var firstGamePatch = map[int]string{18: "16.17"}
+
+// TFTPatch converts a game patch ("16.19") to the set's TFT patch ("18.3"),
+// or "" when the set has no anchor or the patch predates it.
+func TFTPatch(set int, gamePatch string) string {
+	first, ok := firstGamePatch[set]
+	if !ok {
+		return ""
+	}
+	fMajor, fMinor, ok1 := splitPatch(first)
+	gMajor, gMinor, ok2 := splitPatch(gamePatch)
+	if !ok1 || !ok2 || gMajor != fMajor || gMinor < fMinor {
+		return ""
+	}
+	return fmt.Sprintf("%d.%d", set, gMinor-fMinor+1)
+}
+
+// OfficialNotesURL is Riot's patch notes page for a TFT patch ("18.3").
+func OfficialNotesURL(tftPatch string) string {
+	if tftPatch == "" {
+		return ""
+	}
+	return "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-" +
+		strings.ReplaceAll(tftPatch, ".", "-") + "/"
+}
+
+func splitPatch(p string) (major, minor int, ok bool) {
+	a, b, found := strings.Cut(p, ".")
+	major, err1 := strconv.Atoi(a)
+	minor, err2 := strconv.Atoi(b)
+	return major, minor, found && err1 == nil && err2 == nil
 }

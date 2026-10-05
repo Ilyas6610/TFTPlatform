@@ -1,0 +1,853 @@
+{
+  "set": 18,
+  "source": {
+    "name": "Little Buddy Bot",
+    "url": "https://www.littlebuddybot.com/tft-augment-tables",
+    "note": "Transcribed by hand from Little Buddy Bot's Set 18 augment tables (the underlying game data is Riot's). Rows whose icons couldn't be identified with certainty are summarized and marked; see the source for the full picture."
+  },
+  "augments": [
+    {
+      "apiNames": [
+        "DA_MagicRoll"
+      ],
+      "sourceUrl": "https://www.littlebuddybot.com/tft-magic-roll",
+      "updated": "2026-09-11",
+      "tables": [
+        {
+          "title": "Rewards by dice total (3 dice)",
+          "columns": [
+            "Odds",
+            "Dice",
+            "Reward"
+          ],
+          "rows": [
+            [
+              "25%",
+              "Sum 4–8",
+              "+250 Health for all units on board (present and future)"
+            ],
+            [
+              "36%",
+              "Sum 9–11",
+              "Pile of 2-star champions: one 1-cost, two 2-cost, one 3-cost"
+            ],
+            [
+              "32%",
+              "Sum 12–15",
+              "4× the same component + Reforger"
+            ],
+            [
+              "4%",
+              "Sum 16–17",
+              "Frying Pan + 2 random components"
+            ],
+            [
+              "1.4%",
+              "111, 222, 333",
+              "4–6 gold + 3 Lesser Champion Duplicators"
+            ],
+            [
+              "1.4%",
+              "444, 555, 666",
+              "Tactician's Cape"
+            ],
+            [
+              "0.5%",
+              "626",
+              "Special Golden Egg: hatches in 3 turns for 5 gold, 2 random 5-cost champions and a Tactician's Crown"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "apiNames": [
+        "DA_SlightlyMagicRoll"
+      ],
+      "sourceUrl": "https://www.littlebuddybot.com/tft-slightly-magic-roll",
+      "updated": "2026-08-26",
+      "tables": [
+        {
+          "title": "Rewards by die roll (1 die)",
+          "columns": [
+            "Roll",
+            "Reward"
+          ],
+          "rows": [
+            [
+              "1",
+              "6 free rerolls"
+            ],
+            [
+              "2",
+              "10 gold"
+            ],
+            [
+              "3",
+              "2-star 2-cost champion + 3 gold"
+            ],
+            [
+              "4",
+              "Full item + Reforger"
+            ],
+            [
+              "5",
+              "+160 Health boardwide"
+            ],
+            [
+              "6",
+              "Random Emblem"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "apiNames": [
+        "DA_ExpectedUnexpectedness"
+      ],
+      "sourceUrl": "https://www.littlebuddybot.com/tft-expected-unexpectedness",
+      "updated": "2026-09-16",
+      "tables": [
+        {
+          "title": "Stage 2 roll",
+          "columns": [
+            "Odds",
+            "Reward"
+          ],
+          "rows": [
+            [
+              "36%",
+              "2× 4-cost champion"
+            ],
+            [
+              "32%",
+              "2 component anvils + 3 Reforgers"
+            ],
+            [
+              "25%",
+              "9 gold"
+            ],
+            [
+              "4%",
+              "Artifact anvil"
+            ],
+            [
+              "3%",
+              "Tactician's Crown"
+            ]
+          ]
+        },
+        {
+          "title": "Stage 3 roll",
+          "columns": [
+            "Odds",
+            "Reward"
+          ],
+          "rows": [
+            [
+              "36%",
+              "5 gold + 2 Lesser Champion Duplicators"
+            ],
+            [
+              "32%",
+              "3 gold + full item anvil"
+            ],
+            [
+              "25%",
+              "18 gold"
+            ],
+            [
+              "4%",
+              "3 components"
+            ],
+            [
+              "3%",
+              "2 Emblems"
+            ]
+          ]
+        },
+        {
+          "title": "Stage 4 roll",
+          "columns": [
+            "Odds",
+            "Reward"
+          ],
+          "rows": [
+            [
+              "36%",
+              "3× 5-cost champion"
+            ],
+            [
+              "32%",
+              "5 gold + Lucky Item Chest"
+            ],
+            [
+              "25%",
+              "20 gold"
+            ],
+            [
+              "4%",
+              "Full item + 2 components"
+            ],
+            [
+              "3%",
+              "3× 5-cost champion + one more item ¹"
+            ]
+          ],
+          "notes": [
+            "¹ Shown in the source only as an icon that couldn't be identified with certainty."
+          ]
+        }
+      ]
+    },
+    {
+      "apiNames": [
+        "DA_GoldenEgg"
+      ],
+      "sourceUrl": "https://www.littlebuddybot.com/tft-golden-egg",
+      "updated": "2026-09-11",
+      "tables": [
+        {
+          "title": "Possible egg contents",
+          "columns": [
+            "Odds",
+            "Reward"
+          ],
+          "rows": [
+            [
+              "15%",
+              "88 gold + Tactician's Crown"
+            ],
+            [
+              "15%",
+              "10 gold + Tactician's Crown + 2 Radiant items"
+            ],
+            [
+              "15%",
+              "30 gold + 2 Tactician's Crowns + Thief's Gloves"
+            ],
+            [
+              "15%",
+              "25 gold + Tactician's Crown + Thief's Gloves + one more item ¹"
+            ],
+            [
+              "10%",
+              "10 gold + Tactician's Crown + Radiant item + Artifact + full item + one more item ¹"
+            ],
+            [
+              "10%",
+              "30 gold + Tactician's Crown + 4× 5-cost champion + two more items ¹"
+            ],
+            [
+              "10%",
+              "25 gold + several specific items ¹"
+            ],
+            [
+              "10%",
+              "10 gold + Tactician's Crown + several specific items ¹"
+            ]
+          ],
+          "notes": [
+            "¹ Shown in the source only as item icons that couldn't be identified with certainty; see the source for the exact items."
+          ]
+        }
+      ]
+    },
+    {
+      "apiNames": [
+        "DA_CallToChaos"
+      ],
+      "sourceUrl": "https://www.littlebuddybot.com/tft-call-to-chaos",
+      "updated": "2026-08-26",
+      "tables": [
+        {
+          "title": "Possible rewards (11% each)",
+          "columns": [
+            "Odds",
+            "Reward"
+          ],
+          "rows": [
+            [
+              "11%",
+              "58 gold"
+            ],
+            [
+              "11%",
+              "64 XP"
+            ],
+            [
+              "11%",
+              "40 shop rerolls"
+            ],
+            [
+              "11%",
+              "Full item anvil + Golden Egg"
+            ],
+            [
+              "11%",
+              "8 gold + Radiant Lucky Item Chest + one more item ¹"
+            ],
+            [
+              "11%",
+              "2 component anvils + Frying Pan + Spatula"
+            ],
+            [
+              "11%",
+              "3 Thief's Gloves + one more item ¹"
+            ],
+            [
+              "11%",
+              "3 Lucky Item Chests + one more item ¹"
+            ],
+            [
+              "11%",
+              "6 unique components"
+            ]
+          ],
+          "notes": [
+            "¹ Shown in the source only as an icon that couldn't be identified with certainty."
+          ]
+        }
+      ]
+    },
+    {
+      "apiNames": [
+        "DA_BoosterPack"
+      ],
+      "sourceUrl": "https://www.littlebuddybot.com/tft-booster-pack",
+      "updated": "2026-08-26",
+      "tables": [
+        {
+          "title": "Booster Pack (12 gold of champions, at least one 3-cost)",
+          "columns": [
+            "Odds",
+            "Champions"
+          ],
+          "rows": [
+            [
+              "13.5%",
+              "1-cost, 2-cost, 3-cost ×3"
+            ],
+            [
+              "13.5%",
+              "1-cost ×2, 2-cost ×2, 3-cost, 2★ 1-cost"
+            ],
+            [
+              "13.5%",
+              "1-cost ×2, 2-cost ×2, 3-cost, 3-cost"
+            ],
+            [
+              "13.5%",
+              "1-cost ×3, 3-cost ×2, 2★ 1-cost"
+            ],
+            [
+              "13.5%",
+              "1-cost ×2, 2-cost ×2, 3-cost ×2"
+            ],
+            [
+              "13.5%",
+              "1-cost, 2-cost, 3-cost, 2★ 1-cost ×2"
+            ],
+            [
+              "8%",
+              "1-cost, 2-cost, 3-cost, 2★ 2-cost"
+            ],
+            [
+              "8%",
+              "1-cost, 2-cost, 3-cost, 2★ 2-cost"
+            ],
+            [
+              "1.5%",
+              "1-cost, 2-cost, 2★ 3-cost"
+            ],
+            [
+              "1.5%",
+              "1-cost ×3, 2-cost, 3-cost, 4-cost"
+            ]
+          ],
+          "notes": [
+            "×N means N copies of the same champion; repeated entries are different champions of that cost."
+          ]
+        }
+      ]
+    },
+    {
+      "apiNames": [
+        "DA_BoosterPackPlus"
+      ],
+      "sourceUrl": "https://www.littlebuddybot.com/tft-booster-pack",
+      "updated": "2026-08-26",
+      "tables": [
+        {
+          "title": "Booster Pack+ (18 gold of champions, at least one 4-cost)",
+          "columns": [
+            "Odds",
+            "Champions"
+          ],
+          "rows": [
+            [
+              "11%",
+              "2-cost ×2, 4-cost ×2, 2★ 2-cost"
+            ],
+            [
+              "11%",
+              "2-cost, 3-cost ×2, 4-cost, 2★ 2-cost"
+            ],
+            [
+              "11%",
+              "2-cost, 4-cost, 2★ 1-cost ×4"
+            ],
+            [
+              "11%",
+              "1-cost, 3-cost ×3, 4-cost ×2"
+            ],
+            [
+              "11%",
+              "2-cost ×2, 4-cost ×2, 2★ 1-cost ×2"
+            ],
+            [
+              "11%",
+              "2-cost, 3-cost ×2, 4-cost, 2★ 2-cost"
+            ],
+            [
+              "10%",
+              "2-cost, 3-cost, 4-cost, 3★ 1-cost"
+            ],
+            [
+              "8%",
+              "2-cost, 3-cost, 4-cost, 2★ 3-cost"
+            ],
+            [
+              "8%",
+              "1-cost, 2-cost ×2, 4-cost, 2★ 3-cost"
+            ],
+            [
+              "5%",
+              "2-cost ×3, 4-cost ×3"
+            ],
+            [
+              "4%",
+              "3-cost ×3, 4-cost, 5-cost"
+            ]
+          ],
+          "notes": [
+            "×N means N copies of the same champion; repeated entries are different champions of that cost.",
+            "Odds as published sum to 101% (rounding)."
+          ]
+        }
+      ]
+    },
+    {
+      "apiNames": [
+        "DA_BoosterPackPlusPlus"
+      ],
+      "sourceUrl": "https://www.littlebuddybot.com/tft-booster-pack",
+      "updated": "2026-08-26",
+      "tables": [
+        {
+          "title": "Booster Pack++ (26 gold of champions, at least one 5-cost)",
+          "columns": [
+            "Odds",
+            "Champions"
+          ],
+          "rows": [
+            [
+              "12%",
+              "3-cost, 5-cost, 3★ 2-cost"
+            ],
+            [
+              "12%",
+              "1-cost, 2-cost, 5-cost, 2★ 3-cost, 2★ 3-cost"
+            ],
+            [
+              "12%",
+              "5-cost, 2★ 1-cost, 2★ 1-cost, 2★ 2-cost, 2★ 3-cost"
+            ],
+            [
+              "12%",
+              "4-cost, 5-cost, 5-cost, 2★ 2-cost, 2★ 2-cost"
+            ],
+            [
+              "12%",
+              "4-cost ×4, 5-cost ×2"
+            ],
+            [
+              "12%",
+              "4-cost ×3, 5-cost, 2★ 1-cost, 2★ 2-cost"
+            ],
+            [
+              "12%",
+              "1-cost, 3-cost ×2, 5-cost ×2, 3★ 1-cost"
+            ],
+            [
+              "4%",
+              "3-cost ×2, 5-cost ×4"
+            ],
+            [
+              "4%",
+              "3-cost, 5-cost, 3★ 1-cost, 3★ 1-cost"
+            ],
+            [
+              "4%",
+              "5-cost, 2★ 3-cost, 2★ 4-cost"
+            ],
+            [
+              "3%",
+              "3-cost, 5-cost, 2★ 2-cost, 2★ 4-cost"
+            ],
+            [
+              "1%",
+              "1-cost, 3-cost, 3-cost, 4-cost, 2★ 5-cost"
+            ]
+          ],
+          "notes": [
+            "×N means N copies of the same champion; repeated entries are different champions of that cost."
+          ]
+        }
+      ]
+    },
+    {
+      "apiNames": [
+        "DA_TraitLadder"
+      ],
+      "sourceUrl": "https://www.littlebuddybot.com/tft-trait-ladder",
+      "updated": "2026-09-11",
+      "tables": [
+        {
+          "title": "Reward for fielding N non-unique traits",
+          "columns": [
+            "Traits",
+            "Reward"
+          ],
+          "rows": [
+            [
+              "2",
+              "1 gold + Reforger"
+            ],
+            [
+              "3",
+              "3 gold"
+            ],
+            [
+              "4",
+              "6 gold"
+            ],
+            [
+              "5",
+              "Component"
+            ],
+            [
+              "6",
+              "50%: 10 gold · 50%: 3× 3-cost champion"
+            ],
+            [
+              "7",
+              "8 gold + component anvil"
+            ],
+            [
+              "8",
+              "57%: 2 components + Reforger · 43%: full item anvil"
+            ],
+            [
+              "9",
+              "2 gold + 3× 5-cost champion"
+            ],
+            [
+              "10",
+              "20 gold"
+            ],
+            [
+              "11",
+              "Tactician's item"
+            ],
+            [
+              "12",
+              "3× 4-cost champion + Lucky Chest"
+            ],
+            [
+              "13",
+              "8 gold + 4 components + one more item ¹"
+            ],
+            [
+              "14",
+              "10 gold + Masterwork Upgrade"
+            ]
+          ],
+          "notes": [
+            "¹ Shown in the source only as an icon that couldn't be identified with certainty."
+          ]
+        }
+      ]
+    },
+    {
+      "apiNames": [
+        "DA_FrontlineFoundation"
+      ],
+      "sourceUrl": "https://www.littlebuddybot.com/tft-frontline-foundation",
+      "updated": "2026-09-23",
+      "tables": [
+        {
+          "title": "Possible champion (2-star) and matching Emblem",
+          "columns": [
+            "Champion",
+            "Emblem"
+          ],
+          "rows": [
+            [
+              "Kobuko",
+              "Brawler"
+            ],
+            [
+              "Rek'Sai",
+              "Brawler"
+            ],
+            [
+              "Leona",
+              "Defender"
+            ],
+            [
+              "Ornn",
+              "Defender"
+            ],
+            [
+              "Yorick",
+              "Juggernaut"
+            ],
+            [
+              "Rakan",
+              "Vanguard"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "apiNames": [
+        "DA_BacklineBlueprint"
+      ],
+      "sourceUrl": "https://www.littlebuddybot.com/tft-backline-blueprint",
+      "updated": "2026-08-26",
+      "tables": [
+        {
+          "title": "Possible champion and matching Emblem",
+          "columns": [
+            "Champion",
+            "Emblem"
+          ],
+          "rows": [
+            [
+              "Azir",
+              "Executioner"
+            ],
+            [
+              "Cassiopeia",
+              "Spellweaver"
+            ],
+            [
+              "Diana",
+              "Ravager"
+            ],
+            [
+              "Mama Beak",
+              "Rapidfire"
+            ],
+            [
+              "Tristana",
+              "Hunter"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "apiNames": [
+        "DA_Warpath"
+      ],
+      "sourceUrl": "https://www.littlebuddybot.com/tft-warpath",
+      "updated": "2026-08-26",
+      "tables": [
+        {
+          "title": "Chest contents",
+          "columns": [
+            "Reward"
+          ],
+          "rows": [
+            [
+              "3× 5-cost champion, 2-star 4-cost champion, 2 full item anvils"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "apiNames": [
+        "DA_Expedition"
+      ],
+      "sourceUrl": "https://www.littlebuddybot.com/tft-expedition",
+      "updated": "2026-08-26",
+      "tables": [
+        {
+          "title": "Reward",
+          "columns": [
+            "Reward"
+          ],
+          "rows": [
+            [
+              "15 gold + 2× 5-cost champion"
+            ],
+            [
+              "Component anvil + Masterwork Upgrade"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "apiNames": [
+        "DA_SliceOfLife"
+      ],
+      "sourceUrl": "https://www.littlebuddybot.com/tft-slice-of-life",
+      "updated": "2026-08-26",
+      "tables": [
+        {
+          "title": "Champion cost by round",
+          "columns": [
+            "Round",
+            "Champion"
+          ],
+          "rows": [
+            [
+              "2-1",
+              "2-cost"
+            ],
+            [
+              "2-5",
+              "2-cost"
+            ],
+            [
+              "3-1",
+              "3-cost"
+            ],
+            [
+              "3-5",
+              "3-cost"
+            ],
+            [
+              "4-1",
+              "4-cost"
+            ],
+            [
+              "4-5",
+              "4-cost"
+            ],
+            [
+              "5-1",
+              "5-cost"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "apiNames": [
+        "DA_HardCommit"
+      ],
+      "sourceUrl": "https://www.littlebuddybot.com/tft-hard-commit",
+      "updated": "2026-08-26",
+      "tables": [
+        {
+          "title": "Possible emblem traits",
+          "columns": [
+            "Trait"
+          ],
+          "rows": [
+            [
+              "Blossom"
+            ],
+            [
+              "Brawler"
+            ],
+            [
+              "Elderwood"
+            ],
+            [
+              "Hunter"
+            ],
+            [
+              "Juggernaut"
+            ],
+            [
+              "Spellweaver"
+            ],
+            [
+              "Vanguard"
+            ]
+          ],
+          "notes": [
+            "Each stage you get a 1-star champion of the emblem's trait with cost equal to the Stage (max 5); see the Traits tab for each trait's champions."
+          ]
+        }
+      ]
+    },
+    {
+      "apiNames": [
+        "DA_WeStickTogether"
+      ],
+      "sourceUrl": "https://www.littlebuddybot.com/tft-we-stick-together",
+      "updated": "2026-09-23",
+      "tables": [
+        {
+          "title": "Possible emblems",
+          "columns": [
+            "Emblem"
+          ],
+          "rows": [
+            [
+              "Blackthorn"
+            ],
+            [
+              "Blossom"
+            ],
+            [
+              "Coven"
+            ],
+            [
+              "Elderwood"
+            ],
+            [
+              "Executioner"
+            ],
+            [
+              "Fae"
+            ],
+            [
+              "Hunter"
+            ],
+            [
+              "Inferno"
+            ],
+            [
+              "Invoker"
+            ],
+            [
+              "Rapidfire"
+            ],
+            [
+              "Ravager"
+            ],
+            [
+              "Spellweaver"
+            ],
+            [
+              "Sprykin"
+            ],
+            [
+              "Vanguard"
+            ]
+          ]
+        }
+      ]
+    }
+  ]
+}

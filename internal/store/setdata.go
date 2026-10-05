@@ -42,3 +42,36 @@ func (s *Store) ListSetDataSnapshots(ctx context.Context, set int) ([]SetDataSna
 	}
 	return pgx.CollectRows(rows, pgx.RowToStructByPos[SetDataSnapshot])
 }
+
+type SetTextOverrides struct {
+	SetNumber int
+	Source    string
+	Version   string
+	Data      []byte // JSON: apiName -> description template
+	FetchedAt time.Time
+}
+
+// UpsertSetTextOverrides replaces the stored overrides for (set, source).
+func (s *Store) UpsertSetTextOverrides(ctx context.Context, o SetTextOverrides) error {
+	_, err := s.Pool.Exec(ctx, `
+		INSERT INTO set_text_overrides (set_number, source, version, data, fetched_at)
+		VALUES ($1, $2, $3, $4, now())
+		ON CONFLICT (set_number, source) DO UPDATE SET
+			version = EXCLUDED.version, data = EXCLUDED.data, fetched_at = now()
+	`, o.SetNumber, o.Source, o.Version, o.Data)
+	return err
+}
+
+// ListSetTextOverrides returns every source's overrides for set.
+func (s *Store) ListSetTextOverrides(ctx context.Context, set int) ([]SetTextOverrides, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT set_number, source, version, data, fetched_at
+		FROM set_text_overrides
+		WHERE set_number = $1
+		ORDER BY source
+	`, set)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[SetTextOverrides])
+}

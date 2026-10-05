@@ -186,7 +186,14 @@ export interface SetUnit {
   cost: number;
   traits: string[];
   stats: Record<string, number>;
-  ability: { name: string; desc: string; values: Record<string, number[]> };
+  ability: { name: string; desc: string; values: Record<string, number[]>; descSource?: DescSource };
+}
+
+// Set when a description came from a third-party source because Riot's
+// exported data leaves its numbers out — see internal/setdata/overrides.go.
+export interface DescSource {
+  name: string;
+  url?: string;
 }
 
 export interface SetTraitBreakpoint {
@@ -205,6 +212,22 @@ export interface SetTrait {
   breakpoints: SetTraitBreakpoint[];
 }
 
+export interface RewardTable {
+  title: string;
+  columns: string[];
+  rows: string[][];
+  notes?: string[];
+}
+
+// Hand-curated reward tables, cited to their community source — see
+// internal/setdata/rewards.
+export interface AugmentRewards {
+  sourceName: string;
+  sourceUrl: string;
+  updated: string;
+  tables: RewardTable[];
+}
+
 export interface SetAugment {
   apiName: string;
   name: string;
@@ -213,6 +236,8 @@ export interface SetAugment {
   tier: number;
   traits?: string[];
   values: Record<string, number>;
+  rewards?: AugmentRewards;
+  descSource?: DescSource;
 }
 
 export interface SetItem {
@@ -224,6 +249,7 @@ export interface SetItem {
   variant?: string;
   composition?: string[];
   values: Record<string, number>;
+  descSource?: DescSource;
 }
 
 export interface SetVersion {
@@ -255,7 +281,8 @@ export interface PatchChange {
   category: "unit" | "trait" | "augment" | "item" | "wisp";
   apiName: string;
   name: string;
-  kind: "changed" | "added" | "removed" | "text";
+  kind: "changed" | "added" | "removed" | "renamed" | "text";
+  // For "renamed": the previous name. For "changed": the value's name.
   field?: string;
   old?: number;
   new?: number;
@@ -263,6 +290,8 @@ export interface PatchChange {
 
 export interface PatchNotes {
   patch: string;
+  tftPatch?: string;
+  officialNotesUrl?: string;
   version: string;
   previousPatch: string;
   previousVersion: string;

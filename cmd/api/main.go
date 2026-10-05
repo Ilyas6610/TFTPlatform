@@ -85,6 +85,11 @@ func syncSetDataPeriodically(ctx context.Context, st *store.Store, interval time
 		case result.Stored:
 			log.Printf("set data sync: stored set %d %s", result.SetNumber, result.Version)
 		}
+		if err == nil {
+			if _, err := setdata.SyncTextOverrides(ctx, setdata.TacticsToolsSource(), st, result.SetNumber); err != nil {
+				log.Printf("set text overrides sync: %v", err)
+			}
+		}
 		select {
 		case <-ctx.Done():
 			return

@@ -331,6 +331,7 @@ func runSyncSetData(ctx context.Context, cfg config.Config, args []string) {
 	defer st.Close()
 
 	src := setdata.DefaultSource()
+	lastSet := *set
 	for _, channel := range strings.Split(*versions, ",") {
 		channel = strings.TrimSpace(channel)
 		result, err := setdata.Sync(ctx, src, st, *set, channel)
@@ -342,5 +343,15 @@ func runSyncSetData(ctx context.Context, cfg config.Config, args []string) {
 			status = "unchanged"
 		}
 		fmt.Printf("sync-setdata: channel=%s set=%d version=%s %s\n", channel, result.SetNumber, result.Version, status)
+		lastSet = result.SetNumber
+	}
+
+	// Rendered ability text for values Riot's export leaves out; best
+	// effort, attached to the newest snapshot.
+	ov := setdata.TacticsToolsSource()
+	if n, err := setdata.SyncTextOverrides(ctx, ov, st, lastSet); err != nil {
+		log.Printf("sync-setdata: %s text overrides: %v", ov.Name, err)
+	} else {
+		fmt.Printf("sync-setdata: %s text overrides for set %d: %d descriptions\n", ov.Name, lastSet, n)
 	}
 }

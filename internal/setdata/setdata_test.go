@@ -1,6 +1,7 @@
 package setdata
 
 import (
+	"bytes"
 	"slices"
 	"testing"
 )
@@ -135,6 +136,7 @@ func TestExtract_AugmentsAndItems(t *testing.T) {
 		"TFT_Item_BFSword":    "component",
 		"TFT_Item_Deathblade": "completed",
 		"DA_PhantomEmblem18":  "emblem",
+		"TFT_Item_DebugBase":  "other", // the no-pools heuristic can't tell debug items apart
 	}
 	if len(kinds) != len(want) {
 		t.Errorf("expected reward placeholders dropped, got kinds %v", kinds)
@@ -150,7 +152,7 @@ func TestExtract_AugmentsAndItems(t *testing.T) {
 }
 
 func TestExtract_UnknownSet(t *testing.T) {
-	if _, err := Extract(defaultFixture().json(t), 99, "v"); err == nil {
+	if _, err := Extract(defaultFixture().json(t), 99, "v", nil); err == nil {
 		t.Error("expected error for a set not in the export")
 	}
 }
@@ -242,5 +244,195 @@ func TestDiff_WispsAreTheirOwnCategory(t *testing.T) {
 	changes := Diff(oldD, newD)
 	if len(changes) != 1 || changes[0].Category != "wisp" || changes[0].Kind != "text" || changes[0].APIName != newD.Wisps[0].APIName {
 		t.Errorf("expected one wisp text change, got %+v", changes)
+	}
+}
+
+func TestExtract_KeepsOnlyDAAugmentsWhenTheSetHasThem(t *testing.T) {
+	d := mustExtract(t, defaultFixture(), "16.19.1")
+
+	var got []string
+	for _, a := range d.Augments {
+		got = append(got, a.APIName)
+	}
+	// Legacy copies (TFT_Augment_ItemExtraction) and legacy-only augments
+	// (TFT9_Augment_OldFavorite) go; same-named DA_ variants stay.
+	want := []string{"DA_18_Primal_Nidalee", "DA_18_Primal_Sivir", "DA_18_ItemExtraction", "DA_18_SilverThing"}
+	if !slices.Equal(got, want) {
+		t.Errorf("augments = %v\nwant      %v", got, want)
+	}
+}
+
+func TestDedupeAugments_SetsWithoutDAIDs(t *testing.T) {
+	augs := []Augment{
+		{APIName: "TFT17_Augment_Roll", Name: "Magic Roll"},
+		{APIName: "TFT_Augment_MagicRoll", Name: "A Magic Roll"}, // legacy copy
+		{APIName: "TFT_Augment_Other", Name: "Other"},            // legacy, no twin: kept
+	}
+	var got []string
+	for _, a := range dedupeAugments(augs, 17) {
+		got = append(got, a.APIName)
+	}
+	if want := []string{"TFT17_Augment_Roll", "TFT_Augment_Other"}; !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestAugmentKey(t *testing.T) {
+	for _, pair := range [][2]string{{"A Magic Roll", "Magic Roll"}, {"Call To Chaos", "Call to Chaos"}, {"The Golden Egg", "golden egg"}} {
+		if augmentKey(pair[0]) != augmentKey(pair[1]) {
+			t.Errorf("%q and %q should be the same augment", pair[0], pair[1])
+		}
+	}
+	if augmentKey("Aftershock") != "aftershock" {
+		t.Error("a word starting with 'a' isn't an article")
+	}
+}
+
+func TestDiff_AugmentIDSwapIsNotAnAddAndRemove(t *testing.T) {
+	oldD := &SetData{Augments: []Augment{{APIName: "TFT_Augment_ExpectedUnexpectedness", Name: "Expected Unexpectedness", Desc: "Roll.",
+		Values: map[string]float64{"Gold": 9, "NumReforgers": 3}}}}
+	newD := &SetData{Augments: []Augment{{APIName: "DA_ExpectedUnexpectedness", Name: "Expected Unexpectedness", Desc: "Roll.",
+		Values: map[string]float64{"Gold": 10, "NewOnlyField": 1}}}}
+
+	changes := Diff(oldD, newD)
+	// Fields only one of the two objects defines aren't balance changes.
+	if len(changes) != 1 || changes[0].Kind != "changed" || changes[0].Field != "Gold" || changes[0].APIName != "DA_ExpectedUnexpectedness" {
+		t.Errorf("expected a single Gold change on the new id, got %+v", changes)
+	}
+}
+
+func TestDiff_RenameWithSameIDIsAChange(t *testing.T) {
+	oldD := &SetData{Augments: []Augment{{APIName: "DA_BonusGift", Name: "Bonus Gift", Desc: "One gift."}}}
+	newD := &SetData{Augments: []Augment{{APIName: "DA_BonusGift", Name: "Bonus Gifts", Desc: "Two gifts."}}}
+
+	changes := Diff(oldD, newD)
+	if len(changes) != 2 || changes[0].Kind != "renamed" || changes[0].Field != "Bonus Gift" || changes[1].Kind != "text" {
+		t.Errorf("expected a rename plus a reword, got %+v", changes)
+	}
+
+	// A rename alone is still reported.
+	newD.Augments[0].Desc = "One gift."
+	if changes := Diff(oldD, newD); len(changes) != 1 || changes[0].Kind != "renamed" {
+		t.Errorf("expected just the rename, got %+v", changes)
+	}
+}
+
+func TestDiff_SameNamedAugmentVariantsStayDistinct(t *testing.T) {
+	variants := func(sivirDesc string) *SetData {
+		return &SetData{Augments: []Augment{
+			{APIName: "DA_18_Primal_Nidalee", Name: "Beast Within", Desc: "Nidalee."},
+			{APIName: "DA_18_Primal_Sivir", Name: "Beast Within", Desc: sivirDesc},
+		}}
+	}
+	changes := Diff(variants("Sivir."), variants("Sivir, reworded."))
+	if len(changes) != 1 || changes[0].APIName != "DA_18_Primal_Sivir" || changes[0].Kind != "text" {
+		t.Errorf("expected only Sivir's variant to change, got %+v", changes)
+	}
+}
+
+func TestTFTPatch(t *testing.T) {
+	cases := []struct {
+		set        int
+		game, want string
+	}{
+		{18, "16.17", "18.1"},
+		{18, "16.19", "18.3"},
+		{18, "16.16", ""}, // before the set's first patch
+		{18, "17.1", ""},  // next major: no anchor yet
+		{99, "16.19", ""}, // unknown set
+	}
+	for _, c := range cases {
+		if got := TFTPatch(c.set, c.game); got != c.want {
+			t.Errorf("TFTPatch(%d, %q) = %q, want %q", c.set, c.game, got, c.want)
+		}
+	}
+	if got := OfficialNotesURL("18.3"); got != "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-3/" {
+		t.Errorf("OfficialNotesURL = %q", got)
+	}
+}
+
+func TestParsePools(t *testing.T) {
+	p, err := parsePools(bytes.NewReader(fixtureMap22(t)), 18)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(p.Items, []string{"DA_Component_BFSword", "DA_Deathblade", "DA_HealthPotion18"}) {
+		t.Errorf("items = %v (the shared Common_Items list must be ignored)", p.Items)
+	}
+	if len(p.Augments) != 4 || len(p.Wisps) != 3 {
+		t.Errorf("augments = %v, wisps = %v", p.Augments, p.Wisps)
+	}
+	if _, err := parsePools(bytes.NewReader(fixtureMap22(t)), 17); err == nil {
+		t.Error("expected an error for a set the map data doesn't define")
+	}
+}
+
+func TestExtract_WithPools(t *testing.T) {
+	p, err := parsePools(bytes.NewReader(fixtureMap22(t)), 18)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := Extract(defaultFixture().json(t), 18, "16.19.1", p)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	kinds := map[string]string{}
+	for _, it := range d.Items {
+		kinds[it.APIName] = it.Kind
+	}
+	// Exactly the set's own items — no legacy copies, debug items or reward
+	// placeholders — kept even without a description.
+	want := map[string]string{"DA_Component_BFSword": "component", "DA_Deathblade": "completed", "DA_HealthPotion18": "potion"}
+	if len(kinds) != len(want) {
+		t.Errorf("items = %v, want %v", kinds, want)
+	}
+	for api, k := range want {
+		if kinds[api] != k {
+			t.Errorf("%s kind = %q, want %q", api, kinds[api], k)
+		}
+	}
+
+	var wisps []string
+	for _, w := range d.Wisps {
+		wisps = append(wisps, w.APIName+":"+w.Variant)
+	}
+	// Phantom Emblem is a Wisp (it's in the Charms list), not an emblem.
+	if want := []string{"DA_Barrier18:", "DA_Barrier18_Upgrade:upgraded", "DA_PhantomEmblem18:"}; !slices.Equal(wisps, want) {
+		t.Errorf("wisps = %v, want %v", wisps, want)
+	}
+	if len(d.Augments) != 4 {
+		t.Errorf("expected the 4 pooled augments, got %d", len(d.Augments))
+	}
+}
+
+func TestClassifyItem(t *testing.T) {
+	cases := map[string]string{
+		"DA_18_EmblemCoven":               "emblem",
+		"DA_18_EmblemFloraFatalisAugment": "emblem",
+		"DA_Artifact_LichBane":            "artifact",
+		"DA_BloodthirsterRadiant":         "radiant",
+		"DA_BlastPotion18_Radiant":        "radiant",
+		"DA_Consumable_ItemRemover":       "consumable",
+		"DA_Reforger":                     "consumable",
+		"DA_MasterworkUpgrade":            "consumable",
+		"DA_LuckyItemChest":               "consumable",
+		"DA_SpeedBooster18":               "booster",
+		"DA_ManaPotion18":                 "potion",
+		"DA_Something18":                  "other",
+	}
+	for api, want := range cases {
+		if got, _ := classifyItem(api, false, false, false); got != want {
+			t.Errorf("classifyItem(%s) = %q, want %q", api, got, want)
+		}
+	}
+}
+
+func TestClassifyItem_CraftableEmblemIsNotACompletedItem(t *testing.T) {
+	if kind, _ := classifyItem("DA_18_EmblemBrawler", false, true, false); kind != "emblem" {
+		t.Errorf("a Spatula-recipe emblem should be an emblem, got %q", kind)
+	}
+	if _, variant := classifyItem("DA_18_EmblemFloraFatalisAugment", false, false, false); variant != "augment" {
+		t.Errorf("expected the augment-granted emblem variant, got %q", variant)
 	}
 }

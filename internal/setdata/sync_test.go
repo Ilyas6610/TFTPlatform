@@ -15,17 +15,18 @@ import (
 // fakeCDragon serves content-metadata.json and the TFT export per channel.
 type fakeCDragon struct {
 	mu       sync.Mutex
-	channels map[string]struct {
-		version string
-		export  []byte
-	}
+	map22    []byte
+	channels map[string]fakeChannel
+}
+
+type fakeChannel struct {
+	version string
+	export  []byte
+	map22   []byte
 }
 
 func newFakeCDragon(t *testing.T) (*fakeCDragon, Source) {
-	f := &fakeCDragon{channels: map[string]struct {
-		version string
-		export  []byte
-	}{}}
+	f := &fakeCDragon{channels: map[string]fakeChannel{}, map22: fixtureMap22(t)}
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
 	return f, Source{BaseURL: srv.URL, HTTP: srv.Client()}
@@ -34,10 +35,7 @@ func newFakeCDragon(t *testing.T) (*fakeCDragon, Source) {
 func (f *fakeCDragon) set(channel, version string, export []byte) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.channels[channel] = struct {
-		version string
-		export  []byte
-	}{version, export}
+	f.channels[channel] = fakeChannel{version, export, f.map22}
 }
 
 func (f *fakeCDragon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -52,6 +50,8 @@ func (f *fakeCDragon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"version":"%s+branch.releases.content.release"}`, c.version)
 	case path == "cdragon/tft/en_us.json":
 		w.Write(c.export)
+	case path == "game/data/maps/shipping/map22/map22.bin.json":
+		w.Write(c.map22)
 	default:
 		w.WriteHeader(http.StatusNotFound)
 	}
@@ -122,5 +122,36 @@ func TestSync_FetchErrors(t *testing.T) {
 
 	if _, err := Sync(context.Background(), src, st, 18, "16.01"); err == nil {
 		t.Error("expected an error for a missing channel")
+	}
+}
+
+func TestSync_UsesSetPools(t *testing.T) {
+	st := storetest.New(t)
+	cd, src := newFakeCDragon(t)
+	cd.set("latest", "16.19.200", defaultFixture().json(t))
+
+	if _, err := Sync(context.Background(), src, st, 18, "latest"); err != nil {
+		t.Fatal(err)
+	}
+	snaps, err := LoadSnapshots(context.Background(), st, 18)
+	if err != nil || len(snaps) != 1 {
+		t.Fatalf("snapshots: %d, %v", len(snaps), err)
+	}
+	if n := len(snaps[0].Items); n != 3 {
+		t.Errorf("expected the 3 pooled items, got %d", n)
+	}
+}
+
+func TestSync_FailsWithoutPools(t *testing.T) {
+	st := storetest.New(t)
+	cd, src := newFakeCDragon(t)
+	cd.map22 = []byte(`{"x": {"__type": "TFTSetData", "name": "TFTSet17"}}`)
+	cd.set("latest", "16.19.200", defaultFixture().json(t))
+
+	if _, err := Sync(context.Background(), src, st, 18, "latest"); err == nil {
+		t.Error("expected the sync to fail rather than store a differently-extracted snapshot")
+	}
+	if snaps, _ := LoadSnapshots(context.Background(), st, 18); len(snaps) != 0 {
+		t.Errorf("expected nothing stored, got %d", len(snaps))
 	}
 }

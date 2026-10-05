@@ -30,6 +30,10 @@ export default function App() {
           <Route path="/set/:set/:tab" element={<SetInfoPage />} />
         </Routes>
       </main>
+      <footer className="app-footer muted">
+        TFT Stats was created under Riot Games&apos; &quot;Legal Jibber Jabber&quot; policy using assets owned by Riot
+        Games. Riot Games does not endorse or sponsor this project.
+      </footer>
     </div>
   );
 }

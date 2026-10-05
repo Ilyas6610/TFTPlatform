@@ -98,7 +98,15 @@ func LatestSet(raw []byte) (int, error) {
 // Extract builds the normalized SetData for set from a CommunityDragon
 // export. Only shop units (cost 1-5 with traits) are kept, which drops
 // neutral monsters, summons and other non-buyable characters.
-func Extract(raw []byte, set int, version string) (*SetData, error) {
+//
+// pools, when non-nil, are the set's own augment/item/wisp lists from
+// Riot's set definition (see Pools); augments, items and wisps then come
+// from exactly those. Set 18's own items have no description in the export
+// (it moved to the new client), so pooled items are kept without one and
+// filled in by text overrides when served. Without pools (sets that don't
+// define their own lists), they're picked from the export's list by name
+// heuristics instead.
+func Extract(raw []byte, set int, version string, pools *Pools) (*SetData, error) {
 	var f cdFile
 	if err := json.Unmarshal(raw, &f); err != nil {
 		return nil, fmt.Errorf("decode export: %w", err)
@@ -136,31 +144,50 @@ func Extract(raw []byte, set int, version string) (*SetData, error) {
 		}
 		out.Traits = append(out.Traits, extractTrait(t, patch))
 	}
-	for _, api := range cs.Augments {
+	augmentIDs, itemIDs := cs.Augments, cs.Items
+	if pools != nil {
+		augmentIDs, itemIDs = pools.Augments, pools.Items
+	}
+	for _, api := range augmentIDs {
 		it, ok := items[api]
 		if !ok || it.Name == "" {
 			continue
 		}
 		out.Augments = append(out.Augments, extractAugment(it, traitNames, patch))
 	}
+	if pools == nil {
+		out.Augments = dedupeAugments(out.Augments, set)
+	}
 
 	// Component = something a completed item in this set is built from.
 	components := map[string]bool{}
-	for _, api := range cs.Items {
+	for _, api := range itemIDs {
 		for _, c := range items[api].Composition {
 			components[c] = true
 		}
 	}
-	for _, api := range cs.Items {
+	for _, api := range itemIDs {
 		it, ok := items[api]
-		if !ok || it.Name == "" || it.Desc == "" || isRewardPlaceholder(api) {
+		if !ok || it.Name == "" {
 			continue
 		}
-		item := extractItem(it, components[api], patch)
+		if pools == nil && (it.Desc == "" || isRewardPlaceholder(api)) {
+			continue
+		}
+		item := extractItem(it, components[api], patch, pools == nil)
 		if item.Kind == "wisp" {
 			out.Wisps = append(out.Wisps, item)
 		} else {
 			out.Items = append(out.Items, item)
+		}
+	}
+	if pools != nil {
+		for _, api := range pools.Wisps {
+			if it, ok := items[api]; ok && it.Name != "" {
+				w := extractItem(it, false, patch, false)
+				w.Kind, w.Variant = "wisp", wispVariant(api)
+				out.Wisps = append(out.Wisps, w)
+			}
 		}
 	}
 
@@ -309,7 +336,7 @@ func isRewardPlaceholder(api string) bool {
 	return strings.HasPrefix(api, "TFT_Assist_") || strings.Contains(api, "ArmoryItem")
 }
 
-func extractItem(it cdItem, isComponent bool, patch string) Item {
+func extractItem(it cdItem, isComponent bool, patch string, daIsWisp bool) Item {
 	values := namedValues(it.Effects, it.Desc)
 	item := Item{
 		APIName:     it.APIName,
@@ -319,38 +346,109 @@ func extractItem(it cdItem, isComponent bool, patch string) Item {
 		Composition: it.Composition,
 		Values:      values,
 	}
-	item.Kind, item.Variant = classifyItem(it.APIName, isComponent, len(it.Composition) == 2)
+	item.Kind, item.Variant = classifyItem(it.APIName, isComponent, len(it.Composition) == 2, daIsWisp)
 	return item
 }
 
-func classifyItem(api string, isComponent, isCompleted bool) (kind, variant string) {
+// classifyItem sorts an item into a UI section by its apiName. daIsWisp is
+// the no-pools heuristic: there, any other DA_* item is taken to be a Wisp.
+func classifyItem(api string, isComponent, isCompleted, daIsWisp bool) (kind, variant string) {
 	lower := strings.ToLower(api)
 	switch {
-	case isComponent:
+	// Before "completed": craftable emblems are built from a Spatula and a
+	// component, so they have a two-item recipe too.
+	case strings.Contains(lower, "emblem"):
+		if strings.HasSuffix(lower, "augment") {
+			return "emblem", "augment" // the enhanced copy an augment grants
+		}
+		return "emblem", ""
+	case isComponent || strings.Contains(lower, "_component_"):
 		return "component", ""
 	case isCompleted:
 		return "completed", ""
-	case strings.Contains(lower, "emblem"):
-		return "emblem", ""
 	case strings.Contains(lower, "artifact") || strings.Contains(lower, "ornn"):
 		return "artifact", ""
 	case strings.Contains(lower, "radiant"):
 		return "radiant", ""
-	case strings.Contains(lower, "consumable"):
+	case strings.Contains(lower, "consumable") || strings.Contains(lower, "reforger") ||
+		strings.Contains(lower, "masterwork") || strings.Contains(lower, "chest"):
 		return "consumable", ""
-	case strings.HasPrefix(api, "DA_"):
-		// Set 18's remaining DA_* items are Wisps, its set mechanic.
-		switch {
-		case strings.Contains(lower, "_prismatic"):
-			variant = "prismatic"
-		case strings.Contains(lower, "_upgrade"):
-			variant = "upgraded"
-		case strings.Contains(lower, "_charm"):
-			variant = "charm"
-		}
-		return "wisp", variant
+	case strings.Contains(lower, "booster"):
+		return "booster", ""
+	case strings.Contains(lower, "potion"):
+		return "potion", ""
+	case daIsWisp && strings.HasPrefix(api, "DA_"):
+		return "wisp", wispVariant(api)
 	}
 	return "other", ""
+}
+
+// wispVariant names a wisp's version from its apiName suffix.
+func wispVariant(api string) string {
+	lower := strings.ToLower(api)
+	switch {
+	case strings.Contains(lower, "_prismatic"):
+		return "prismatic"
+	case strings.Contains(lower, "_upgrade"):
+		return "upgraded"
+	case strings.Contains(lower, "_charm"):
+		return "charm"
+	}
+	return ""
+}
+
+var leadingArticle = regexp.MustCompile(`^(a|an|the) `)
+
+// augmentKey groups augments that players see as the same one: names are
+// compared case-insensitively, ignoring a leading article ("A Magic Roll" /
+// "Magic Roll").
+func augmentKey(name string) string {
+	return leadingArticle.ReplaceAllString(strings.ToLower(strings.TrimSpace(name)), "")
+}
+
+// isSetSpecific reports whether apiName is the set's own version of an
+// augment (TFT<set>_*) rather than a legacy copy carried in its list.
+func isSetSpecific(apiName string, set int) bool {
+	return strings.HasPrefix(apiName, fmt.Sprintf("TFT%d_", set))
+}
+
+// dedupeAugments drops augments carried in the set's list that players
+// can't actually get.
+//
+// Set 18 defines its pool with its own DA_* ids, and its list also carries
+// ~340 legacy TFT*_Augment_* entries (some sharing a DA_ augment's name).
+// The legacy ones aren't live: every augment change in Riot's 18.2 patch
+// notes shows up on the DA_ id while the legacy copy stays frozen, augments
+// removed from the set (Cursed Crown in 18.3) lose their DA_ id but keep
+// the legacy one, and community databases list all DA_ augments but almost
+// none of the legacy-only ones. So when a set has DA_ augments, only those
+// are kept.
+//
+// Sets without DA_ ids keep everything except legacy copies of an augment
+// the set defines itself (TFT<set>_*), matched by name.
+func dedupeAugments(augs []Augment, set int) []Augment {
+	out := augs[:0]
+	for _, a := range augs {
+		if strings.HasPrefix(a.APIName, "DA_") {
+			out = append(out, a)
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+
+	hasOwn := map[string]bool{}
+	for _, a := range augs {
+		if isSetSpecific(a.APIName, set) {
+			hasOwn[augmentKey(a.Name)] = true
+		}
+	}
+	for _, a := range augs {
+		if isSetSpecific(a.APIName, set) || !hasOwn[augmentKey(a.Name)] {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // iconURL converts a game asset path ("assets/ux/traiticons/x.tex") to its
