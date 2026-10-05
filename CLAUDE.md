@@ -23,6 +23,11 @@ gofmt -l -w .
 go test ./...
 go test ./internal/riotapi -run TestName   # single test
 ```
+Tests that need Postgres (`store`, `ingest`, `apiserver`) skip unless `TEST_DATABASE_URL` is set; `scripts/dev-up.sh` creates the `tft_test` database:
+```bash
+TEST_DATABASE_URL="postgres://tft:tft@localhost:5432/tft_test?sslmode=disable" go test -race ./...
+```
+Each such test gets a fresh schema with all migrations applied (`internal/store/storetest`), so they're parallel-safe. Fake Riot responses go through `internal/riotapi/riotapitest`, which points a real `riotapi.Client` at an `httptest` server.
 Running a binary requires env config (see `internal/config/config.go`):
 ```bash
 DATABASE_URL="postgres://tft:tft@localhost:5432/tft" RIOT_API_KEY_FILE="deploy/.secrets/riot-api-key.txt" go run ./cmd/api
@@ -38,7 +43,7 @@ npm run dev      # Vite dev server on :5173, proxies /api to localhost:8080
 npm run build    # tsc -b && vite build
 npm run assets   # download TFT icons + manifest from Data Dragon into public/tft/ (gitignored, ~100 MB; re-run after a patch)
 ```
-Game icons are looked up through `src/assets/tft.tsx` (`GameIcon`, `GameLabel`, `lookup`), keyed by Riot API id (`TFT17_Jinx`, `TFT_Item_InfinityEdge`). Without downloaded assets the UI falls back to text names. Profile icons load from the Data Dragon CDN rather than being downloaded.
+Game icons are looked up through `src/assets/tft.tsx` (`GameIcon`, `GameLabel`, `lookup`), keyed by Riot API id (`TFT17_Jinx`, `TFT_Item_InfinityEdge`; Set 18 switched to a `DA_` prefix, e.g. `DA_Amumu18`, `DA_18_Elderwood`). Without downloaded assets the UI falls back to text names. Profile icons load from the Data Dragon CDN rather than being downloaded.
 
 The live TFT set number is `CURRENT_TFT_SET` in `frontend/src/config.ts` — the only place to bump when a new set launches. The backend is set-agnostic (aggregation runs for every `tft_set_number` present in `matches`).
 
@@ -59,6 +64,9 @@ The live TFT set number is `CURRENT_TFT_SET` in `frontend/src/config.ts` — the
 - **apiserver** — handlers, DTOs, router.
 - **db/migrations** — sequential golang-migrate SQL files (`0001`…).
 - **settags** — empty, not yet implemented.
+
+### Leaderboard freshness
+`GET /api/v1/leaderboard/{platform}` re-seeds the platform from Riot (3 requests, via `ingest.SeedLeaderboard`) when its snapshot is older than 2 minutes, and a complete seed prunes players who left master+. Missing Riot IDs on the returned page are resolved in the background via account-v1 by-PUUID (`ingest.ResolveNames`); the response's `resolving` flag tells the frontend to keep polling. Coordination lives in `internal/apiserver/leaderboard_sync.go`.
 
 ### Key invariant: one rate limiter per process
 Exactly one `riotapi.Client`/`RateLimiter` is built at startup and injected (e.g. into `apiserver.Server`). Handlers and other code must never construct their own client, so live fetches and ingestion can't jointly exceed Riot's rate limits.

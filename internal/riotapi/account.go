@@ -24,3 +24,16 @@ func (c *Client) GetAccountByRiotID(ctx context.Context, routing RoutingRegion, 
 	}
 	return &account, nil
 }
+
+// GetAccountByPUUID resolves a PUUID back to its current Riot ID. Used to
+// backfill names for PUUIDs discovered without one (leaderboard seeding,
+// match participants).
+func (c *Client) GetAccountByPUUID(ctx context.Context, routing RoutingRegion, puuid string) (*Account, error) {
+	u := fmt.Sprintf("%s/riot/account/v1/accounts/by-puuid/%s", routingHost(routing), url.PathEscape(puuid))
+
+	var account Account
+	if err := c.do(ctx, "account-v1.get-by-puuid", u, &account); err != nil {
+		return nil, err
+	}
+	return &account, nil
+}

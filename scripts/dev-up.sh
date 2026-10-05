@@ -8,3 +8,7 @@ cd "$(dirname "$0")/../deploy"
 
 docker-compose up -d postgres
 docker-compose up migrate
+
+# Database for Postgres-backed Go tests (see internal/store/storetest).
+docker-compose exec -T postgres psql -U tft -d tft -tAc "SELECT 1 FROM pg_database WHERE datname = 'tft_test'" | grep -q 1 \
+  || docker-compose exec -T postgres psql -U tft -d tft -c "CREATE DATABASE tft_test"

@@ -14,6 +14,8 @@ import (
 type Server struct {
 	Riot  *riotapi.Client
 	Store *store.Store
+
+	leaderboard leaderboardSync
 }
 
 func NewRouter(s *Server) http.Handler {

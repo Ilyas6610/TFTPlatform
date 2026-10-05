@@ -48,6 +48,32 @@ func (s *Store) UpsertAccountPUUIDOnly(ctx context.Context, puuid, routingRegion
 	return err
 }
 
+// SetAccountRiotID records a Riot ID resolved for an existing PUUID. Riot IDs
+// can move between accounts (a name freed by one player and taken by
+// another), so any other account still holding this ID — necessarily a stale
+// record, given idx_accounts_riot_id — has it cleared first.
+func (s *Store) SetAccountRiotID(ctx context.Context, puuid, gameName, tagLine string) error {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `
+		UPDATE accounts SET game_name = NULL, tag_line = NULL, updated_at = now()
+		WHERE game_name = $1 AND tag_line = $2 AND puuid <> $3
+	`, gameName, tagLine, puuid); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE accounts SET game_name = $2, tag_line = $3, last_fetched_at = now(), updated_at = now()
+		WHERE puuid = $1
+	`, puuid, gameName, tagLine); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // GetAccountByRiotID looks up a cached account by Riot ID. Returns
 // (nil, nil) on a cache miss (not an error) so callers can fall through to a
 // live Riot API fetch.

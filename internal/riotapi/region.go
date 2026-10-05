@@ -70,3 +70,13 @@ func platformHost(p PlatformRegion) string {
 func routingHost(r RoutingRegion) string {
 	return fmt.Sprintf("https://%s.api.riotgames.com", r)
 }
+
+// AccountRoutingForPlatform returns the routing region to use for account-v1,
+// which (unlike match-v1) has no SEA cluster: SEA platforms use asia.
+func AccountRoutingForPlatform(p PlatformRegion) (RoutingRegion, error) {
+	r, err := RoutingForPlatform(p)
+	if r == RoutingSea {
+		r = RoutingAsia
+	}
+	return r, err
+}

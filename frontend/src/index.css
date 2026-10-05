@@ -311,3 +311,25 @@ tr.clickable:hover {
   border-radius: 50%;
   border: 2px solid var(--accent-dim);
 }
+
+.leaderboard-status {
+  margin: 0 0 12px;
+}
+
+.warning-box {
+  background: #2a2414;
+  border: 1px solid #5a4a22;
+  color: #f3dfb6;
+  padding: 10px 16px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+}
+
+td a {
+  color: var(--text);
+  text-decoration: none;
+}
+
+td a:hover {
+  color: var(--accent);
+}

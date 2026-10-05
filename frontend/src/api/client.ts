@@ -93,8 +93,20 @@ export interface LeaderboardEntry {
   fetchedAt: string;
 }
 
+// The server refreshes the snapshot from Riot when it's more than a couple
+// of minutes old, and resolves missing Riot IDs in the background while
+// `resolving` is true — re-fetch to pick them up.
+export interface Leaderboard {
+  platform: string;
+  fetchedAt: string | null;
+  stale: boolean;
+  staleReason?: string;
+  resolving: boolean;
+  entries: LeaderboardEntry[];
+}
+
 export function getLeaderboard(platform: string, limit = 100) {
-  return get<LeaderboardEntry[]>(`/api/v1/leaderboard/${encodeURIComponent(platform)}?limit=${limit}`);
+  return get<Leaderboard>(`/api/v1/leaderboard/${encodeURIComponent(platform)}?limit=${limit}`);
 }
 
 export interface UnitStat {

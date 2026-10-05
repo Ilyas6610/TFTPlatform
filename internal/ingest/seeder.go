@@ -21,15 +21,17 @@ type SeedResult struct {
 	RequestsMade  int
 	PlayersSeeded int
 	// Stopped is set (not an error) if a rate limit was hit partway through
-	// the three tier fetches; tiers already seeded are kept.
+	// the three tier fetches; tiers already fetched are still written.
 	Stopped string
 }
 
 // SeedLeaderboard pulls challenger/grandmaster/master from tft/league-v1 for
-// platform, upserts accounts + league_entries snapshots, and queues each
-// PUUID for match crawling at a priority reflecting their tier. This is a
-// small, bounded call — at most 3 Riot API requests — safe to re-run daily
-// even under a personal key.
+// platform, writes them as platform's leaderboard snapshot (accounts +
+// league_entries), and queues each PUUID for match crawling at a priority
+// reflecting their tier. This is a small, bounded call — at most 3 Riot API
+// requests — safe to re-run often even under a personal key. When all three
+// tiers are fetched, players no longer on the apex ladder are dropped from
+// the snapshot.
 func SeedLeaderboard(ctx context.Context, riot *riotapi.Client, st *store.Store, platform riotapi.PlatformRegion) (SeedResult, error) {
 	routing, err := riotapi.RoutingForPlatform(platform)
 	if err != nil {
@@ -48,13 +50,14 @@ func SeedLeaderboard(ctx context.Context, riot *riotapi.Client, st *store.Store,
 		{"MASTER", PriorityMaster, riot.GetMaster},
 	}
 
+	var entries []store.SnapshotEntry
 	for _, t := range tiers {
 		list, err := t.fetch(ctx, platform)
 		result.RequestsMade++
 		if err != nil {
 			if _, ok := err.(*riotapi.ErrRateLimited); ok {
 				result.Stopped = "rate_limited"
-				return result, nil
+				break
 			}
 			return result, fmt.Errorf("fetch %s: %w", t.name, err)
 		}
@@ -63,27 +66,26 @@ func SeedLeaderboard(ctx context.Context, riot *riotapi.Client, st *store.Store,
 			if entry.PUUID == "" {
 				continue // defensive: skip any entry Riot didn't attach a puuid to
 			}
-			if err := st.UpsertAccountPUUIDOnly(ctx, entry.PUUID, string(routing)); err != nil {
-				return result, fmt.Errorf("upsert account %s: %w", entry.PUUID, err)
-			}
-			if err := st.UpsertLeagueEntry(ctx, store.LeagueEntry{
-				PUUID:          entry.PUUID,
-				PlatformRegion: string(platform),
-				Tier:           t.name,
-				Rank:           entry.Rank,
-				LeaguePoints:   entry.LeaguePoints,
-				Wins:           entry.Wins,
-				Losses:         entry.Losses,
-				HotStreak:      entry.HotStreak,
-			}); err != nil {
-				return result, fmt.Errorf("upsert league entry %s: %w", entry.PUUID, err)
-			}
-			if err := st.EnqueuePUUID(ctx, entry.PUUID, string(platform), string(routing), t.priority); err != nil {
-				return result, fmt.Errorf("enqueue %s: %w", entry.PUUID, err)
-			}
-			result.PlayersSeeded++
+			entries = append(entries, store.SnapshotEntry{
+				LeagueEntry: store.LeagueEntry{
+					PUUID:          entry.PUUID,
+					PlatformRegion: string(platform),
+					Tier:           t.name,
+					Rank:           entry.Rank,
+					LeaguePoints:   entry.LeaguePoints,
+					Wins:           entry.Wins,
+					Losses:         entry.Losses,
+					HotStreak:      entry.HotStreak,
+				},
+				RoutingRegion: string(routing),
+				Priority:      t.priority,
+			})
 		}
 	}
 
+	if err := st.WriteLeagueSnapshot(ctx, string(platform), entries, result.Stopped == ""); err != nil {
+		return result, fmt.Errorf("write leaderboard snapshot: %w", err)
+	}
+	result.PlayersSeeded = len(entries)
 	return result, nil
 }

@@ -1,7 +1,9 @@
 package apiserver
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -23,16 +25,36 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 // temporarily unavailable" from "our key is dead" — none of which should
 // look like a generic 500.
 func writeRiotError(w http.ResponseWriter, err error) {
-	switch e := err.(type) {
-	case *riotapi.ErrNotFound:
-		writeError(w, http.StatusNotFound, "not_found", e.Error())
-	case *riotapi.ErrRateLimited:
-		w.Header().Set("Retry-After", strconv.Itoa(int(e.RetryAfter.Seconds())))
-		writeError(w, http.StatusServiceUnavailable, "riot_api_rate_limited", e.Error())
-	case *riotapi.ErrKeyExpired:
+	var notFound *riotapi.ErrNotFound
+	var rateLimited *riotapi.ErrRateLimited
+	var keyExpired *riotapi.ErrKeyExpired
+	switch {
+	case errors.As(err, &notFound):
+		writeError(w, http.StatusNotFound, "not_found", notFound.Error())
+	case errors.As(err, &rateLimited):
+		w.Header().Set("Retry-After", strconv.Itoa(int(rateLimited.RetryAfter.Seconds())))
+		writeError(w, http.StatusServiceUnavailable, "riot_api_rate_limited", rateLimited.Error())
+	case errors.As(err, &keyExpired):
 		writeError(w, http.StatusBadGateway, "riot_api_key_expired",
 			"live data temporarily unavailable: riot api key needs rotation")
 	default:
 		writeError(w, http.StatusBadGateway, "riot_api_error", err.Error())
+	}
+}
+
+// riotErrorCode returns the error code writeRiotError would use for err, for
+// responses that report a Riot failure without failing outright.
+func riotErrorCode(err error) string {
+	var rateLimited *riotapi.ErrRateLimited
+	var keyExpired *riotapi.ErrKeyExpired
+	switch {
+	case errors.As(err, &rateLimited):
+		return "riot_api_rate_limited"
+	case errors.As(err, &keyExpired):
+		return "riot_api_key_expired"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "riot_api_timeout"
+	default:
+		return "riot_api_error"
 	}
 }
