@@ -368,6 +368,9 @@ func classifyItem(api string, isComponent, isCompleted, daIsWisp bool) (kind, va
 		return "completed", ""
 	case strings.Contains(lower, "artifact") || strings.Contains(lower, "ornn"):
 		return "artifact", ""
+	// A Radiant potion is a used-up consumable, not a Radiant equipment item.
+	case strings.Contains(lower, "potion") && strings.Contains(lower, "radiant"):
+		return "consumable", ""
 	case strings.Contains(lower, "radiant"):
 		return "radiant", ""
 	case strings.Contains(lower, "consumable") || strings.Contains(lower, "reforger") ||

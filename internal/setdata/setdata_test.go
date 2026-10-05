@@ -40,11 +40,28 @@ func TestRender_DropsLiveTrackers(t *testing.T) {
 		"Gain @AttackSpeed*100@% (Current: @TFTUnitProperty.item:TFT9_PumpingUpRounds@%) each round.": "Gain 10% each round.",
 		// Unit-scoped trackers have no "item" segment.
 		"Equip it.<br>@TFTUnitProperty.:TFT_Augment_TragicalBlade_TRAKey@": "Equip it.",
+		// The new client's runtime placeholders: glued to prose, the prose stays.
+		"This humble hat can help you make, or unmake, the world itself.{ItemTags.RabadonsDeathcap.DeadlierCapsStacks}": "This humble hat can help you make, or unmake, the world itself.",
+		"Gain 10 mana.{Augment.Variant.RivalsAugment.AbilityTooltip}":                                                   "Gain 10 mana.",
+		// ...on a labelled line of its own, the whole line goes.
+		"Roll 3 dice.<br><br>Reward: {Augment.Variant.MagicRoll.Reward}":                      "Roll 3 dice.",
+		"Gain a champion.<br>Champion: <rules>{Set18.Augment.CaretakersAllyChampion}</rules>": "Gain a champion.",
+		// ...and in parentheses, the parenthetical goes.
+		"Collect pixies ({Set18.Trait.Fae.GoldenPixieTracker} collected) each round.": "Collect pixies each round.",
 	}
 	for tmpl, want := range cases {
 		if got := render(tmpl, lookupIn(values)); got != want {
 			t.Errorf("render(%q) = %q, want %q", tmpl, got, want)
 		}
+	}
+}
+
+func TestRender_KeepsHashedVariableNames(t *testing.T) {
+	// "{0f90e7a4}" is CommunityDragon's name for an unnamed variable, not a
+	// runtime placeholder; it must still resolve as a variable.
+	got := render("Gain @{0f90e7a4}@ stacks.", lookupIn(map[string]float64{"{0f90e7a4}": 3}))
+	if got != "Gain 3 stacks." {
+		t.Errorf("got %q", got)
 	}
 }
 
@@ -412,7 +429,7 @@ func TestClassifyItem(t *testing.T) {
 		"DA_18_EmblemFloraFatalisAugment": "emblem",
 		"DA_Artifact_LichBane":            "artifact",
 		"DA_BloodthirsterRadiant":         "radiant",
-		"DA_BlastPotion18_Radiant":        "radiant",
+		"DA_BlastPotion18_Radiant":        "consumable",
 		"DA_Consumable_ItemRemover":       "consumable",
 		"DA_Reforger":                     "consumable",
 		"DA_MasterworkUpgrade":            "consumable",

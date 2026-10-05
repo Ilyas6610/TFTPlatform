@@ -22,11 +22,18 @@ var (
 	blanks  = regexp.MustCompile(`[ \t]+`)
 	breaks  = regexp.MustCompile(`\n{3,}`)
 
-	// Live in-game counters ("Current Bonus: @TFTUnitProperty.item:X@") have
-	// no static value, so their lines and parentheticals are dropped.
-	tracker      = regexp.MustCompile(`@TFTUnitProperty[^@]*@`)
-	trackerParen = regexp.MustCompile(`\s*\([^()]*@TFTUnitProperty[^@]*@[^()]*\)`)
-	lineBreak    = regexp.MustCompile(`(?i)<br\s*/?>|\r?\n|\\n`)
+	// Live in-game values have no static text: League-client counters
+	// ("Current Bonus: @TFTUnitProperty.item:X@") and the new client's
+	// runtime insertion points ("{ItemTags.Deathblade.DeadlierBladeStacks}",
+	// "{Augment.Variant.MagicRoll.Reward}", "{Set18.Trait.Fae.GoldenPixieTracker}").
+	// A dotted path is required so CommunityDragon's hashed names
+	// ("{0f90e7a4}") never match.
+	tracker      = regexp.MustCompile(`@TFTUnitProperty[^@]*@|\{[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+\}`)
+	trackerParen = regexp.MustCompile(`\s*\([^()]*(?:@TFTUnitProperty[^@]*@|\{[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+\})[^()]*\)`)
+	// A tracker that is a label's value ("Total Payouts: @...@ Gold",
+	// "Champion: <rules>{...}</rules>"): the whole line is that label.
+	labelledTracker = regexp.MustCompile(`:\s*(?:<[^>]*>\s*)*(?:@TFTUnitProperty[^@]*@|\{[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+\})`)
+	lineBreak       = regexp.MustCompile(`(?i)<br\s*/?>|\r?\n|\\n`)
 
 	calcSuffix = regexp.MustCompile(`(Calc)?\d*$`)
 	camelBreak = regexp.MustCompile(`([a-z])([A-Z])`)
@@ -50,7 +57,9 @@ func unknownValue(name string) string {
 }
 
 // stripTrackers removes the parts of a template that only show live
-// in-game counters.
+// in-game values: parentheticals around them, lines that are just a label
+// for one ("Reward: {...}"), and otherwise the placeholder itself, keeping
+// the prose around it ("...gain 10 mana.{Augment.Variant...}").
 func stripTrackers(tmpl string) string {
 	if !tracker.MatchString(tmpl) {
 		return tmpl
@@ -61,7 +70,16 @@ func stripTrackers(tmpl string) string {
 	for _, l := range lines {
 		if !tracker.MatchString(l) {
 			kept = append(kept, l)
+			continue
 		}
+		if labelledTracker.MatchString(l) {
+			continue
+		}
+		rest := strings.TrimSpace(tracker.ReplaceAllString(l, ""))
+		if strings.TrimSpace(htmlTag.ReplaceAllString(rest, "")) == "" {
+			continue
+		}
+		kept = append(kept, rest)
 	}
 	return strings.Join(kept, "<br>")
 }
