@@ -68,6 +68,9 @@ export function getPlayerMatches(puuid: string, region: string, limit = 20) {
 // payload is ignored rather than modeled.
 export interface MatchParticipant {
   puuid: string;
+  // Riot ID at the time of the match; absent in some older payloads.
+  riotIdGameName?: string;
+  riotIdTagline?: string;
   placement: number;
   level: number;
   last_round: number;

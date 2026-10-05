@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { ApiError, MatchDetail, getMatch } from "../api/client";
 import { GameIcon } from "../assets/tft";
 
@@ -24,6 +24,8 @@ export default function MatchDetailPage() {
   if (!match) return null;
 
   const participants = [...match.info.participants].sort((a, b) => a.placement - b.placement);
+  // Match ids are prefixed with their platform, e.g. "NA1_5654662880".
+  const platform = match.metadata.match_id.split("_")[0].toLowerCase();
 
   return (
     <div>
@@ -37,8 +39,17 @@ export default function MatchDetailPage() {
 
       {participants.map((p) => (
         <div className="panel" key={p.puuid}>
-          <h3>
-            <span className={`placement placement-${p.placement}`}>#{p.placement}</span> Level {p.level}
+          <h3 className="participant-header">
+            <span className={`placement placement-${p.placement}`}>#{p.placement}</span>
+            {p.riotIdGameName ? (
+              <Link to={`/players/${platform}/${encodeURIComponent(p.riotIdGameName)}/${encodeURIComponent(p.riotIdTagline ?? "")}`}>
+                {p.riotIdGameName}
+                <span className="muted">#{p.riotIdTagline}</span>
+              </Link>
+            ) : (
+              <span className="muted">Unknown player</span>
+            )}
+            <span className="muted participant-level">Level {p.level}</span>
           </h3>
           <div className="trait-row">
             {p.traits

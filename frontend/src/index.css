@@ -333,3 +333,23 @@ td a {
 td a:hover {
   color: var(--accent);
 }
+
+.participant-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.participant-header a {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.participant-header a:hover {
+  color: var(--accent);
+}
+
+.participant-level {
+  font-weight: 400;
+  margin-left: auto;
+}
