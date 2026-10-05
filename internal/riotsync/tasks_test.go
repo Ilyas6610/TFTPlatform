@@ -69,3 +69,53 @@ func TestSchedulerRecordsRuns(t *testing.T) {
 		t.Fatalf("ingest_runs: %d rows, %d unfinished; want 4 (seed, crawl, names, aggregate), 0", runs, unfinished)
 	}
 }
+
+func TestCloseStale_OnlyTouchesUnfinishedRiotsyncRuns(t *testing.T) {
+	st := storetest.New(t)
+	ctx := context.Background()
+	rec := riotsync.StoreRecorder{Store: st}
+
+	stale, _ := rec.Start(ctx, "crawl_queue") // riotsync run that never finished
+	done, _ := rec.Start(ctx, "aggregate")    // riotsync run that finished
+	rec.Finish(ctx, done, "completed", riotsync.Outcome{})
+	foreign, _ := st.StartIngestRun(ctx, "crawl_queue") // ingestcli run, still running
+
+	n, err := rec.CloseStale(ctx)
+	if err != nil || n != 1 {
+		t.Fatalf("CloseStale = %d, %v; want 1", n, err)
+	}
+	status := func(id int64) (s string) {
+		st.Pool.QueryRow(ctx, `SELECT status FROM ingest_runs WHERE id=$1`, id).Scan(&s)
+		return
+	}
+	if got := status(stale); got != "failed_interrupted" {
+		t.Errorf("stale run status = %q", got)
+	}
+	if got := status(done); got != "completed" {
+		t.Errorf("finished run status = %q", got)
+	}
+	if got := status(foreign); got != "running" {
+		t.Errorf("ingestcli run status = %q, want untouched", got)
+	}
+}
+
+// Cancelling mid-run (shutdown) still closes the run row, as "interrupted".
+func TestShutdownMidRunClosesRow(t *testing.T) {
+	st := storetest.New(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	(&riotsync.Scheduler{
+		Recorder: riotsync.StoreRecorder{Store: st},
+		Tasks: []riotsync.Task{{Name: "slow", Interval: time.Hour, Run: func(ctx context.Context) riotsync.Outcome {
+			cancel() // SIGTERM arrives during the run
+			<-ctx.Done()
+			return riotsync.Outcome{Err: ctx.Err()}
+		}}},
+	}).RunOnce(ctx)
+
+	var status string
+	var finished bool
+	st.Pool.QueryRow(context.Background(), `SELECT status, finished_at IS NOT NULL FROM ingest_runs`).Scan(&status, &finished)
+	if status != "interrupted" || !finished {
+		t.Fatalf("status=%q finished=%v, want interrupted/true", status, finished)
+	}
+}

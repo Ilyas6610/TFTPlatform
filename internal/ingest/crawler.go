@@ -65,6 +65,14 @@ func CrawlPUUID(ctx context.Context, riot *riotapi.Client, st *store.Store, rout
 			result.Stopped = "request_budget_exhausted"
 			return result, nil
 		}
+		// Re-check right before spending a Riot request: another process
+		// (or an earlier player's match list in this run) may have stored
+		// it since the batch lookup above.
+		if now, err := st.ExistingMatchIDs(ctx, []string{matchID}); err != nil {
+			return result, fmt.Errorf("check existing match %s: %w", matchID, err)
+		} else if now[matchID] {
+			continue
+		}
 
 		match, raw, err := riot.GetTFTMatch(ctx, routing, matchID)
 		result.RequestsMade++
@@ -79,10 +87,13 @@ func CrawlPUUID(ctx context.Context, riot *riotapi.Client, st *store.Store, rout
 			return result, fmt.Errorf("fetch match %s: %w", matchID, err)
 		}
 
-		if err := StoreMatch(ctx, st, routing, matchID, match, raw); err != nil {
+		inserted, err := storeMatch(ctx, st, routing, matchID, match, raw)
+		if err != nil {
 			return result, fmt.Errorf("store match %s: %w", matchID, err)
 		}
-		result.MatchesIngested++
+		if inserted { // false: another process stored it while we fetched
+			result.MatchesIngested++
+		}
 	}
 
 	return result, nil
@@ -93,6 +104,12 @@ func CrawlPUUID(ctx context.Context, riot *riotapi.Client, st *store.Store, rout
 // path (internal/apiserver/handlers_match.go) share the same write logic —
 // including organic PUUID discovery — instead of duplicating it.
 func StoreMatch(ctx context.Context, st *store.Store, routing riotapi.RoutingRegion, matchID string, match *riotapi.TFTMatch, raw []byte) error {
+	_, err := storeMatch(ctx, st, routing, matchID, match, raw)
+	return err
+}
+
+// storeMatch is StoreMatch that also reports whether the match was new.
+func storeMatch(ctx context.Context, st *store.Store, routing riotapi.RoutingRegion, matchID string, match *riotapi.TFTMatch, raw []byte) (bool, error) {
 	participants := make(map[string]store.MatchParticipant, len(match.Info.Participants))
 
 	for _, p := range match.Info.Participants {
@@ -100,12 +117,12 @@ func StoreMatch(ctx context.Context, st *store.Store, routing riotapi.RoutingReg
 		// crawling for — this is how coverage grows organically beyond the
 		// explicitly tracked/seeded players over time.
 		if err := st.UpsertAccountPUUIDOnly(ctx, p.PUUID, string(routing)); err != nil {
-			return fmt.Errorf("upsert participant account %s: %w", p.PUUID, err)
+			return false, fmt.Errorf("upsert participant account %s: %w", p.PUUID, err)
 		}
 
 		rawParticipant, err := json.Marshal(p)
 		if err != nil {
-			return fmt.Errorf("marshal participant %s: %w", p.PUUID, err)
+			return false, fmt.Errorf("marshal participant %s: %w", p.PUUID, err)
 		}
 
 		participants[p.PUUID] = store.MatchParticipant{
@@ -137,5 +154,5 @@ func StoreMatch(ctx context.Context, st *store.Store, routing riotapi.RoutingReg
 		RawPayload:    raw,
 	}
 
-	return st.InsertMatchWithParticipants(ctx, m, participants)
+	return st.InsertMatchIfNew(ctx, m, participants)
 }

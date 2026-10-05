@@ -67,11 +67,29 @@ func BuildTasks(cfg Config, riot *riotapi.Client, st *store.Store) []Task {
 	return tasks
 }
 
+// runTypePrefix marks ingest_runs rows as riotsync's (ingestcli writes to the
+// same table), so CloseStale can't touch a run that belongs to someone else.
+const runTypePrefix = "riotsync:"
+
 // StoreRecorder records runs in ingest_runs, the same table ingestcli uses.
 type StoreRecorder struct{ Store *store.Store }
 
 func (r StoreRecorder) Start(ctx context.Context, name string) (int64, error) {
-	return r.Store.StartIngestRun(ctx, name)
+	return r.Store.StartIngestRun(ctx, runTypePrefix+name)
+}
+
+// CloseStale marks riotsync runs still "running" as interrupted. Call it at
+// startup while holding the singleton lock: any such row was left by an
+// earlier instance that died (kill -9, OOM, power loss) mid-run. It returns
+// how many rows it closed.
+func (r StoreRecorder) CloseStale(ctx context.Context) (int64, error) {
+	tag, err := r.Store.Pool.Exec(ctx, `
+		UPDATE ingest_runs
+		SET finished_at = now(), status = 'failed_interrupted',
+		    error_detail = 'riotsync stopped before this run finished'
+		WHERE finished_at IS NULL AND run_type LIKE $1
+	`, runTypePrefix+"%")
+	return tag.RowsAffected(), err
 }
 
 func (r StoreRecorder) Finish(ctx context.Context, id int64, status string, o Outcome) error {

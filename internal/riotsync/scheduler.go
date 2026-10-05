@@ -131,6 +131,11 @@ func (s *Scheduler) runTask(ctx context.Context, t Task) Outcome {
 	status := "completed"
 	var keyExpired *riotapi.ErrKeyExpired
 	switch {
+	case ctx.Err() != nil:
+		// Shutdown cut the run short; whatever it reports (usually a
+		// "context canceled" error) is not a real failure.
+		status = "interrupted"
+		o.Err = nil
 	case errors.As(o.Err, &keyExpired):
 		status = "failed_key_expired"
 	case o.Err != nil:

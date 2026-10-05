@@ -48,6 +48,15 @@ func main() {
 	}
 	defer release()
 
+	// Holding the lock means no other riotsync is running, so any of its runs
+	// still marked "running" were left by an instance that died.
+	recorder := riotsync.StoreRecorder{Store: st}
+	if n, err := recorder.CloseStale(ctx); err != nil {
+		log.Printf("close stale runs: %v", err)
+	} else if n > 0 {
+		log.Printf("marked %d unfinished run(s) from a previous instance as interrupted", n)
+	}
+
 	var keySource riotapi.KeySource
 	if cfg.RiotAPIKeyFile != "" {
 		keySource = riotapi.FileKeySource{Path: cfg.RiotAPIKeyFile}
@@ -62,7 +71,7 @@ func main() {
 
 	sched := &riotsync.Scheduler{
 		Tasks:          riotsync.BuildTasks(syncCfg, riot, st),
-		Recorder:       riotsync.StoreRecorder{Store: st},
+		Recorder:       recorder,
 		KeyRetry:       syncCfg.KeyRetry,
 		RateLimitPause: 10 * time.Second, // floor; Retry-After is used when longer
 		Limits:         watcher,
