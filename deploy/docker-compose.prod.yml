@@ -84,21 +84,24 @@ services:
       api:
         condition: service_healthy
 
-  # Optional: keeps matches and meta stats fresh (bounded crawls every few
-  # minutes, leaderboard re-seed every few hours). Enable with
-  # `--profile ingest`. It shares the Riot key's rate limit with the API
-  # server, so on a personal key leave the intervals generous.
-  ingest:
+  # Optional: the riotsync background service pulls data from the Riot API
+  # into Postgres (leaderboard seeding, match crawling, Riot ID resolution,
+  # meta stats). Enable with `--profile ingest`. It shares the Riot key's
+  # rate limit with the API server, so on a personal key leave the
+  # intervals generous. Only one instance may run per database.
+  riotsync:
     image: ${IMAGE_PREFIX:-tft-platform}-backend:${IMAGE_TAG:-latest}
     profiles: ["ingest"]
     restart: unless-stopped
     user: *backend-user
-    command: ["ingest-loop"]
+    command: ["riotsync"]
     environment:
       <<: *backend-env
-      PLATFORMS: ${INGEST_PLATFORMS:-na1}
-      SEED_INTERVAL: ${INGEST_SEED_INTERVAL:-21600}
-      CRAWL_INTERVAL: ${INGEST_CRAWL_INTERVAL:-300}
+      RIOTSYNC_PLATFORMS: ${INGEST_PLATFORMS:-na1}
+      RIOTSYNC_SEED_INTERVAL: ${RIOTSYNC_SEED_INTERVAL:-6h}
+      RIOTSYNC_CRAWL_INTERVAL: ${RIOTSYNC_CRAWL_INTERVAL:-5m}
+      RIOTSYNC_NAMES_INTERVAL: ${RIOTSYNC_NAMES_INTERVAL:-10m}
+      RIOTSYNC_AGGREGATE_INTERVAL: ${RIOTSYNC_AGGREGATE_INTERVAL:-10m}
     secrets:
       - riot_api_key
     depends_on:

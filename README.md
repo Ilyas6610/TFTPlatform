@@ -19,7 +19,7 @@ cmd/
   api/           HTTP API server (also syncs set data every 6h)
   ingestcli/     bounded, rate-limit-safe ingestion commands
   aggregator/    recomputes meta stats from ingested matches
-  ingestworker/  placeholder for continuous ingestion (not implemented)
+  riotsync/      background service: Riot API -> Postgres on a schedule
 internal/
   riotapi/       Riot API client + shared rate limiter
   ingest/        leaderboard seeding, match crawling, name resolution
@@ -108,7 +108,7 @@ The production stack is [deploy/docker-compose.prod.yml](deploy/docker-compose.p
 
 | Image | Built from | Contents |
 |---|---|---|
-| `tft-platform-backend` | [Dockerfile](Dockerfile) | `api` (default command), `ingestcli`, `aggregator`, `ingest-loop` (~40 MB) |
+| `tft-platform-backend` | [Dockerfile](Dockerfile) | `api` (default command), `ingestcli`, `aggregator`, `riotsync`, `ingest-loop` (~40 MB) |
 | `tft-platform-frontend` | [frontend/Dockerfile](frontend/Dockerfile) | Built site + game icons on nginx (~150 MB; `FETCH_ASSETS=0` skips the icons) |
 | `tft-platform-migrate` | [deploy/migrate/Dockerfile](deploy/migrate/Dockerfile) | golang-migrate with the migrations baked in |
 
