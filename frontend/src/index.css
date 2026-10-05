@@ -1282,6 +1282,15 @@ details.patch[open] > summary::before {
 }
 
 /* Explorer: "What can I build?" advisor */
+/* Like .explorer-controls: the pickers' dropdowns extend past the panel, so
+   it must not scroll/clip (see .panel's overflow-x). Stacks above the
+   panels that follow it. */
+.advisor {
+  overflow: visible;
+  position: relative;
+  z-index: 4;
+}
+
 .advisor h2 {
   margin-top: 0;
 }
