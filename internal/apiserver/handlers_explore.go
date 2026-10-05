@@ -194,6 +194,7 @@ func (s *Server) handleMetaBuilds(w http.ResponseWriter, r *http.Request) {
 		writeDBError(w, r, err)
 		return
 	}
+	w.Header().Set("Cache-Control", metaCacheControl)
 	writeJSON(w, http.StatusOK, res)
 }
 
@@ -233,8 +234,13 @@ func (s *Server) handleMetaComps(w http.ResponseWriter, r *http.Request) {
 		writeDBError(w, r, err)
 		return
 	}
+	w.Header().Set("Cache-Control", metaCacheControl)
 	writeJSON(w, http.StatusOK, res)
 }
+
+// metaCacheControl lets browsers and proxies reuse meta responses for as
+// long as the server does.
+const metaCacheControl = "public, max-age=300"
 
 // metaCacheKey identifies a meta result by kind and scope (set, queues in
 // any order, level range). Board conditions never reach here.

@@ -7,33 +7,35 @@ import (
 )
 
 const (
-	// metaCacheTTL: meta builds and comps scan every board in scope, so
-	// results are reused for a while instead of recomputed per request.
-	// New matches arrive in crawl batches minutes apart anyway.
-	metaCacheTTL = 5 * time.Minute
-	// metaCacheMaxEntries bounds memory: keys come from request parameters
-	// (set, queue combinations, levels), so callers could otherwise create
-	// entries without limit.
-	metaCacheMaxEntries = 64
+	// resultCacheTTL: cached results (meta builds and comps, set data and
+	// patch notes) are expensive to compute and change slowly — new
+	// matches arrive in crawl batches minutes apart, set data every few
+	// hours — so they're reused for a while instead of recomputed per
+	// request.
+	resultCacheTTL = 5 * time.Minute
+	// resultCacheMaxEntries bounds memory: keys come from request
+	// parameters (set, queue combinations, levels, versions), so callers
+	// could otherwise create entries without limit.
+	resultCacheMaxEntries = 64
 )
 
-// metaCache memoizes expensive meta results by key for metaCacheTTL.
+// resultCache memoizes expensive results by key for resultCacheTTL.
 // Concurrent misses for one key share a single computation. Errors are not
 // cached. The zero value is ready to use.
-type metaCache struct {
+type resultCache struct {
 	mu      sync.Mutex
-	entries map[string]*metaCacheEntry
+	entries map[string]*resultCacheEntry
 	now     func() time.Time // tests only
 }
 
-type metaCacheEntry struct {
+type resultCacheEntry struct {
 	ready chan struct{} // closed once val/err are set
 	val   any
 	err   error
 	at    time.Time
 }
 
-func (c *metaCache) get(ctx context.Context, key string, compute func(context.Context) (any, error)) (any, error) {
+func (c *resultCache) get(ctx context.Context, key string, compute func(context.Context) (any, error)) (any, error) {
 	now := time.Now
 	if c.now != nil {
 		now = c.now
@@ -41,13 +43,13 @@ func (c *metaCache) get(ctx context.Context, key string, compute func(context.Co
 
 	c.mu.Lock()
 	if c.entries == nil {
-		c.entries = map[string]*metaCacheEntry{}
+		c.entries = map[string]*resultCacheEntry{}
 	}
 	e := c.entries[key]
 	if e != nil {
 		select {
 		case <-e.ready:
-			if e.err != nil || now().Sub(e.at) >= metaCacheTTL {
+			if e.err != nil || now().Sub(e.at) >= resultCacheTTL {
 				e = nil // failed or expired: recompute
 			}
 		default: // in flight: wait for it below
@@ -55,7 +57,7 @@ func (c *metaCache) get(ctx context.Context, key string, compute func(context.Co
 	}
 	if e == nil {
 		c.evictLocked(now())
-		e = &metaCacheEntry{ready: make(chan struct{})}
+		e = &resultCacheEntry{ready: make(chan struct{})}
 		c.entries[key] = e
 		c.mu.Unlock()
 
@@ -85,8 +87,8 @@ func (c *metaCache) get(ctx context.Context, key string, compute func(context.Co
 
 // evictLocked makes room for one more entry: it drops expired entries, and
 // if still full, the oldest finished one.
-func (c *metaCache) evictLocked(now time.Time) {
-	if len(c.entries) < metaCacheMaxEntries {
+func (c *resultCache) evictLocked(now time.Time) {
+	if len(c.entries) < resultCacheMaxEntries {
 		return
 	}
 	var oldestKey string
@@ -97,7 +99,7 @@ func (c *metaCache) evictLocked(now time.Time) {
 		default:
 			continue // in flight
 		}
-		if now.Sub(e.at) >= metaCacheTTL {
+		if now.Sub(e.at) >= resultCacheTTL {
 			delete(c.entries, k)
 			continue
 		}
@@ -105,7 +107,7 @@ func (c *metaCache) evictLocked(now time.Time) {
 			oldestKey, oldest = k, e.at
 		}
 	}
-	if len(c.entries) >= metaCacheMaxEntries && oldestKey != "" {
+	if len(c.entries) >= resultCacheMaxEntries && oldestKey != "" {
 		delete(c.entries, oldestKey)
 	}
 }

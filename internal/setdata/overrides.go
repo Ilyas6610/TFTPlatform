@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"regexp"
 	"strings"
@@ -61,7 +60,7 @@ func (s OverrideSource) Fetch(ctx context.Context, set int) (map[string]string, 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("fetch %s: status %d", url, resp.StatusCode)
 	}
-	body, err := io.ReadAll(resp.Body)
+	body, err := readLimited(resp.Body, maxOverrideBytes, url)
 	if err != nil {
 		return nil, err
 	}

@@ -15,9 +15,26 @@ import (
 type backgroundJobs struct {
 	mu      sync.Mutex
 	running map[string]bool
-	retryAt map[string]time.Time
-	lastErr map[string]error
+	// failed holds keys whose last run failed or ended incomplete, until
+	// they succeed; entries whose cooldown is over are dropped once there
+	// are more than maxFailedJobs, so the table stays bounded however many
+	// distinct keys requests bring.
+	failed map[string]jobFailure
 }
+
+type jobFailure struct {
+	retryAt time.Time
+	err     error // nil for an incomplete run
+}
+
+const (
+	maxFailedJobs = 1000
+	// maxRunningJobs caps runs in flight. Each waits on the shared Riot
+	// rate limiter, so requests for many distinct keys would otherwise pile
+	// up goroutines; past the cap, start declines and the client's next
+	// poll tries again.
+	maxRunningJobs = 32
+)
 
 // jobFunc does one run of a job. complete reports whether everything it set
 // out to do got done; false (e.g. stopped on a rate limit) triggers the
@@ -32,13 +49,12 @@ func (b *backgroundJobs) start(key string, timeout, cooldown time.Duration, fn j
 	defer b.mu.Unlock()
 	if b.running == nil {
 		b.running = make(map[string]bool)
-		b.retryAt = make(map[string]time.Time)
-		b.lastErr = make(map[string]error)
+		b.failed = make(map[string]jobFailure)
 	}
 	if b.running[key] {
 		return true
 	}
-	if time.Now().Before(b.retryAt[key]) {
+	if time.Now().Before(b.failed[key].retryAt) || len(b.running) >= maxRunningJobs {
 		return false
 	}
 	b.running[key] = true
@@ -53,15 +69,30 @@ func (b *backgroundJobs) start(key string, timeout, cooldown time.Duration, fn j
 
 		b.mu.Lock()
 		defer b.mu.Unlock()
-		b.running[key] = false
-		b.lastErr[key] = err
+		delete(b.running, key)
 		if err != nil || !complete {
-			b.retryAt[key] = time.Now().Add(cooldown)
+			b.failed[key] = jobFailure{retryAt: time.Now().Add(cooldown), err: err}
+			b.pruneLocked()
 		} else {
-			delete(b.retryAt, key)
+			delete(b.failed, key)
 		}
 	}()
 	return true
+}
+
+// pruneLocked drops failures whose cooldown is over once the table is
+// larger than maxFailedJobs. Those keys may run again anyway; they only
+// lose their stale marker.
+func (b *backgroundJobs) pruneLocked() {
+	if len(b.failed) <= maxFailedJobs {
+		return
+	}
+	now := time.Now()
+	for k, f := range b.failed {
+		if !now.Before(f.retryAt) {
+			delete(b.failed, k)
+		}
+	}
 }
 
 // isRunning reports whether a run for key is in flight.
@@ -75,5 +106,5 @@ func (b *backgroundJobs) isRunning(key string) bool {
 func (b *backgroundJobs) lastError(key string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.lastErr[key]
+	return b.failed[key].err
 }

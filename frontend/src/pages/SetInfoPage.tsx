@@ -16,6 +16,7 @@ import {
 } from "../api/client";
 import { AssetKind, GameIcon } from "../assets/tft";
 import { CURRENT_TFT_SET } from "../config";
+import { safeHref } from "../safeHref";
 
 const TABS = [
   ["units", "Units"],
@@ -201,8 +202,8 @@ function Desc({ text, source }: { text: string; source?: DescSource }) {
       {source && (
         <p className="muted desc-source">
           Values from{" "}
-          {source.url ? (
-            <a href={source.url} target="_blank" rel="noreferrer">
+          {safeHref(source.url) ? (
+            <a href={safeHref(source.url)} target="_blank" rel="noreferrer">
               {source.name}
             </a>
           ) : (
@@ -502,7 +503,7 @@ function RewardsSection({ rewards }: { rewards: AugmentRewards }) {
       ))}
       <p className="muted reward-note">
         Source:{" "}
-        <a href={rewards.sourceUrl} target="_blank" rel="noreferrer">
+        <a href={safeHref(rewards.sourceUrl)} target="_blank" rel="noreferrer">
           {rewards.sourceName}
         </a>
         {rewards.updated && ` (updated ${rewards.updated})`}
@@ -721,10 +722,10 @@ function PatchesTab({ data, patches, setNumber }: { data: SetData; patches: Patc
               Patch {p.tftPatch ?? p.patch}{" "}
               <span className="muted patch-sub">
                 {p.tftPatch && `game ${p.patch} · `}vs {p.previousPatch} · {p.changes.length} changes
-                {p.officialNotesUrl && (
+                {safeHref(p.officialNotesUrl) && (
                   <>
                     {" · "}
-                    <a href={p.officialNotesUrl} target="_blank" rel="noreferrer">
+                    <a href={safeHref(p.officialNotesUrl)} target="_blank" rel="noreferrer">
                       Riot&apos;s official notes
                     </a>
                   </>

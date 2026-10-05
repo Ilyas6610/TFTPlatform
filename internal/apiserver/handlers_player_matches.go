@@ -55,6 +55,12 @@ func matchSyncKey(puuid string) string {
 func (s *Server) handlePlayerMatches(w http.ResponseWriter, r *http.Request) {
 	puuid := r.PathValue("puuid")
 	ctx := r.Context()
+	// Checked before the store or the background job table see it, so junk
+	// is never queued for crawling or kept in memory.
+	if !validPUUID(puuid) {
+		writeError(w, http.StatusBadRequest, "invalid_puuid", "puuid must be 1-100 letters, digits, '-' or '_'")
+		return
+	}
 
 	limit := 20
 	if v := r.URL.Query().Get("limit"); v != "" {
@@ -68,7 +74,7 @@ func (s *Server) handlePlayerMatches(w http.ResponseWriter, r *http.Request) {
 
 	syncedAt, err := s.Store.MatchHistorySyncedAt(ctx, puuid)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", err.Error())
+		writeDBError(w, r, err)
 		return
 	}
 	if region := r.URL.Query().Get("region"); region != "" {
@@ -101,7 +107,7 @@ func (s *Server) handlePlayerMatches(w http.ResponseWriter, r *http.Request) {
 
 	matches, err := s.Store.GetRecentMatchesForPUUID(ctx, puuid, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", err.Error())
+		writeDBError(w, r, err)
 		return
 	}
 	resp.Matches = make([]PlayerMatchSummaryResponse, len(matches))

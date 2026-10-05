@@ -42,7 +42,7 @@ func (s *Server) handleMetaUnits(w http.ResponseWriter, r *http.Request) {
 	}
 	stats, err := s.Store.GetUnitStats(r.Context(), setNumber)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", err.Error())
+		writeDBError(w, r, err)
 		return
 	}
 	out := make([]UnitStatResponse, len(stats))
@@ -66,7 +66,7 @@ func (s *Server) handleMetaTraits(w http.ResponseWriter, r *http.Request) {
 	}
 	stats, err := s.Store.GetTraitStats(r.Context(), setNumber)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", err.Error())
+		writeDBError(w, r, err)
 		return
 	}
 	out := make([]TraitStatResponse, len(stats))
@@ -90,7 +90,7 @@ func (s *Server) handleMetaAugments(w http.ResponseWriter, r *http.Request) {
 	}
 	stats, err := s.Store.GetAugmentStats(r.Context(), setNumber)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", err.Error())
+		writeDBError(w, r, err)
 		return
 	}
 	out := make([]AugmentStatResponse, len(stats))

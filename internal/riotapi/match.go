@@ -9,7 +9,11 @@ import (
 // GetTFTMatchIDsByPUUID returns up to count recent match IDs for puuid via
 // the region-routed tft/match-v1 endpoint.
 func (c *Client) GetTFTMatchIDsByPUUID(ctx context.Context, routing RoutingRegion, puuid string, count int) ([]string, error) {
-	u := fmt.Sprintf("%s/tft/match/v1/matches/by-puuid/%s/ids?count=%d", routingHost(routing), puuid, count)
+	seg, err := pathSegment(puuid)
+	if err != nil {
+		return nil, err
+	}
+	u := fmt.Sprintf("%s/tft/match/v1/matches/by-puuid/%s/ids?count=%d", routingHost(routing), seg, count)
 
 	var ids []string
 	if err := c.do(ctx, "tft-match-v1.get-ids-by-puuid", u, &ids); err != nil {
@@ -62,7 +66,11 @@ type TFTMatch struct {
 // permanent source of truth we can re-derive normalized data from even after
 // a set's schema changes).
 func (c *Client) GetTFTMatch(ctx context.Context, routing RoutingRegion, matchID string) (*TFTMatch, []byte, error) {
-	u := fmt.Sprintf("%s/tft/match/v1/matches/%s", routingHost(routing), matchID)
+	seg, err := pathSegment(matchID)
+	if err != nil {
+		return nil, nil, err
+	}
+	u := fmt.Sprintf("%s/tft/match/v1/matches/%s", routingHost(routing), seg)
 
 	var raw json.RawMessage
 	if err := c.do(ctx, "tft-match-v1.get-match", u, &raw); err != nil {

@@ -131,3 +131,22 @@ func TestSyncPlayerMatches_DeadKeyIsAnError(t *testing.T) {
 		t.Errorf("expected ErrKeyExpired, got %v", err)
 	}
 }
+
+// A PUUID Riot rejects (here 400, as for a malformed id) must not be stored
+// or queued for crawling.
+func TestSyncPlayerMatches_RejectedPUUIDIsNotStored(t *testing.T) {
+	st := storetest.New(t)
+	client := riotapitest.NewClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"status":{"message":"Bad Request - Exception decrypting junk"}}`, http.StatusBadRequest)
+	}))
+	ctx := context.Background()
+
+	if _, err := ingest.SyncPlayerMatches(ctx, client, st, riotapi.PlatformNA1, "junk", 20); err == nil {
+		t.Fatal("expected Riot's rejection as an error")
+	}
+	var accounts, queued int
+	st.Pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM accounts), (SELECT count(*) FROM ingest_puuid_queue)`).Scan(&accounts, &queued)
+	if accounts != 0 || queued != 0 {
+		t.Errorf("accounts=%d queued=%d, want nothing stored", accounts, queued)
+	}
+}

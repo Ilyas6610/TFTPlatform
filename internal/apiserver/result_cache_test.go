@@ -10,9 +10,9 @@ import (
 	"time"
 )
 
-func TestMetaCache_ReusesUntilExpiry(t *testing.T) {
+func TestResultCache_ReusesUntilExpiry(t *testing.T) {
 	now := time.Unix(0, 0)
-	c := &metaCache{now: func() time.Time { return now }}
+	c := &resultCache{now: func() time.Time { return now }}
 	calls := 0
 	compute := func(context.Context) (any, error) { calls++; return calls, nil }
 
@@ -21,7 +21,7 @@ func TestMetaCache_ReusesUntilExpiry(t *testing.T) {
 			t.Fatalf("call %d: got %v, want the cached 1", i, v)
 		}
 	}
-	now = now.Add(metaCacheTTL)
+	now = now.Add(resultCacheTTL)
 	if v, _ := c.get(context.Background(), "k", compute); v != 2 {
 		t.Errorf("after TTL: got %v, want a recomputed 2", v)
 	}
@@ -30,8 +30,8 @@ func TestMetaCache_ReusesUntilExpiry(t *testing.T) {
 	}
 }
 
-func TestMetaCache_ErrorsAreNotCached(t *testing.T) {
-	c := &metaCache{}
+func TestResultCache_ErrorsAreNotCached(t *testing.T) {
+	c := &resultCache{}
 	fail := true
 	compute := func(context.Context) (any, error) {
 		if fail {
@@ -48,8 +48,8 @@ func TestMetaCache_ErrorsAreNotCached(t *testing.T) {
 	}
 }
 
-func TestMetaCache_ConcurrentMissesComputeOnce(t *testing.T) {
-	c := &metaCache{}
+func TestResultCache_ConcurrentMissesComputeOnce(t *testing.T) {
+	c := &resultCache{}
 	var calls atomic.Int32
 	release := make(chan struct{})
 	compute := func(context.Context) (any, error) {
@@ -75,12 +75,12 @@ func TestMetaCache_ConcurrentMissesComputeOnce(t *testing.T) {
 	}
 }
 
-func TestMetaCache_Bounded(t *testing.T) {
-	c := &metaCache{}
-	for i := 0; i < metaCacheMaxEntries*2; i++ {
+func TestResultCache_Bounded(t *testing.T) {
+	c := &resultCache{}
+	for i := 0; i < resultCacheMaxEntries*2; i++ {
 		c.get(context.Background(), fmt.Sprint(i), func(context.Context) (any, error) { return i, nil })
 	}
-	if n := len(c.entries); n > metaCacheMaxEntries {
-		t.Errorf("%d entries, want at most %d", n, metaCacheMaxEntries)
+	if n := len(c.entries); n > resultCacheMaxEntries {
+		t.Errorf("%d entries, want at most %d", n, resultCacheMaxEntries)
 	}
 }

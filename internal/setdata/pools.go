@@ -48,8 +48,12 @@ func (s Source) FetchPools(ctx context.Context, channel string, set int) (*Pools
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("fetch %s: status %d", url, resp.StatusCode)
 	}
-	return parsePools(resp.Body, set)
+	// Streamed, but still capped (the file is ~70 MB): a truncated stream
+	// fails to parse rather than reading without end.
+	return parsePools(io.LimitReader(resp.Body, maxMapBytes), set)
 }
+
+const maxMapBytes = 500 << 20
 
 // parsePools streams the map data — one top-level object of ~19k entries —
 // keeping only set definitions, item lists and item names, so the whole

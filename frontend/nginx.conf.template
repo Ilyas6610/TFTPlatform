@@ -1,17 +1,51 @@
+# Per-client request limits for /api/ (zones live at http level; the image
+# includes this file inside http {}). $binary_remote_addr is the direct
+# peer: behind another proxy or load balancer, enable the real_ip lines in
+# the server block so limits apply per client, not per proxy, and so a
+# client can't pick its own address with X-Forwarded-For.
+limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+# Routes that can trigger live Riot requests (match detail, player lookups)
+# share the Riot key's small quota, so they get a tighter budget.
+limit_req_zone $binary_remote_addr zone=riot:10m rate=2r/s;
+limit_conn_zone $binary_remote_addr zone=perip:10m;
+
 server {
-    listen 80;
+    listen 8080;
     server_name _;
     root /usr/share/nginx/html;
+    server_tokens off;
+
+    # set_real_ip_from 10.0.0.0/8;   # the trusted proxy's address range
+    # real_ip_header X-Forwarded-For;
+
+    limit_req_status 429;
+    limit_conn_status 429;
+    limit_conn perip 30;
 
     gzip on;
     gzip_types text/css application/javascript application/json image/svg+xml;
 
+    # add_header in a location replaces every inherited one, so each
+    # location that sets its own headers includes the security headers too.
+    include /etc/nginx/snippets/security-headers.conf;
+
     # API requests go to the backend. Leaderboard and profile requests can
     # wait on Riot (refreshes are capped at 10s server-side).
     location /api/ {
+        limit_req zone=api burst=40 nodelay;
         proxy_pass ${API_UPSTREAM};
         proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        # Only the address nginx saw, not a client-supplied chain.
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 30s;
+    }
+    location ~ ^/api/v1/(matches|players)/ {
+        limit_req zone=riot burst=20 nodelay;
+        limit_req zone=api burst=40 nodelay;
+        proxy_pass ${API_UPSTREAM};
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 30s;
     }
@@ -20,14 +54,17 @@ server {
     location /assets/ {
         expires 1y;
         add_header Cache-Control "public, immutable";
+        include /etc/nginx/snippets/security-headers.conf;
     }
     location /tft/ {
         expires 7d;
         add_header Cache-Control "public";
+        include /etc/nginx/snippets/security-headers.conf;
     }
     # ...except the icon manifest, which changes when icons are refreshed.
     location = /tft/manifest.json {
         add_header Cache-Control "no-cache";
+        include /etc/nginx/snippets/security-headers.conf;
     }
 
     # Single-page app: unknown paths serve index.html (never cached, so new
@@ -35,5 +72,6 @@ server {
     location / {
         try_files $uri $uri/ /index.html;
         add_header Cache-Control "no-cache";
+        include /etc/nginx/snippets/security-headers.conf;
     }
 }

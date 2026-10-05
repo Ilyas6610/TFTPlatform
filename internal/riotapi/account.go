@@ -3,7 +3,6 @@ package riotapi
 import (
 	"context"
 	"fmt"
-	"net/url"
 )
 
 type Account struct {
@@ -15,8 +14,15 @@ type Account struct {
 // GetAccountByRiotID resolves a Riot ID (gameName#tagLine) to a PUUID via the
 // region-routed (NOT platform-routed) account-v1 endpoint.
 func (c *Client) GetAccountByRiotID(ctx context.Context, routing RoutingRegion, gameName, tagLine string) (*Account, error) {
-	u := fmt.Sprintf("%s/riot/account/v1/accounts/by-riot-id/%s/%s",
-		routingHost(routing), url.PathEscape(gameName), url.PathEscape(tagLine))
+	name, err := pathSegment(gameName)
+	if err != nil {
+		return nil, err
+	}
+	tag, err := pathSegment(tagLine)
+	if err != nil {
+		return nil, err
+	}
+	u := fmt.Sprintf("%s/riot/account/v1/accounts/by-riot-id/%s/%s", routingHost(routing), name, tag)
 
 	var account Account
 	if err := c.do(ctx, "account-v1.get-by-riot-id", u, &account); err != nil {
@@ -29,7 +35,11 @@ func (c *Client) GetAccountByRiotID(ctx context.Context, routing RoutingRegion, 
 // backfill names for PUUIDs discovered without one (leaderboard seeding,
 // match participants).
 func (c *Client) GetAccountByPUUID(ctx context.Context, routing RoutingRegion, puuid string) (*Account, error) {
-	u := fmt.Sprintf("%s/riot/account/v1/accounts/by-puuid/%s", routingHost(routing), url.PathEscape(puuid))
+	seg, err := pathSegment(puuid)
+	if err != nil {
+		return nil, err
+	}
+	u := fmt.Sprintf("%s/riot/account/v1/accounts/by-puuid/%s", routingHost(routing), seg)
 
 	var account Account
 	if err := c.do(ctx, "account-v1.get-by-puuid", u, &account); err != nil {

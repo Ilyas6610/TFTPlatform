@@ -12,6 +12,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DDRAGON = "https://ddragon.leagueoflegends.com";
+const SAFE_NAME = /^(?!\.{1,2}$)[A-Za-z0-9_.-]{1,128}$/;
 const OUT_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "public", "tft");
 const CONCURRENCY = 16;
 
@@ -72,6 +73,12 @@ async function main() {
     const { data } = await getJSON(`${DDRAGON}/cdn/${version}/data/en_US/${file}.json`);
     for (const entry of Object.values(data)) {
       const { group, full } = entry.image;
+      // Names become file paths under OUT_DIR: refuse anything that could
+      // leave it ("..", separators) rather than trusting the download.
+      if (!SAFE_NAME.test(group) || !SAFE_NAME.test(full)) {
+        console.warn(`skipping ${entry.id}: unexpected image path ${group}/${full}`);
+        continue;
+      }
       const rel = `${group}/${full}`;
       images.set(rel, `${DDRAGON}/cdn/${version}/img/${rel}`);
       manifest[kind][entry.id] = {

@@ -28,6 +28,9 @@ type CrawlResult struct {
 	// time of the ids fetch (empty if the fetch itself was rate-limited
 	// before returning), used to update ingest_puuid_queue.last_match_id_seen.
 	MostRecentMatchID string
+	// IDsFetched is set once Riot returned the match id list, which also
+	// confirms the PUUID exists.
+	IDsFetched bool
 }
 
 // CrawlPUUID fetches up to maxIDs recent match IDs for puuid, dedupes
@@ -48,6 +51,7 @@ func CrawlPUUID(ctx context.Context, riot *riotapi.Client, st *store.Store, rout
 		}
 		return result, fmt.Errorf("fetch match ids for %s: %w", puuid, err)
 	}
+	result.IDsFetched = true
 	if len(ids) > 0 {
 		result.MostRecentMatchID = ids[0]
 	}
