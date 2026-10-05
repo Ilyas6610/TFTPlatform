@@ -12,6 +12,7 @@ import (
 	"tft-platform/internal/apiserver"
 	"tft-platform/internal/config"
 	"tft-platform/internal/riotapi"
+	"tft-platform/internal/setdata"
 	"tft-platform/internal/store"
 )
 
@@ -50,6 +51,10 @@ func main() {
 		Handler: handler,
 	}
 
+	if cfg.SetDataSyncInterval > 0 {
+		go syncSetDataPeriodically(ctx, st, cfg.SetDataSyncInterval)
+	}
+
 	go func() {
 		log.Printf("api server listening on %s", cfg.HTTPAddr)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -64,5 +69,26 @@ func main() {
 	defer cancel()
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		log.Printf("shutdown error: %v", err)
+	}
+}
+
+// syncSetDataPeriodically keeps the newest set's game data current: it syncs
+// from CommunityDragon at startup and then every interval, so a new patch's
+// numbers (and its generated patch notes) appear without a manual run.
+func syncSetDataPeriodically(ctx context.Context, st *store.Store, interval time.Duration) {
+	src := setdata.DefaultSource()
+	for {
+		result, err := setdata.Sync(ctx, src, st, 0, "latest")
+		switch {
+		case err != nil:
+			log.Printf("set data sync: %v", err)
+		case result.Stored:
+			log.Printf("set data sync: stored set %d %s", result.SetNumber, result.Version)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(interval):
+		}
 	}
 }

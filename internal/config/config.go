@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 )
 
 type Config struct {
@@ -26,6 +27,11 @@ type Config struct {
 	RiotAppRateLimitPer2Min int
 
 	HTTPAddr string
+
+	// SetDataSyncInterval is how often the API server re-syncs the newest
+	// set's game data from CommunityDragon (see internal/setdata); 0
+	// disables it.
+	SetDataSyncInterval time.Duration
 }
 
 func Load() (Config, error) {
@@ -36,6 +42,7 @@ func Load() (Config, error) {
 		RiotAppRateLimitPerSec:  getEnvInt("RIOT_APP_RATE_LIMIT_PER_SEC", 20),
 		RiotAppRateLimitPer2Min: getEnvInt("RIOT_APP_RATE_LIMIT_PER_2MIN", 100),
 		HTTPAddr:                getEnv("HTTP_ADDR", ":8080"),
+		SetDataSyncInterval:     getEnvDuration("SETDATA_SYNC_INTERVAL", 6*time.Hour),
 	}
 
 	if cfg.DatabaseURL == "" {
@@ -65,4 +72,16 @@ func getEnvInt(key string, def int) int {
 		return def
 	}
 	return n
+}
+
+func getEnvDuration(key string, def time.Duration) time.Duration {
+	v, ok := os.LookupEnv(key)
+	if !ok {
+		return def
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return def
+	}
+	return d
 }

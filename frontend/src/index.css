@@ -353,3 +353,196 @@ td a:hover {
   font-weight: 400;
   margin-left: auto;
 }
+
+/* ---- Set info (src/pages/SetInfoPage.tsx) ---- */
+
+.set-info-header h2 {
+  margin: 0 12px 0 0;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.tabs a {
+  padding: 8px 14px;
+  color: var(--text-dim);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+}
+
+.tabs a.active,
+.tabs a:hover {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.set-search {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  margin-bottom: 12px;
+}
+
+.set-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 12px;
+}
+
+.set-card {
+  margin-bottom: 0;
+}
+
+.set-card h3,
+.set-card h4,
+.set-row h4 {
+  margin: 0 0 4px;
+}
+
+.set-card h4 {
+  margin-top: 12px;
+}
+
+.set-card-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.set-card-head h3 {
+  margin: 0;
+}
+
+.set-trait-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 4px;
+  font-size: 0.85rem;
+}
+
+.set-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 2px 12px;
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.set-stats div {
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  padding: 2px 0;
+}
+
+.set-stats dt {
+  color: var(--text-dim);
+}
+
+.set-stats dd {
+  margin: 0;
+}
+
+.set-desc {
+  white-space: pre-line;
+  margin: 4px 0;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.set-list .panel {
+  margin-bottom: 8px;
+}
+
+.set-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.breakpoints {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+}
+
+.breakpoints li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+
+.breakpoints .trait-badge {
+  min-width: 2em;
+  justify-content: center;
+  padding: 2px 6px;
+}
+
+.tier-tag {
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+  border: 1px solid var(--border);
+}
+
+.tier-1 { color: #c0c8d2; border-color: #8a9aa8; }
+.tier-2 { color: #f0c860; border-color: #d4a640; }
+.tier-3 { color: #d6b8ff; border-color: #b98af2; }
+
+.item-recipe {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.patch-sub {
+  font-size: 0.9rem;
+  font-weight: 400;
+}
+
+.patch-list {
+  list-style: none;
+  padding: 0;
+}
+
+.patch-list > li {
+  margin-bottom: 10px;
+}
+
+.patch-list > li > a {
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.patch-list > li > a:hover {
+  color: var(--accent);
+}
+
+.patch-list ul {
+  margin: 4px 0 0;
+  padding-left: 40px;
+  font-size: 0.9rem;
+}
+
+/* Direction only — whether a change is a buff depends on the stat (more
+   mana is a nerf), so arrows stay neutral. */
+.change-up,
+.change-down { color: var(--accent); }
+.change-added { color: var(--placement-good); }
+.change-removed { color: var(--placement-bad); }

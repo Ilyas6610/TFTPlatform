@@ -16,6 +16,7 @@ import (
 	"tft-platform/internal/config"
 	"tft-platform/internal/ingest"
 	"tft-platform/internal/riotapi"
+	"tft-platform/internal/setdata"
 	"tft-platform/internal/store"
 )
 
@@ -43,6 +44,8 @@ func main() {
 		runCrawlQueue(ctx, cfg, os.Args[2:])
 	case "aggregate":
 		runAggregate(ctx, cfg)
+	case "sync-setdata":
+		runSyncSetData(ctx, cfg, os.Args[2:])
 	default:
 		usage()
 		os.Exit(1)
@@ -58,6 +61,7 @@ Commands:
   crawl-matches     Crawl a bounded batch of matches for one explicit PUUID/Riot ID
   crawl-queue       Crawl a bounded batch of matches for PUUIDs queued by seed-leaderboard
   aggregate         Recompute meta-stats summary tables (no Riot API calls)
+  sync-setdata      Store set data (units/traits/augments/items) from CommunityDragon for patch notes
 
 whoami usage:
   ingestcli whoami --platform na1 --riotid "GameName#TAG"
@@ -308,5 +312,35 @@ func runAggregate(ctx context.Context, cfg config.Config) {
 	}
 	for _, r := range results {
 		fmt.Printf("aggregate: set=%d units=%d traits=%d augments=%d\n", r.TFTSetNumber, r.UnitsWritten, r.TraitsWritten, r.AugmentsWritten)
+	}
+}
+
+// runSyncSetData stores set data snapshots from CommunityDragon. Passing
+// several archived patches (--versions 16.17,16.18,latest) backfills history
+// so patch notes exist for patches before the first sync.
+func runSyncSetData(ctx context.Context, cfg config.Config, args []string) {
+	fs := flag.NewFlagSet("sync-setdata", flag.ExitOnError)
+	set := fs.Int("set", 0, "TFT set number (0 = newest set in the export)")
+	versions := fs.String("versions", "latest", "comma-separated CommunityDragon channels: \"latest\" or patch archives like 16.18")
+	fs.Parse(args)
+
+	st, err := store.New(ctx, cfg.DatabaseURL)
+	if err != nil {
+		log.Fatalf("sync-setdata: %v", err)
+	}
+	defer st.Close()
+
+	src := setdata.DefaultSource()
+	for _, channel := range strings.Split(*versions, ",") {
+		channel = strings.TrimSpace(channel)
+		result, err := setdata.Sync(ctx, src, st, *set, channel)
+		if err != nil {
+			log.Fatalf("sync-setdata %s: %v", channel, err)
+		}
+		status := "stored"
+		if !result.Stored {
+			status = "unchanged"
+		}
+		fmt.Printf("sync-setdata: channel=%s set=%d version=%s %s\n", channel, result.SetNumber, result.Version, status)
 	}
 }

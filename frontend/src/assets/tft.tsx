@@ -73,12 +73,17 @@ interface GameIconProps {
   id: string;
   size?: number;
   className?: string;
+  /** Used when the downloaded assets have no icon for id (e.g. a CommunityDragon URL from set data). */
+  fallbackSrc?: string;
+  /** Display name, overriding the manifest's (e.g. the authoritative name from set data). */
+  fallbackName?: string;
 }
 
 /** Square icon for a champion/trait/augment/item, with the display name as a tooltip. */
-export function GameIcon({ kind, id, size = 32, className = "" }: GameIconProps) {
+export function GameIcon({ kind, id, size = 32, className = "", fallbackSrc, fallbackName }: GameIconProps) {
   const manifest = useManifest();
-  const entry = lookup(manifest, kind, id);
+  const known = lookup(manifest, kind, id);
+  const entry = { ...known, name: fallbackName ?? known.name, icon: known.icon ?? fallbackSrc };
   const [broken, setBroken] = useState(false);
   const cost = kind === "champions" ? entry.cost : undefined;
   const classes = `game-icon game-icon-${kind} ${cost ? `cost-${cost}` : ""} ${className}`;

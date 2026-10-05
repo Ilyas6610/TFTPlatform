@@ -174,3 +174,99 @@ export function staleSuffix(reason: string | undefined): string {
   const text = reason && STALE_REASONS[reason];
   return text ? ` (${text})` : "";
 }
+
+// Set data (units, traits, augments, items) as of one patch — see
+// internal/setdata. Descriptions are pre-rendered plain text with "\n"
+// line breaks; "?" marks values the game computes at runtime.
+export interface SetUnit {
+  apiName: string;
+  name: string;
+  icon?: string;
+  cost: number;
+  traits: string[];
+  stats: Record<string, number>;
+  ability: { name: string; desc: string; values: Record<string, number[]> };
+}
+
+export interface SetTraitBreakpoint {
+  minUnits: number;
+  maxUnits: number;
+  style: number;
+  text?: string;
+  values: Record<string, number>;
+}
+
+export interface SetTrait {
+  apiName: string;
+  name: string;
+  icon?: string;
+  desc: string;
+  breakpoints: SetTraitBreakpoint[];
+}
+
+export interface SetAugment {
+  apiName: string;
+  name: string;
+  icon?: string;
+  desc: string;
+  tier: number;
+  traits?: string[];
+  values: Record<string, number>;
+}
+
+export interface SetItem {
+  apiName: string;
+  name: string;
+  icon?: string;
+  desc: string;
+  kind: string;
+  variant?: string;
+  composition?: string[];
+  values: Record<string, number>;
+}
+
+export interface SetVersion {
+  version: string;
+  patch: string;
+  fetchedAt: string;
+}
+
+export interface SetData {
+  setNumber: number;
+  version: string;
+  patch: string;
+  fetchedAt: string;
+  versions: SetVersion[];
+  units: SetUnit[];
+  traits: SetTrait[];
+  augments: SetAugment[];
+  items: SetItem[];
+}
+
+export function getSetData(set: number, version?: string) {
+  const q = version ? `?version=${encodeURIComponent(version)}` : "";
+  return get<SetData>(`/api/v1/sets/${set}/data${q}`);
+}
+
+export interface PatchChange {
+  category: "unit" | "trait" | "augment" | "item";
+  apiName: string;
+  name: string;
+  kind: "changed" | "added" | "removed" | "text";
+  field?: string;
+  old?: number;
+  new?: number;
+}
+
+export interface PatchNotes {
+  patch: string;
+  version: string;
+  previousPatch: string;
+  previousVersion: string;
+  fetchedAt: string;
+  changes: PatchChange[];
+}
+
+export function getSetPatches(set: number) {
+  return get<PatchNotes[]>(`/api/v1/sets/${set}/patches`);
+}
