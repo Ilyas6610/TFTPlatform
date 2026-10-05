@@ -7,7 +7,7 @@ A Teamfight Tactics stats site: a Go backend that ingests ranked match data from
 - **Player profiles** — look up any Riot ID; recent match history syncs from Riot in the background when the profile is opened.
 - **Match details** — every player's board (champions, star levels, items, traits), with links to each player's profile.
 - **Leaderboards** — Challenger / Grandmaster / Master per region, refreshed when the page is opened; player names are resolved in the background.
-- **Meta** — every unit's games, average placement, top-4 and pick rate with its most common **exact builds** (the precise three items it carried) and most-used items, plus traits by tier; ranked by default, computed live from match data. Builds and rows link into the Explorer.
+- **Meta** — team **comps** grouped from final boards, each showing the exact board players run most (stars and items) with its variations and flex units; every unit's games, average placement, top-4 and pick rate with its most common **exact builds** (the precise three items it carried) and most-used items, plus traits by tier; ranked by default, computed live from match data. Builds and rows link into the Explorer.
 - **Explorer** — placement stats for any combination of conditions: units (with minimum star level and items on that unit), items anywhere on the board, trait breakpoints, queue and player level. It also shows what else matching boards ran and the best items on each chosen unit; click any row to add it as a condition. Searches live in the URL, so they can be shared.
 - **Set info** — units (stats and abilities), traits (breakpoints), augments (with possible-reward tables), items and Wisps for the current set, with numbers highlighted by what they scale with.
 - **Generated patch notes** — every number that changed between patches (plus additions, removals and renames), linked to Riot's official notes.
@@ -166,6 +166,7 @@ The rate-limit defaults match a personal key; raise them for a production key.
 | `GET /api/v1/players/{puuid}/matches?region=` | Recent matches; with `region`, syncs from Riot in the background |
 | `GET /api/v1/matches/{matchId}` | Match detail |
 | `GET /api/v1/leaderboard/{platform}` | Apex ladder, refreshed when stale |
+| `GET /api/v1/meta/comps?set=&queue=` | Team comps from level-8+ boards: exact anchor board, variants, flex units |
 | `GET /api/v1/meta/builds?set=&queue=&level=` | Per-unit stats with exact 3-item builds (seen 3+ times) and most-used items |
 | `GET /api/v1/meta/{units,traits,augments}?set=` | Precomputed aggregate tables (from `aggregate`; no longer used by the UI) |
 | `GET /api/v1/explore?set=&unit=&item=&trait=&queue=&level=` | Explorer stats; `unit=ID[*minStar][:item,item]`, `trait=ID[*min[-max]]` (unit count, e.g. `*4-5` for an exact tier), `level=8-` (repeat `unit`/`item`/`trait`/`queue`) |

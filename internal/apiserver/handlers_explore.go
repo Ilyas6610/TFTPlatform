@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"tft-platform/internal/comps"
 	"tft-platform/internal/store"
 )
 
@@ -187,4 +188,37 @@ func (s *Server) handleMetaBuilds(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+// compMinLevel: comps are built from final boards, those of players who
+// reached at least this level.
+const compMinLevel = 8
+
+type MetaCompsResponse struct {
+	Boards int          `json:"boards"` // final boards considered
+	Comps  []comps.Comp `json:"comps"`
+}
+
+// handleMetaComps serves GET /api/v1/meta/comps?set=18[&queue=1100]: team
+// compositions grouped from final boards (level 8+), each with its exact
+// most-played board, variants and flex units (see internal/comps).
+func (s *Server) handleMetaComps(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	for _, k := range []string{"unit", "item", "trait", "level"} {
+		if q.Has(k) {
+			writeError(w, http.StatusBadRequest, "invalid_filter", k+" isn't supported here")
+			return
+		}
+	}
+	f, err := parseExploreFilter(q)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_filter", err.Error())
+		return
+	}
+	boards, err := s.Store.FinalBoards(r.Context(), f, compMinLevel)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, MetaCompsResponse{Boards: len(boards), Comps: comps.Build(boards, comps.Options{})})
 }

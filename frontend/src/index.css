@@ -1142,3 +1142,141 @@ details.patch[open] > summary::before {
 .meta-traits {
   max-width: 760px;
 }
+
+.explorer-empty p {
+  margin: 4px 0;
+}
+
+/* ---- Meta comps ---- */
+
+.comp-list {
+  display: grid;
+  gap: 12px;
+}
+
+.comp-card {
+  margin-bottom: 0;
+}
+
+.comp-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.comp-rank {
+  font-size: 1.2rem;
+  font-weight: 700;
+  min-width: 2.2em;
+}
+
+.comp-title {
+  flex: 1;
+}
+
+.comp-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.comp-explore {
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+  font-size: 0.85rem;
+}
+
+.comp-board {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 4px;
+}
+
+.comp-unit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 64px;
+}
+
+.comp-unit-name {
+  font-size: 0.72rem;
+  max-width: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+.comp-exact {
+  margin: 2px 0 6px;
+  font-size: 0.82rem;
+}
+
+.comp-alternatives {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 4px 24px;
+  border-top: 1px solid var(--border);
+  padding-top: 4px;
+}
+
+.comp-variant {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.comp-swap {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.swap-in,
+.swap-out {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  font-weight: 700;
+}
+
+.swap-in {
+  color: var(--placement-good);
+}
+
+.swap-out {
+  color: var(--placement-bad);
+}
+
+.swap-out .game-icon {
+  opacity: 0.55;
+}
+
+.swap-label {
+  font-size: 0.78rem;
+}
+
+.comp-flex {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.comp-flex-unit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  line-height: 1.2;
+}

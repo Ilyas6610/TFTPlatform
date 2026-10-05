@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   ApiError,
   ExploreOptions,
@@ -83,6 +83,12 @@ export default function ExplorerPage() {
   const queues = params.getAll("queue");
   const level = params.get("level") ?? "";
 
+  // Conditions already applied show at 100% in their own tables, so they're
+  // left out of the breakdowns; with no conditions the results would just
+  // repeat the Meta tab, so they're hidden.
+  const hasConditions = units.length > 0 || items.length > 0 || traits.length > 0;
+  const requiredItems = new Set([...items, ...units.flatMap((u) => u.items)]);
+
   const [options, setOptions] = useState<ExploreOptions | null>(null);
   const [setData, setSetData] = useState<SetData | null>(null);
   const [result, setResult] = useState<ExploreResult | null>(null);
@@ -118,8 +124,9 @@ export default function ExplorerPage() {
 
   useEffect(() => {
     // Wait for options: they decide the default queue, and searching before
-    // that would run (and show) an unfiltered search first.
-    if (!options) return;
+    // that would run (and show) an unfiltered search first. Without
+    // conditions there's nothing to show (see hasConditions).
+    if (!options || !hasConditions) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -130,7 +137,7 @@ export default function ExplorerPage() {
     return () => {
       cancelled = true;
     };
-  }, [apiQuery, options]);
+  }, [apiQuery, options, hasConditions]);
 
   function update(fn: (p: URLSearchParams) => void) {
     const next = new URLSearchParams(params);
@@ -152,7 +159,6 @@ export default function ExplorerPage() {
   const addItem = (id: string) => !items.includes(id) && setAll("item", [...items, id]);
   const addTrait = (id: string, minUnits = 0, maxUnits = 0) =>
     setTraits([...traits.filter((t) => t.id !== id), { id, minUnits, maxUnits }]);
-
   return (
     <div className="explorer">
       <div className="panel explorer-controls">
@@ -354,7 +360,16 @@ export default function ExplorerPage() {
       {error && <div className="error-box">{error}</div>}
       {loading && !result && <p className="muted">Loading...</p>}
 
-      {result && (
+      {!hasConditions && (
+        <div className="panel explorer-empty">
+          <p>Add a unit, item or trait above to see how boards running it place, and what else they play.</p>
+          <p className="muted">
+            For the overall picture without conditions, see the <Link to={`/meta/${set}`}>Meta</Link> tab.
+          </p>
+        </div>
+      )}
+
+      {result && hasConditions && (
         <div className={loading ? "explorer-results stale" : "explorer-results"}>
           <Summary result={result} />
 
@@ -385,7 +400,7 @@ export default function ExplorerPage() {
                     ))}
                   </div>
                   <Breakdown
-                    rows={rows}
+                    rows={rows.filter((r) => !units[i].items.includes(r.id))}
                     kind="items"
                     names={names}
                     total={result.summary.boards}
@@ -401,7 +416,7 @@ export default function ExplorerPage() {
             <div className="panel">
               <h3>Units</h3>
               <Breakdown
-                rows={result.units}
+                rows={result.units.filter((r) => !units.some((u) => u.id === r.id))}
                 kind="champions"
                 names={names}
                 total={result.summary.boards}
@@ -411,7 +426,7 @@ export default function ExplorerPage() {
             <div className="panel">
               <h3>Items</h3>
               <Breakdown
-                rows={result.items}
+                rows={result.items.filter((r) => !requiredItems.has(r.id))}
                 kind="items"
                 names={names}
                 total={result.summary.boards}
@@ -421,7 +436,7 @@ export default function ExplorerPage() {
             <div className="panel">
               <h3>Traits</h3>
               <TraitsBreakdown
-                rows={result.traits}
+                rows={result.traits.filter((r) => !traits.some((t) => t.id === r.id))}
                 names={names}
                 total={result.summary.boards}
                 onPick={(id, tier) => addTrait(id, tier?.minUnits ?? 0, tier?.maxUnits ?? 0)}

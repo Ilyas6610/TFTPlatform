@@ -2,8 +2,11 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
+
+	"tft-platform/internal/comps"
 )
 
 // MetaUnit is one unit's performance and how it's built, over the boards
@@ -120,4 +123,55 @@ func (s *Store) MetaBuilds(ctx context.Context, scope ExploreFilter, minBuildGam
 
 	sort.SliceStable(res.Units, func(i, j int) bool { return res.Units[i].Boards > res.Units[j].Boards })
 	return res, nil
+}
+
+// FinalBoards loads the boards in scope (set/queues; board conditions are
+// ignored) whose player reached at least minLevel, for comp grouping.
+func (s *Store) FinalBoards(ctx context.Context, scope ExploreFilter, minLevel int) ([]comps.Board, error) {
+	scope.Units, scope.Items, scope.Traits = nil, nil, nil
+	if scope.LevelMin < minLevel {
+		scope.LevelMin = minLevel
+	}
+	var args []any
+	rows, err := s.Pool.Query(ctx, `SELECT mp.placement, `+arrayOr("mp.units")+`, `+arrayOr("mp.traits")+`
+		FROM match_participants mp JOIN matches m USING (match_id)
+		WHERE `+scope.whereClause(&args), args...)
+	if err != nil {
+		return nil, fmt.Errorf("final boards: %w", err)
+	}
+	defer rows.Close()
+
+	var out []comps.Board
+	for rows.Next() {
+		var placement int
+		var unitsJSON, traitsJSON []byte
+		if err := rows.Scan(&placement, &unitsJSON, &traitsJSON); err != nil {
+			return nil, err
+		}
+		var units []struct {
+			ID    string   `json:"character_id"`
+			Tier  int      `json:"tier"`
+			Items []string `json:"itemNames"`
+		}
+		var traits []struct {
+			Name  string `json:"name"`
+			Units int    `json:"num_units"`
+			Tier  int    `json:"tier_current"`
+		}
+		// A malformed row is skipped rather than failing the whole page.
+		if json.Unmarshal(unitsJSON, &units) != nil || json.Unmarshal(traitsJSON, &traits) != nil {
+			continue
+		}
+		b := comps.Board{Placement: placement}
+		for _, u := range units {
+			b.Units = append(b.Units, comps.Unit{ID: u.ID, Star: u.Tier, Items: u.Items})
+		}
+		for _, t := range traits {
+			if t.Tier > 0 {
+				b.Traits = append(b.Traits, comps.Trait{ID: t.Name, Units: t.Units, Tier: t.Tier})
+			}
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
 }

@@ -328,3 +328,34 @@ export interface MetaResult {
 export function getMetaBuilds(query: string) {
   return get<MetaResult>(`/api/v1/meta/builds?${query}`);
 }
+
+// Team compositions — see internal/comps.
+export interface CompUnit {
+  id: string;
+  star: number;
+  items: string[];
+  frequency: number; // share of the comp's boards fielding it
+}
+
+export interface CompVariant extends PlacementStats {
+  add: string[];
+  remove: string[];
+}
+
+export interface CompFlex extends PlacementStats {
+  id: string;
+  frequency: number;
+}
+
+export interface MetaComp extends PlacementStats {
+  playRate: number;
+  board: CompUnit[]; // the exact most-played board, carries first
+  boardStats: PlacementStats; // boards that ran exactly it
+  traits: { id: string; units: number; tier: number }[]; // active on the exact board
+  variants: CompVariant[];
+  flex: CompFlex[];
+}
+
+export function getMetaComps(query: string) {
+  return get<{ boards: number; comps: MetaComp[] }>(`/api/v1/meta/comps?${query}`);
+}

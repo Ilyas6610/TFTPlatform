@@ -4,12 +4,14 @@ import {
   ApiError,
   ExploreOptions,
   ExploreRow,
+  MetaComp,
   MetaResult,
   MetaUnit,
   SetData,
   explore,
   getExploreOptions,
   getMetaBuilds,
+  getMetaComps,
   getSetData,
 } from "../api/client";
 import { GameIcon } from "../assets/tft";
@@ -24,7 +26,7 @@ const QUEUE_NAMES: Record<number, string> = { 1090: "Normal", 1100: "Ranked", 11
 const MIN_GAMES_FOR_AVG_SORT = 10;
 const UNITS_PREVIEW = 24;
 
-type Tab = "units" | "traits";
+type Tab = "comps" | "units" | "traits";
 type Sort = "games" | "avg";
 
 export default function MetaStatsPage() {
@@ -32,7 +34,8 @@ export default function MetaStatsPage() {
   const setNumber = Number(set) || CURRENT_TFT_SET;
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
-  const tab: Tab = params.get("tab") === "traits" ? "traits" : "units";
+  const tabParam = params.get("tab");
+  const tab: Tab = tabParam === "units" || tabParam === "traits" ? tabParam : "comps";
   const sort: Sort = params.get("sort") === "avg" ? "avg" : "games";
   const queue = params.get("queue") ?? "";
   const [query, setQuery] = useState("");
@@ -43,6 +46,7 @@ export default function MetaStatsPage() {
   const [setData, setSetData] = useState<SetData | null>(null);
   const [meta, setMeta] = useState<MetaResult | null>(null);
   const [traits, setTraits] = useState<ExploreRow[] | null>(null);
+  const [comps, setComps] = useState<{ boards: number; comps: MetaComp[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   function update(key: string, value: string) {
@@ -79,9 +83,11 @@ export default function MetaStatsPage() {
     let cancelled = false;
     setError(null);
     const load =
-      tab === "units"
-        ? getMetaBuilds(scope).then((m) => !cancelled && setMeta(m))
-        : explore(scope).then((r) => !cancelled && setTraits(r.traits));
+      tab === "comps"
+        ? getMetaComps(scope).then((c) => !cancelled && setComps(c))
+        : tab === "units"
+          ? getMetaBuilds(scope).then((m) => !cancelled && setMeta(m))
+          : explore(scope).then((r) => !cancelled && setTraits(r.traits));
     load.catch((e: unknown) => !cancelled && setError(e instanceof ApiError ? e.message : "failed to load meta"));
     return () => {
       cancelled = true;
@@ -91,6 +97,9 @@ export default function MetaStatsPage() {
   useEffect(() => setShowAll(false), [scope, cost, sort, query]);
 
   const names = useMemo(() => buildNames(setData), [setData]);
+  // Boards in the selected queue (or all of them).
+  const scopeBoards =
+    queue && queue !== "any" ? options?.queues.find((q) => String(q.id) === queue)?.boards : options?.boards;
   const costs = useMemo(() => new Map(setData?.units.map((u) => [u.apiName, u.cost]) ?? []), [setData]);
   const exploreLink = (extra: string) => `/explore?${scope}${queue === "any" ? "&anyQueue=1" : ""}&${extra}`;
 
@@ -115,8 +124,8 @@ export default function MetaStatsPage() {
         <div>
           <h2>Set {setNumber} meta</h2>
           <p className="muted">
-            {meta ? `${meta.boards} boards` : options ? `${options.boards} boards` : "…"} from ingested matches. Builds
-            are exact 3-item sets seen at least 3 times; click any build or row to dig into it in the Explorer.
+            {scopeBoards !== undefined ? `${scopeBoards} boards` : "…"} from ingested matches. Builds are exact 3-item
+            sets seen at least 3 times; click any build or row to dig into it in the Explorer.
           </p>
         </div>
         <div className="set-picker">
@@ -145,22 +154,45 @@ export default function MetaStatsPage() {
       </div>
 
       <nav className="tabs">
-        {(["units", "traits"] as const).map((t) => (
+        {(["comps", "units", "traits"] as const).map((t) => (
           <a
             key={t}
             href={`?${new URLSearchParams({ ...Object.fromEntries(params), tab: t })}`}
             className={tab === t ? "active" : ""}
             onClick={(e) => {
               e.preventDefault();
-              update("tab", t === "units" ? "" : t);
+              update("tab", t === "comps" ? "" : t);
             }}
           >
-            {t === "units" ? "Units & builds" : "Traits"}
+            {t === "comps" ? "Comps" : t === "units" ? "Units & builds" : "Traits"}
           </a>
         ))}
       </nav>
 
       {error && <div className="error-box">{error}</div>}
+
+      {tab === "comps" && (
+        <>
+          <p className="muted">
+            Team comps grouped from {comps ? `${comps.boards} ` : ""}final boards (level 8+). Each shows the exact board
+            players run most, with the usual star levels and items, and the ways players adjust it.
+          </p>
+          {!comps && !error && <p className="muted">Loading...</p>}
+          {comps && comps.comps.length === 0 && <p className="muted">Not enough games yet to group comps.</p>}
+          <div className="comp-list">
+            {comps?.comps.map((c, i) => (
+              <CompCard
+                key={c.board.map((u) => u.id).join(",")}
+                comp={c}
+                rank={i + 1}
+                names={names}
+                costs={costs}
+                exploreLink={exploreLink}
+              />
+            ))}
+          </div>
+        </>
+      )}
 
       {tab === "units" && (
         <>
@@ -322,6 +354,177 @@ function UnitCard({
             ))}
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+function CompCard({
+  comp: c,
+  rank,
+  names,
+  costs,
+  exploreLink,
+}: {
+  comp: MetaComp;
+  rank: number;
+  names: Names;
+  costs: Map<string, number>;
+  exploreLink: (extra: string) => string;
+}) {
+  // Named by the traits it invests in (a higher tier or 3+ units), then its
+  // itemized carries. Flexible boards with only 2-unit traits go by their
+  // carries alone ("Aphelios & Nidalee").
+  const mainTraits = c.traits
+    .filter((t) => t.tier >= 2 || t.units >= 3)
+    .sort((a, b) => b.tier - a.tier || b.units - a.units)
+    .slice(0, 2);
+  const carries = c.board.filter((u) => u.items.length > 0).slice(0, 2);
+  // The Explorer takes up to 6 unit conditions: the comp's most core units.
+  const core = [...c.board].sort((a, b) => b.frequency - a.frequency).slice(0, 6);
+  const unitIcon = (id: string, size: number) => (
+    <GameIcon
+      kind="champions"
+      id={id}
+      size={size}
+      fallbackSrc={names.icon(id)}
+      fallbackName={names.name(id)}
+      className={costs.get(id) ? `cost-${costs.get(id)}` : ""}
+    />
+  );
+  return (
+    <div className="panel comp-card">
+      <div className="comp-head">
+        <span className="comp-rank muted">#{rank}</span>
+        <div className="comp-title">
+          <div className="comp-name">
+            {mainTraits.map((t) => (
+              <span key={t.id} className="game-label">
+                <GameIcon
+                  kind="traits"
+                  id={t.id}
+                  size={18}
+                  fallbackSrc={names.icon(t.id)}
+                  fallbackName={names.name(t.id)}
+                />
+                {names.name(t.id)} {t.units}
+              </span>
+            ))}
+            {carries.length > 0 && (
+              <span className={mainTraits.length > 0 ? "muted" : undefined}>
+                {mainTraits.length > 0 ? "· " : ""}
+                {carries.map((u) => names.name(u.id)).join(" & ")}
+              </span>
+            )}
+          </div>
+          <div className="meta-stats">
+            <span>
+              <b>{c.boards}</b> games
+            </span>
+            <span className={placementTone(c)}>
+              <b>{avg(c.avgPlacement)}</b> avg
+            </span>
+            <span>
+              <b>{pct(c.top4Rate)}</b> top 4
+            </span>
+            <span>
+              <b>{pct(c.winRate)}</b> win
+            </span>
+            <span className="muted">{pct(c.playRate)} of boards</span>
+          </div>
+        </div>
+        <Link className="comp-explore" to={exploreLink(core.map((u) => `unit=${u.id}`).join("&"))}>
+          Explore →
+        </Link>
+      </div>
+
+      <div className="comp-board">
+        {c.board.map((u) => (
+          <div
+            key={u.id}
+            className="comp-unit"
+            title={`${names.name(u.id)} — in ${pct(u.frequency)} of this comp's boards`}
+          >
+            <span className="unit-stars">{"★".repeat(u.star || 1)}</span>
+            {unitIcon(u.id, 52)}
+            <span className="comp-unit-name">{names.name(u.id)}</span>
+            <span className="unit-items">
+              {u.items.map((it, i) => (
+                <GameIcon
+                  key={i}
+                  kind="items"
+                  id={it}
+                  size={17}
+                  fallbackSrc={names.icon(it)}
+                  fallbackName={names.name(it)}
+                />
+              ))}
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="muted comp-exact">
+        Exact board: <b>{c.boardStats.boards}</b> games ·{" "}
+        <span className={placementTone(c.boardStats)}>{avg(c.boardStats.avgPlacement)}</span> avg ·{" "}
+        {pct(c.boardStats.top4Rate)} top 4
+      </p>
+
+      {(c.variants.length > 0 || c.flex.length > 0) && (
+        <div className="comp-alternatives">
+          {c.variants.length > 0 && (
+            <div>
+              <div className="meta-section-title muted">Variations</div>
+              {c.variants.map((v, i) => (
+                <div key={i} className="comp-variant">
+                  <span className="comp-swap">
+                    {v.remove.map((id) => (
+                      <span key={id} className="swap-out" title={`without ${names.name(id)}`}>
+                        −{unitIcon(id, 24)}
+                      </span>
+                    ))}
+                    {v.add.map((id) => (
+                      <span key={id} className="swap-in" title={`with ${names.name(id)}`}>
+                        +{unitIcon(id, 24)}
+                      </span>
+                    ))}
+                    <span className="muted swap-label">
+                      {v.remove.length === 0 ? "level up: " : ""}
+                      {[...v.remove.map((id) => `−${names.name(id)}`), ...v.add.map((id) => `+${names.name(id)}`)].join(
+                        " ",
+                      )}
+                    </span>
+                  </span>
+                  <span className="build-stats">
+                    <b>{v.boards}</b>
+                    <span className={v.boards < 5 ? "muted" : placementTone(v)}>{avg(v.avgPlacement)}</span>
+                    <span className="muted">{pct(v.top4Rate)}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {c.flex.length > 0 && (
+            <div>
+              <div className="meta-section-title muted">Flex units</div>
+              <div className="comp-flex">
+                {c.flex.map((f) => (
+                  <span
+                    key={f.id}
+                    className="comp-flex-unit"
+                    title={`${names.name(f.id)}: in ${pct(f.frequency)} of boards, ${avg(f.avgPlacement)} avg when played`}
+                  >
+                    {unitIcon(f.id, 28)}
+                    <span>
+                      {pct(f.frequency)}
+                      <br />
+                      <span className={placementTone(f)}>{avg(f.avgPlacement)}</span>
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
