@@ -302,3 +302,44 @@ export interface PatchNotes {
 export function getSetPatches(set: number) {
   return get<PatchNotes[]>(`/api/v1/sets/${set}/patches`);
 }
+
+// Stats explorer — see internal/store/explore.go and handlers_explore.go.
+export interface PlacementStats {
+  boards: number;
+  avgPlacement: number;
+  top4Rate: number;
+  winRate: number;
+}
+
+export interface ExploreRow extends PlacementStats {
+  id: string;
+  tier?: number; // traits: tier reached; unit stars: star level
+}
+
+export interface ExploreResult {
+  summary: PlacementStats & { placements: number[] };
+  baseline: PlacementStats;
+  units: ExploreRow[];
+  items: ExploreRow[];
+  traits: ExploreRow[];
+  unitItems: ExploreRow[][]; // per unit condition, in order
+  unitStars: ExploreRow[][];
+}
+
+export interface ExploreOptions {
+  boards: number;
+  queues: { id: number; gameType: string; boards: number }[];
+  units: { id: string; boards: number }[];
+  items: { id: string; boards: number }[];
+  traits: { id: string; boards: number; maxUnits: number; tiers: { tier: number; boards: number }[] }[];
+  levels: [number, number];
+}
+
+export function getExploreOptions(set: number) {
+  return get<ExploreOptions>(`/api/v1/explore/options?set=${set}`);
+}
+
+/** query is the explorer's URL search string (set, queue, level, unit, item, trait). */
+export function explore(query: string) {
+  return get<ExploreResult>(`/api/v1/explore?${query}`);
+}

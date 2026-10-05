@@ -8,6 +8,7 @@ A Teamfight Tactics stats site: a Go backend that ingests ranked match data from
 - **Match details** — every player's board (champions, star levels, items, traits), with links to each player's profile.
 - **Leaderboards** — Challenger / Grandmaster / Master per region, refreshed when the page is opened; player names are resolved in the background.
 - **Meta stats** — average placement, top-4, win and pick rates for units, traits and augments, per set.
+- **Explorer** — placement stats for any combination of conditions: units (with minimum star level and items on that unit), items anywhere on the board, trait breakpoints, queue and player level. It also shows what else matching boards ran and the best items on each chosen unit; click any row to add it as a condition. Searches live in the URL, so they can be shared.
 - **Set info** — units (stats and abilities), traits (breakpoints), augments (with possible-reward tables), items and Wisps for the current set, with numbers highlighted by what they scale with.
 - **Generated patch notes** — every number that changed between patches (plus additions, removals and renames), linked to Riot's official notes.
 
@@ -166,6 +167,8 @@ The rate-limit defaults match a personal key; raise them for a production key.
 | `GET /api/v1/matches/{matchId}` | Match detail |
 | `GET /api/v1/leaderboard/{platform}` | Apex ladder, refreshed when stale |
 | `GET /api/v1/meta/{units,traits,augments}?set=` | Meta stats |
+| `GET /api/v1/explore?set=&unit=&item=&trait=&queue=&level=` | Explorer stats; `unit=ID[*minStar][:item,item]`, `trait=ID[*min[-max]]` (unit count, e.g. `*4-5` for an exact tier), `level=8-` (repeat `unit`/`item`/`trait`/`queue`) |
+| `GET /api/v1/explore/options?set=` | Queues, units, items, traits and levels present in a set's matches |
 | `GET /api/v1/sets/{set}/data[?version=]` | Set units, traits, augments, items, Wisps |
 | `GET /api/v1/sets/{set}/patches` | Generated patch notes |
 | `GET /healthz` | Health check |

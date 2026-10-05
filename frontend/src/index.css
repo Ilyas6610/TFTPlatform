@@ -30,8 +30,9 @@ body {
 
 .app-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 24px;
+  gap: 12px 24px;
   padding: 20px 0;
   border-bottom: 1px solid var(--border);
   margin-bottom: 24px;
@@ -45,7 +46,8 @@ body {
 
 .app-header nav {
   display: flex;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 8px 16px;
 }
 
 .app-header nav a {
@@ -705,4 +707,304 @@ details.patch[open] > summary::before {
 
 .patch-list > li {
   break-inside: avoid;
+}
+
+/* ---- Explorer (src/pages/ExplorerPage.tsx) ---- */
+
+.explorer h2 {
+  margin-bottom: 4px;
+}
+
+.explorer select,
+.picker input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.conditions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.condition {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  background: var(--bg);
+  border: 1px solid var(--accent-dim);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.condition .remove,
+.condition .condition-item {
+  background: none;
+  border: none;
+  padding: 0 4px;
+  color: var(--text-dim);
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.condition .remove:hover {
+  color: var(--placement-bad);
+  background: none;
+}
+
+.condition .condition-item:hover {
+  background: none;
+  opacity: 0.6;
+}
+
+.picker {
+  position: relative;
+}
+
+.picker input {
+  width: 190px;
+}
+
+.picker-list {
+  position: absolute;
+  z-index: 10;
+  top: 100%;
+  left: 0;
+  min-width: 300px;
+  max-height: 340px;
+  overflow-y: auto;
+  margin: 4px 0 0;
+  padding: 4px 0;
+  list-style: none;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+.picker-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.picker-list li span:nth-child(2) {
+  flex: 1;
+}
+
+.picker-list li:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.explorer-results.stale {
+  opacity: 0.6;
+}
+
+.stat-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.stat-tile {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.stat-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+
+.stat-sub {
+  font-size: 0.78rem;
+}
+
+.good {
+  color: var(--placement-good);
+}
+
+.bad {
+  color: var(--placement-bad);
+}
+
+.placement-bars {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 6px;
+  height: 120px;
+  align-items: end;
+}
+
+.placement-bar {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+}
+
+.placement-bar .fill {
+  width: 100%;
+  min-height: 2px;
+  border-radius: 4px 4px 0 0;
+  background: var(--placement-good);
+}
+
+.placement-bar .fill.placement-5,
+.placement-bar .fill.placement-6,
+.placement-bar .fill.placement-7,
+.placement-bar .fill.placement-8 {
+  background: var(--placement-bad);
+}
+
+/* Cards flow top-to-bottom through up to 3 columns, so tall and short
+   cards balance out instead of leaving gaps beside a lone tall card. */
+.explorer-grid {
+  columns: 3 340px;
+  column-gap: 12px;
+}
+
+.explorer-grid .panel {
+  break-inside: avoid;
+  margin-bottom: 12px;
+}
+
+.breakdown td,
+.breakdown th {
+  padding: 5px 8px;
+}
+
+.explorer-sub {
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+
+/* Explorer tables: one line per row; long names are cut and shown in the
+   row tooltip. */
+.breakdown {
+  table-layout: fixed;
+}
+
+.breakdown th {
+  white-space: nowrap;
+}
+
+.breakdown th:first-child {
+  width: auto;
+}
+
+.breakdown th:nth-child(2) {
+  width: 6.5em;
+}
+
+.breakdown th:nth-child(3),
+.breakdown th:nth-child(4) {
+  width: 3.6em;
+}
+
+.breakdown .name-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.breakdown .name-cell > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.breakdown .num {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.breakdown .share {
+  font-size: 0.75rem;
+}
+
+.traits-breakdown .trait-group + .trait-group .explore-trait-row td {
+  border-top: 1px solid var(--accent-dim);
+}
+
+.traits-breakdown .explore-trait-row td {
+  font-weight: 600;
+}
+
+.traits-breakdown .explore-tier-row td:first-child {
+  padding-left: 36px;
+}
+
+.traits-breakdown .explore-tier-row td {
+  font-size: 0.85rem;
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+
+.traits-breakdown .trait-badge {
+  padding: 1px 8px;
+}
+
+.star-split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.star-chip {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2px 10px;
+  font-size: 0.82rem;
+  color: var(--accent);
+}
+
+.star-chip strong {
+  color: var(--text);
+}
+
+.placement-bars {
+  height: 140px;
+}
+
+.bar-count {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+/* The controls panel holds dropdown pickers that extend past its bottom
+   edge; panels otherwise scroll horizontally (for wide tables on phones),
+   which would clip the dropdowns inside the panel. */
+.explorer-controls {
+  overflow: visible;
+  position: relative;
+  z-index: 5;
+}
+
+/* Tier entries under a trait in the "Add trait" picker. */
+.picker-list li.picker-sub {
+  padding-left: 30px;
+  font-size: 0.88rem;
+}
+
+.picker-list li .trait-badge {
+  min-width: 2.6em;
+  justify-content: center;
+  padding: 0 6px;
+  font-size: 0.78rem;
 }

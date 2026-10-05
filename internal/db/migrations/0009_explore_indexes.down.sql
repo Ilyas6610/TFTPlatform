@@ -1,0 +1,2 @@
+DROP INDEX idx_match_participants_traits;
+DROP INDEX idx_match_participants_units;
