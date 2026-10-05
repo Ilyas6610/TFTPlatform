@@ -1,13 +1,18 @@
 package apiserver
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"testing"
+	"time"
 
 	"tft-platform/internal/store"
+	"tft-platform/internal/store/storetest"
 )
 
 func TestParseExploreFilter(t *testing.T) {
@@ -71,5 +76,78 @@ func TestMetaBuilds_RejectsBoardConditions(t *testing.T) {
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("%s: got %d, want 400", q, rec.Code)
 		}
+	}
+}
+
+func TestMetaComps_RejectsBoardConditions(t *testing.T) {
+	s := &Server{} // validation runs before the store is touched
+	for _, q := range []string{"set=18&unit=A", "set=18&item=I", "set=18&trait=T", "set=18&level=8-", "set=0"} {
+		rec := httptest.NewRecorder()
+		NewRouter(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/meta/comps?"+q, nil))
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: got %d, want 400", q, rec.Code)
+		}
+	}
+}
+
+// seedBoards stores one ranked set-18 match whose players all ran units at
+// level 9, placing 1..len(boards).
+func seedBoards(t *testing.T, st *store.Store, matchID string, boards [][]string) {
+	t.Helper()
+	ctx := context.Background()
+	parts := map[string]store.MatchParticipant{}
+	for i, ids := range boards {
+		puuid := fmt.Sprintf("%s-p%d", matchID, i)
+		if err := st.UpsertAccountPUUIDOnly(ctx, puuid, "americas"); err != nil {
+			t.Fatal(err)
+		}
+		var units []map[string]any
+		for _, id := range ids {
+			units = append(units, map[string]any{"character_id": id, "tier": 2, "itemNames": []string{}})
+		}
+		unitsJSON, _ := json.Marshal(units)
+		parts[puuid] = store.MatchParticipant{PUUID: puuid, Placement: i + 1, Level: 9,
+			Units: unitsJSON, Traits: []byte(`[]`), RawParticipant: []byte(`{}`)}
+	}
+	if err := st.InsertMatchWithParticipants(ctx, store.Match{
+		MatchID: matchID, RoutingRegion: "americas", GameDatetime: time.Now(), GameVersion: "x",
+		TFTSetNumber: 18, QueueID: 1100, TFTGameType: "standard", RawPayload: []byte(`{}`),
+	}, parts); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMetaComps_ShapeAndCache(t *testing.T) {
+	s := &Server{Store: storetest.New(t)}
+	comp := []string{"A", "B", "C", "D", "E", "F", "G", "H"}
+	seedBoards(t, s.Store, "NA1_1", [][]string{comp, comp, comp, comp, comp, comp})
+
+	get := func() MetaCompsResponse {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		NewRouter(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/meta/comps?set=18&queue=1100", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("got %d: %s", rec.Code, rec.Body)
+		}
+		var res MetaCompsResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+
+	res := get()
+	if res.Boards != 6 || len(res.Comps) != 1 {
+		t.Fatalf("got %d boards, %d comps; want 6 boards in 1 comp", res.Boards, len(res.Comps))
+	}
+	c := res.Comps[0]
+	if c.Boards != 6 || len(c.Board) != len(comp) || c.BoardStats.Boards != 6 || c.Variants == nil || c.Flex == nil {
+		t.Errorf("unexpected comp %+v", c)
+	}
+
+	// Within the TTL the same result is served, even after new matches.
+	seedBoards(t, s.Store, "NA1_2", [][]string{comp})
+	if again := get(); again.Boards != 6 {
+		t.Errorf("got %d boards, want the cached 6", again.Boards)
 	}
 }

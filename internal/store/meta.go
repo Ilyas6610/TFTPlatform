@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 
 	"tft-platform/internal/comps"
@@ -78,7 +79,7 @@ func (s *Store) MetaBuilds(ctx context.Context, scope ExploreFilter, minBuildGam
 			WHERE jsonb_typeof(e->'itemNames') = 'array' AND jsonb_array_length(e->'itemNames') = 3
 		) c
 		GROUP BY 1, 2 HAVING count(*) >= $%d
-		ORDER BY 3 DESC, 4 ASC`, minArg), append(args, minBuildGames)...)
+		ORDER BY 3 DESC, 4 ASC`, minArg), append(slices.Clone(args), minBuildGames)...)
 	if err != nil {
 		return nil, fmt.Errorf("meta builds: %w", err)
 	}

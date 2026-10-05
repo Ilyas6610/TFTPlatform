@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -18,6 +19,13 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 
 func writeError(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, errorResponse{Error: code, Message: message})
+}
+
+// writeDBError logs a database failure and answers with a generic 500, so
+// table names and connection details stay out of responses.
+func writeDBError(w http.ResponseWriter, r *http.Request, err error) {
+	log.Printf("%s %s: %v", r.Method, r.URL.Path, err)
+	writeError(w, http.StatusInternalServerError, "db_error", "database error")
 }
 
 // writeRiotError maps the typed errors from internal/riotapi onto HTTP

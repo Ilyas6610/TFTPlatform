@@ -366,9 +366,14 @@ func modeInt(m map[int]int) int {
 	return best
 }
 
+// minBuildCopies: a build is shown only if at least this many copies of the
+// unit carried it.
+const minBuildCopies = 3
+
 // commonBuild returns the most common non-empty exact item set if it was
-// carried at least 3 times and by minShare of the unit's copies, else "". Builds of flexible units
-// (tanks) spread out, and "no items" alone would otherwise win.
+// carried by at least minBuildCopies copies and minShare of the unit's
+// copies, else "". Builds of flexible units (tanks) spread out, and "no
+// items" alone would otherwise win.
 func commonBuild(builds map[string]int, minShare float64) string {
 	total := 0
 	for _, n := range builds {
@@ -384,9 +389,9 @@ func commonBuild(builds map[string]int, minShare float64) string {
 			best, bestN = k, n
 		}
 	}
-	// A build worth showing is repeated (3+ copies) and not a rounding error
-	// of the unit's copies.
-	if total == 0 || bestN < 3 || float64(bestN)/float64(total) < minShare {
+	// A build worth showing is repeated and not a rounding error of the
+	// unit's copies.
+	if total == 0 || bestN < minBuildCopies || float64(bestN)/float64(total) < minShare {
 		return ""
 	}
 	return best

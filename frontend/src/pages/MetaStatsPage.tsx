@@ -28,6 +28,8 @@ const UNITS_PREVIEW = 24;
 
 type Tab = "comps" | "units" | "traits";
 type Sort = "games" | "avg";
+// One Explorer condition as [param, value], e.g. ["unit", "DA_Ahri18:DA_Blue"].
+type ExploreCond = [string, string];
 
 export default function MetaStatsPage() {
   const { set = String(CURRENT_TFT_SET) } = useParams();
@@ -101,7 +103,13 @@ export default function MetaStatsPage() {
   const scopeBoards =
     queue && queue !== "any" ? options?.queues.find((q) => String(q.id) === queue)?.boards : options?.boards;
   const costs = useMemo(() => new Map(setData?.units.map((u) => [u.apiName, u.cost]) ?? []), [setData]);
-  const exploreLink = (extra: string) => `/explore?${scope}${queue === "any" ? "&anyQueue=1" : ""}&${extra}`;
+  // Explorer URL for the current scope plus conditions, encoded by URLSearchParams.
+  const exploreLink = (conds: ExploreCond[]) => {
+    const q = new URLSearchParams(scope);
+    if (queue === "any") q.set("anyQueue", "1");
+    for (const [k, v] of conds) q.append(k, v);
+    return `/explore?${q}`;
+  };
 
   const units = useMemo(() => {
     if (!meta) return [];
@@ -240,7 +248,7 @@ export default function MetaStatsPage() {
               names={names}
               total={options?.queues.find((q) => String(q.id) === queue)?.boards ?? options?.boards ?? 0}
               onPick={(id, tier) =>
-                navigate(exploreLink(`trait=${id}${tier ? `*${tier.minUnits}-${tier.maxUnits || ""}` : ""}`))
+                navigate(exploreLink([["trait", `${id}${tier ? `*${tier.minUnits}-${tier.maxUnits || ""}` : ""}`]]))
               }
             />
           )}
@@ -259,12 +267,12 @@ function UnitCard({
   unit: MetaUnit;
   cost?: number;
   names: Names;
-  exploreLink: (extra: string) => string;
+  exploreLink: (conds: ExploreCond[]) => string;
 }) {
   const lowSample = u.boards < MIN_GAMES_FOR_AVG_SORT;
   return (
     <div className="panel meta-card">
-      <Link className="meta-card-head" to={exploreLink(`unit=${u.id}`)} title="Open in Explorer">
+      <Link className="meta-card-head" to={exploreLink([["unit", u.id]])} title="Open in Explorer">
         <GameIcon
           kind="champions"
           id={u.id}
@@ -305,7 +313,7 @@ function UnitCard({
             <Link
               key={b.items.join("+")}
               className="meta-build"
-              to={exploreLink(`unit=${u.id}:${b.items.join(",")}`)}
+              to={exploreLink([["unit", `${u.id}:${b.items.join(",")}`]])}
               title="Open this exact build in Explorer"
             >
               <span className="build-items">
@@ -339,7 +347,7 @@ function UnitCard({
             {u.items.map((it) => (
               <Link
                 key={it.id}
-                to={exploreLink(`unit=${u.id}:${it.id}`)}
+                to={exploreLink([["unit", `${u.id}:${it.id}`]])}
                 title={`${names.name(it.id)}: ${it.boards} games, ${avg(it.avgPlacement)} avg`}
               >
                 <GameIcon
@@ -370,7 +378,7 @@ function CompCard({
   rank: number;
   names: Names;
   costs: Map<string, number>;
-  exploreLink: (extra: string) => string;
+  exploreLink: (conds: ExploreCond[]) => string;
 }) {
   // Named by the traits it invests in (a higher tier or 3+ units), then its
   // itemized carries. Flexible boards with only 2-unit traits go by their
@@ -433,7 +441,7 @@ function CompCard({
             <span className="muted">{pct(c.playRate)} of boards</span>
           </div>
         </div>
-        <Link className="comp-explore" to={exploreLink(core.map((u) => `unit=${u.id}`).join("&"))}>
+        <Link className="comp-explore" to={exploreLink(core.map((u): ExploreCond => ["unit", u.id]))}>
           Explore →
         </Link>
       </div>

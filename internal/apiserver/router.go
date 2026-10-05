@@ -17,6 +17,7 @@ type Server struct {
 
 	leaderboard leaderboardSync
 	jobs        backgroundJobs
+	meta        metaCache
 }
 
 func NewRouter(s *Server) http.Handler {
