@@ -389,7 +389,7 @@ export interface SuggestComp {
 }
 
 export interface SuggestResult {
-  plan: { unit: string; build: SuggestBuild }[];
+  plan: { unit: string; build: SuggestBuild; aim: boolean }[]; // aim: a target, nothing builds toward it yet
   leftover: string[];
   units: { id: string; options: SuggestBuild[] }[];
   comps: SuggestComp[];

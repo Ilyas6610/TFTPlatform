@@ -8,6 +8,7 @@ package suggest
 
 import (
 	"sort"
+	"strings"
 
 	"tft-platform/internal/comps"
 	"tft-platform/internal/store"
@@ -59,6 +60,9 @@ type UnitAdvice struct {
 type PlanEntry struct {
 	Unit  string      `json:"unit"`
 	Build BuildOption `json:"build"`
+	// Aim marks a target rather than a step: nothing in the inventory
+	// builds toward it yet, so Build has no steps and every item missing.
+	Aim bool `json:"aim"`
 }
 
 // ItemFit is what the inventory can make of the items a comp's board puts on
@@ -79,9 +83,9 @@ type CompMatch struct {
 }
 
 type Result struct {
-	// Plan gives each unit at most one build and never spends an inventory
-	// item twice, best-fitting builds first. Units with no buildable item
-	// are left out.
+	// Plan gives each unit one build and never spends an inventory item
+	// twice, best-fitting builds first. Units the inventory can't help
+	// come last, with their best-placing build marked Aim.
 	Plan []PlanEntry `json:"plan"`
 	// Leftover is what the plan doesn't use.
 	Leftover []string `json:"leftover"`
@@ -237,7 +241,7 @@ func Advise(in Input) Result {
 			}
 		}
 		if best != nil {
-			res.Plan = append(res.Plan, PlanEntry{Unit: u, Build: *best})
+			res.Plan = append(res.Plan, PlanEntry{Unit: u, Build: *best, Aim: true})
 		}
 	}
 	for it, n := range left {
@@ -295,13 +299,25 @@ func matchComps(in Input, owned []string, inv inventory) []CompMatch {
 		}
 		return a.Comp.Boards > b.Comp.Boards
 	})
-	if len(out) > maxComps {
-		out = out[:maxComps]
+	// Variants of one comp are anchored separately and can overlap the
+	// player's units identically; keep the best of each so the slots show
+	// different directions.
+	seen := map[string]bool{}
+	kept := []CompMatch{}
+	for _, m := range out {
+		have := append([]string(nil), m.Have...)
+		sort.Strings(have)
+		key := strings.Join(have, ",")
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		kept = append(kept, m)
+		if len(kept) == maxComps {
+			break
+		}
 	}
-	if out == nil {
-		out = []CompMatch{}
-	}
-	return out
+	return kept
 }
 
 func dedupe(ids []string) []string {

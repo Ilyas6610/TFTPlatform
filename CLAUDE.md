@@ -39,7 +39,7 @@ Personal Riot API keys expire every 24h — refresh `deploy/.secrets/riot-api-ke
 ### Frontend (`frontend/`)
 ```bash
 npm install
-npm run dev      # Vite dev server on :5173, proxies /api to localhost:8080 (API_URL=http://localhost:18080 npm run dev to use another backend)
+npm run dev      # Vite dev server on :5173, proxies /api to localhost:8080 (API_URL=http://localhost:<port> npm run dev to use another backend)
 npm run build    # tsc -b && vite build
 npm run assets   # download TFT icons + manifest from Data Dragon into public/tft/ (gitignored, ~100 MB; re-run after a patch)
 ```

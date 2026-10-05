@@ -264,7 +264,13 @@ function BuildItems({ build, names }: { build: SuggestBuild; names: Names }) {
   );
 }
 
-function BuildStatus({ build }: { build: SuggestBuild }) {
+function BuildStatus({ build, aim }: { build: SuggestBuild; aim?: boolean }) {
+  if (aim)
+    return (
+      <span className="muted" title="Nothing you hold builds toward this yet">
+        to aim for
+      </span>
+    );
   if (build.ready) return <span className="good">ready</span>;
   return <span className="muted">missing {build.missing.length}</span>;
 }
@@ -303,7 +309,7 @@ function Plan({ result, names, hasItems }: { result: SuggestResult; names: Names
             <div className="plan-row" key={p.unit}>
               <UnitHead id={p.unit} names={names} />
               <BuildItems build={p.build} names={names} />
-              <BuildStatus build={p.build} />
+              <BuildStatus build={p.build} aim={p.aim} />
               <BuildStats build={p.build} />
             </div>
           ))}

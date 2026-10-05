@@ -97,7 +97,8 @@ func TestAdvise_PlanDoesNotSpendItemsTwice(t *testing.T) {
 	}
 	r := Advise(in)
 	// A (better placing) gets the items; B only its build to aim for.
-	if len(r.Plan) != 2 || r.Plan[0].Unit != "A" || !r.Plan[0].Build.Ready || r.Plan[1].Unit != "B" || len(r.Plan[1].Build.Steps) != 0 {
+	if len(r.Plan) != 2 || r.Plan[0].Unit != "A" || !r.Plan[0].Build.Ready || r.Plan[0].Aim ||
+		r.Plan[1].Unit != "B" || len(r.Plan[1].Build.Steps) != 0 || !r.Plan[1].Aim {
 		t.Fatalf("plan = %+v, want A ready and B with nothing makeable", r.Plan)
 	}
 	// Alternatives are per unit against the whole inventory, so B still lists it.
@@ -129,7 +130,7 @@ func TestAdvise_UnitWithNothingBuildableShowsWhatToAimFor(t *testing.T) {
 		Builds: map[string][]store.MetaBuild{"A": {build(4, 10, "IE", "Bow"), build(3, 10, "IE", "JG")}},
 	}
 	r := Advise(in)
-	if len(r.Plan) != 1 || r.Plan[0].Build.AvgPlacement != 3 || len(r.Plan[0].Build.Steps) != 0 || r.Plan[0].Build.Ready {
+	if len(r.Plan) != 1 || r.Plan[0].Build.AvgPlacement != 3 || len(r.Plan[0].Build.Steps) != 0 || r.Plan[0].Build.Ready || !r.Plan[0].Aim {
 		t.Fatalf("plan = %+v, want the best-placing build, nothing makeable", r.Plan)
 	}
 	if len(r.Units[0].Options) != 2 || !slices.Equal(r.Leftover, []string{"Rod"}) {
@@ -240,5 +241,22 @@ func TestAdvise_EmblemsAndArtifacts(t *testing.T) {
 	alt := r.Units[0].Options[1]
 	if alt.Ready || !slices.Equal(alt.Missing, []string{"Artifact2"}) {
 		t.Errorf("alt = %+v", alt)
+	}
+}
+
+func TestAdvise_CompsWithTheSameOwnedUnitsAreCollapsed(t *testing.T) {
+	two := func(avg float64, boards int, extra string) comps.Comp {
+		return comp(avg, boards, comps.BoardUnit{ID: "A"}, comps.BoardUnit{ID: "B"}, comps.BoardUnit{ID: extra})
+	}
+	r := Advise(Input{
+		Units: []string{"A", "B"},
+		Comps: []comps.Comp{
+			two(4.0, 50, "X"),
+			two(3.0, 40, "Y"), // same A+B overlap, better placement: wins
+			comp(4.5, 30, comps.BoardUnit{ID: "A"}, comps.BoardUnit{ID: "B"}, comps.BoardUnit{ID: "Z"}, comps.BoardUnit{ID: "W"}),
+		},
+	})
+	if len(r.Comps) != 1 || r.Comps[0].Comp.AvgPlacement != 3.0 {
+		t.Fatalf("comps = %+v, want the single best A+B comp", r.Comps)
 	}
 }
