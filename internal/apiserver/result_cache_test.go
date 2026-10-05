@@ -84,3 +84,54 @@ func TestResultCache_Bounded(t *testing.T) {
 		t.Errorf("%d entries, want at most %d", n, resultCacheMaxEntries)
 	}
 }
+
+func TestResultCache_LimitsConcurrentComputes(t *testing.T) {
+	c := &resultCache{}
+	var inFlight, peak atomic.Int32
+	release := make(chan struct{})
+	compute := func(context.Context) (any, error) {
+		n := inFlight.Add(1)
+		for p := peak.Load(); n > p && !peak.CompareAndSwap(p, n); p = peak.Load() {
+		}
+		<-release
+		inFlight.Add(-1)
+		return "v", nil
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 6; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c.get(context.Background(), fmt.Sprint(i), compute)
+		}()
+	}
+	time.Sleep(50 * time.Millisecond)
+	if n := inFlight.Load(); n != resultCacheMaxComputes {
+		t.Errorf("%d computing at once, want %d", n, resultCacheMaxComputes)
+	}
+	close(release)
+	wg.Wait()
+	if p := peak.Load(); p > resultCacheMaxComputes {
+		t.Errorf("peak %d concurrent computes, want at most %d", p, resultCacheMaxComputes)
+	}
+}
+
+// A caller that gives up while waiting for a slot gets its context error,
+// and the key isn't left stuck: the next caller computes it.
+func TestResultCache_WaitingCallerCanLeave(t *testing.T) {
+	c := &resultCache{}
+	release := make(chan struct{})
+	for i := 0; i < resultCacheMaxComputes; i++ {
+		go c.get(context.Background(), fmt.Sprint("busy", i), func(context.Context) (any, error) { <-release; return nil, nil })
+	}
+	time.Sleep(20 * time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if _, err := c.get(ctx, "k", func(context.Context) (any, error) { return "v", nil }); err == nil {
+		t.Fatal("expected the caller's context error while all slots are busy")
+	}
+	close(release)
+	if v, err := c.get(context.Background(), "k", func(context.Context) (any, error) { return "v", nil }); v != "v" || err != nil {
+		t.Errorf("got %v, %v; want a fresh computation", v, err)
+	}
+}

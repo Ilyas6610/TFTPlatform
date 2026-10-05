@@ -17,6 +17,10 @@ const (
 	// parameters (set, queue combinations, levels, versions), so callers
 	// could otherwise create entries without limit.
 	resultCacheMaxEntries = 64
+	// resultCacheMaxComputes caps cache misses computed at once per cache.
+	// Each is a heavy query, and callers choose the key, so without a cap
+	// a client cycling through scopes could run many in parallel.
+	resultCacheMaxComputes = 2
 )
 
 // resultCache memoizes expensive results by key for resultCacheTTL.
@@ -25,6 +29,7 @@ const (
 type resultCache struct {
 	mu      sync.Mutex
 	entries map[string]*resultCacheEntry
+	slots   chan struct{}    // computations in flight
 	now     func() time.Time // tests only
 }
 
@@ -44,6 +49,7 @@ func (c *resultCache) get(ctx context.Context, key string, compute func(context.
 	c.mu.Lock()
 	if c.entries == nil {
 		c.entries = map[string]*resultCacheEntry{}
+		c.slots = make(chan struct{}, resultCacheMaxComputes)
 	}
 	e := c.entries[key]
 	if e != nil {
@@ -61,9 +67,16 @@ func (c *resultCache) get(ctx context.Context, key string, compute func(context.
 		c.entries[key] = e
 		c.mu.Unlock()
 
-		// Detached from the request: a caller hanging up mustn't fail the
-		// computation that other waiters share.
-		e.val, e.err = compute(context.WithoutCancel(ctx))
+		// Wait for a computation slot (giving up if the caller leaves),
+		// then compute detached from the request: a caller hanging up
+		// mustn't fail a computation that other waiters share.
+		select {
+		case c.slots <- struct{}{}:
+			e.val, e.err = compute(context.WithoutCancel(ctx))
+			<-c.slots
+		case <-ctx.Done():
+			e.err = ctx.Err()
+		}
 		e.at = now()
 		if e.err != nil {
 			c.mu.Lock()
