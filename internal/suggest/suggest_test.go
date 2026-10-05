@@ -172,3 +172,36 @@ func TestAdvise_EmptyInputGivesEmptyLists(t *testing.T) {
 		t.Fatalf("lists must be non-nil for JSON: %+v", r)
 	}
 }
+
+func TestAdvise_EmblemsAndArtifacts(t *testing.T) {
+	rec := Recipes{"EmblemX": {"Spatula", "Rod"}, "IE": {"Sword", "Glove"}}
+	in := Input{
+		Units: []string{"A"}, Recipes: rec,
+		// The emblem is made from Spatula + Rod; the artifact has no recipe
+		// and counts only if held whole.
+		Items: []string{"Spatula", "Rod", "IE", "Artifact"},
+		Builds: map[string][]store.MetaBuild{"A": {
+			build(3.0, 10, "Artifact", "EmblemX", "IE"),
+			build(3.5, 10, "Artifact2", "EmblemX", "IE"),
+		}},
+	}
+	r := Advise(in)
+	b := r.Plan[0].Build
+	if !b.Ready || len(b.Steps) != 3 {
+		t.Fatalf("emblem from components + whole artifact should be ready: %+v", b)
+	}
+	var emblem Step
+	for _, s := range b.Steps {
+		if s.Item == "EmblemX" {
+			emblem = s
+		}
+	}
+	if !slices.Equal(emblem.From, []string{"Spatula", "Rod"}) {
+		t.Errorf("emblem step = %+v", emblem)
+	}
+	// A build needing an artifact that isn't held can't be made from components.
+	alt := r.Units[0].Options[1]
+	if alt.Ready || !slices.Equal(alt.Missing, []string{"Artifact2"}) {
+		t.Errorf("alt = %+v", alt)
+	}
+}

@@ -79,18 +79,24 @@ export function BuildAdvisor({
     };
   }, [query, options]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Items you can hold: components and completed items. Without set data,
-  // only the completed items seen in matches.
-  const itemOptions = useMemo<PickerOption[]>(() => {
-    if (!setData) return (options?.items ?? []).map((i) => ({ id: i.id, boards: 0 }));
-    return setData.items
-      .filter((i) => i.kind === "component" || i.kind === "completed")
-      .sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === "component" ? -1 : 1))
-      .map((i) => ({
-        id: i.apiName,
-        boards: 0,
-        label: `${i.name}${i.kind === "component" ? " (component)" : ""}`,
-      }));
+  // What you can hold, by field: components and completed items, emblems
+  // and artifacts. All end up in one inventory (hi); the fields only keep the
+  // pickers short. Without set data, only the completed items seen in matches.
+  const groups = useMemo(() => {
+    const kindOf = new Map((setData?.items ?? []).map((i) => [i.apiName, i.kind]));
+    const optionsFor = (pred: (k: string) => boolean): PickerOption[] =>
+      (setData?.items ?? [])
+        .filter((i) => pred(i.kind))
+        .sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === "component" ? -1 : 1))
+        .map((i) => ({ id: i.apiName, boards: 0, label: `${i.name}${i.kind === "component" ? " (component)" : ""}` }));
+    const base = setData
+      ? optionsFor((k) => k === "component" || k === "completed")
+      : (options?.items ?? []).map((i) => ({ id: i.id, boards: 0 }));
+    return [
+      { key: "items", label: "Items", placeholder: "Add item…", options: base, has: (id: string) => !["emblem", "artifact"].includes(kindOf.get(id) ?? "") },
+      { key: "emblems", label: "Emblems", placeholder: "Add emblem…", options: optionsFor((k) => k === "emblem"), has: (id: string) => kindOf.get(id) === "emblem" },
+      { key: "artifacts", label: "Artifacts", placeholder: "Add artifact…", options: optionsFor((k) => k === "artifact"), has: (id: string) => kindOf.get(id) === "artifact" },
+    ].filter((g) => g.key === "items" || g.options.length > 0);
   }, [setData, options]);
 
   // One chip per distinct item with its copy count.
@@ -110,7 +116,7 @@ export function BuildAdvisor({
     <div className="panel advisor">
       <h2>What can I build?</h2>
       <p className="muted">
-        Add the units you have and the items in your inventory, whole or still components. You get builds that real
+        Add the units you have and what is in your inventory: items (whole or still components), emblems and artifacts. You get builds that real
         boards ran, with what you can make right now and what's missing.
       </p>
 
@@ -145,43 +151,47 @@ export function BuildAdvisor({
         )}
       </div>
 
-      <div className="advisor-row">
-        <span className="muted advisor-label">Items</span>
-        {itemCounts.map(([id, n]) => (
-          <span key={id} className="chip">
-            <GameIcon kind="items" id={id} size={22} fallbackSrc={names.icon(id)} fallbackName={names.name(id)} />
-            {names.name(id)}
-            <button type="button" className="chip-step" title="One fewer" onClick={() => removeItem(id)}>
-              −
+      {groups.map((g) => (
+        <div className="advisor-row" key={g.key}>
+          <span className="muted advisor-label">{g.label}</span>
+          {itemCounts
+            .filter(([id]) => g.has(id))
+            .map(([id, n]) => (
+              <span key={id} className="chip">
+                <GameIcon kind="items" id={id} size={22} fallbackSrc={names.icon(id)} fallbackName={names.name(id)} />
+                {names.name(id)}
+                <button type="button" className="chip-step" title="One fewer" onClick={() => removeItem(id)}>
+                  −
+                </button>
+                <strong>{n}</strong>
+                <button type="button" className="chip-step" title="One more" onClick={() => addItem(id)}>
+                  +
+                </button>
+              </span>
+            ))}
+          {items.length < MAX_ITEMS && (
+            <Picker placeholder={g.placeholder} kind="items" options={g.options} names={names} onPick={addItem} />
+          )}
+          {g.key === "items" && (units.length > 0 || items.length > 0) && (
+            <button
+              type="button"
+              onClick={() =>
+                setParams(
+                  (prev) => {
+                    const next = new URLSearchParams(prev);
+                    next.delete("hu");
+                    next.delete("hi");
+                    return next;
+                  },
+                  { replace: true },
+                )
+              }
+            >
+              Clear
             </button>
-            <strong>{n}</strong>
-            <button type="button" className="chip-step" title="One more" onClick={() => addItem(id)}>
-              +
-            </button>
-          </span>
-        ))}
-        {items.length < MAX_ITEMS && (
-          <Picker placeholder="Add item…" kind="items" options={itemOptions} names={names} onPick={addItem} />
-        )}
-        {(units.length > 0 || items.length > 0) && (
-          <button
-            type="button"
-            onClick={() =>
-              setParams(
-                (prev) => {
-                  const next = new URLSearchParams(prev);
-                  next.delete("hu");
-                  next.delete("hi");
-                  return next;
-                },
-                { replace: true },
-              )
-            }
-          >
-            Clear
-          </button>
-        )}
-      </div>
+          )}
+        </div>
+      ))}
 
       {error && <div className="error-box">{error}</div>}
       {units.length === 0 && <p className="muted">Add at least one unit to get suggestions.</p>}
