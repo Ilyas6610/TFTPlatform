@@ -2,6 +2,8 @@ package riotsync
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -45,5 +47,39 @@ func TestLoadConfigRejectsUnknownPlatform(t *testing.T) {
 	t.Setenv("RIOTSYNC_PLATFORMS", "na1,mars1")
 	if _, err := LoadConfig(); err == nil {
 		t.Fatal("want error for unknown platform")
+	}
+}
+
+func TestRateLimitWatcherCapturesRetryAfter(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "7")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+	w := &RateLimitWatcher{}
+	resp, err := (&http.Client{Transport: w}).Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	s := &Scheduler{RateLimitPause: time.Second, Limits: w}
+	d := s.pauseFor(Outcome{Stopped: "rate_limited"})
+	if d < 7*time.Second || d > 9*time.Second {
+		t.Fatalf("pause = %s, want ~8s (Retry-After 7s + margin)", d)
+	}
+	// Consumed: the next rate-limited stop without a fresh 429 uses the floor.
+	if d := s.pauseFor(Outcome{Stopped: "rate_limited"}); d != time.Second {
+		t.Fatalf("second pause = %s, want floor 1s", d)
+	}
+}
+
+func TestPauseForRateLimitedError(t *testing.T) {
+	s := &Scheduler{RateLimitPause: time.Second}
+	if d := s.pauseFor(Outcome{Err: &riotapi.ErrRateLimited{}}); d != time.Second {
+		t.Fatalf("pause = %s, want 1s", d)
+	}
+	if d := s.pauseFor(Outcome{}); d != 0 {
+		t.Fatalf("pause = %s, want 0", d)
 	}
 }

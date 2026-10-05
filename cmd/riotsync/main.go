@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -54,13 +55,17 @@ func main() {
 		keySource = riotapi.EnvKeySource{Key: cfg.RiotAPIKey}
 	}
 	limiter := riotapi.NewRateLimiter(cfg.RiotAppRateLimitPerSec, cfg.RiotAppRateLimitPer2Min)
-	riot := riotapi.NewClient(keySource, limiter)
+	// The watcher lets the scheduler honor Riot's Retry-After after a 429.
+	watcher := &riotsync.RateLimitWatcher{}
+	riot := riotapi.NewClient(keySource, limiter,
+		riotapi.WithHTTPClient(&http.Client{Timeout: 10 * time.Second, Transport: watcher}))
 
 	sched := &riotsync.Scheduler{
 		Tasks:          riotsync.BuildTasks(syncCfg, riot, st),
 		Recorder:       riotsync.StoreRecorder{Store: st},
 		KeyRetry:       syncCfg.KeyRetry,
-		RateLimitPause: 2 * time.Minute, // one app rate-limit window
+		RateLimitPause: 10 * time.Second, // floor; Retry-After is used when longer
+		Limits:         watcher,
 	}
 	log.Printf("riotsync starting: platforms=%v", syncCfg.Platforms)
 	sched.Run(ctx)

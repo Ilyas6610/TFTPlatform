@@ -38,8 +38,10 @@ type Scheduler struct {
 	Recorder Recorder
 	// KeyRetry pauses every task after Riot rejects the key.
 	KeyRetry time.Duration
-	// RateLimitPause pauses every task after a rate-limited stop.
+	// RateLimitPause pauses every task after a rate-limited stop; if
+	// Limits is set, the Retry-After Riot sent is used when it's longer.
 	RateLimitPause time.Duration
+	Limits         *RateLimitWatcher
 
 	now func() time.Time // tests only
 }
@@ -95,11 +97,19 @@ func (s *Scheduler) Run(ctx context.Context) {
 
 func (s *Scheduler) pauseFor(o Outcome) time.Duration {
 	var keyExpired *riotapi.ErrKeyExpired
+	var rateLimited *riotapi.ErrRateLimited
 	switch {
 	case errors.As(o.Err, &keyExpired):
 		return s.KeyRetry
-	case o.Stopped == "rate_limited":
-		return s.RateLimitPause
+	case o.Stopped == "rate_limited" || errors.As(o.Err, &rateLimited):
+		d := s.RateLimitPause
+		if s.Limits != nil {
+			// +1s margin: Retry-After is whole seconds.
+			if ra := s.Limits.TakeRetryDelay(); ra > 0 && ra+time.Second > d {
+				d = ra + time.Second
+			}
+		}
+		return d
 	}
 	return 0
 }
