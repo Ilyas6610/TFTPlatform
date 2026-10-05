@@ -1,6 +1,12 @@
 package store
 
-import "context"
+import (
+	"context"
+	"errors"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+)
 
 // EnqueuePUUID adds or updates a PUUID's entry in the crawl queue. Priority
 // only ever increases (GREATEST) so re-seeding never downgrades a player
@@ -59,4 +65,15 @@ func (s *Store) MarkCrawled(ctx context.Context, puuid, lastMatchIDSeen string) 
 		WHERE puuid = $1
 	`, puuid, nullIfEmpty(lastMatchIDSeen))
 	return err
+}
+
+// MatchHistorySyncedAt returns when puuid's match history was last fully
+// crawled (by the ingestion pipeline or a profile view), or nil if never.
+func (s *Store) MatchHistorySyncedAt(ctx context.Context, puuid string) (*time.Time, error) {
+	var t *time.Time
+	err := s.Pool.QueryRow(ctx, `SELECT last_crawled_at FROM ingest_puuid_queue WHERE puuid = $1`, puuid).Scan(&t)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return t, err
 }

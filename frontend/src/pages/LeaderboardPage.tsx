@@ -1,18 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ApiError, Leaderboard, getLeaderboard } from "../api/client";
+import { ApiError, Leaderboard, getLeaderboard, staleSuffix } from "../api/client";
 
 const PLATFORMS = ["na1", "euw1", "eun1", "kr", "jp1", "br1", "la1", "la2", "oc1", "tr1", "ru"];
 
 // While the server is resolving Riot IDs in the background, re-fetch at this
 // interval so names fill in as they're found.
 const RESOLVE_POLL_MS = 3000;
-
-const STALE_REASONS: Record<string, string> = {
-  riot_api_key_expired: "the Riot API key needs rotation",
-  riot_api_rate_limited: "Riot API rate limit reached",
-  riot_api_timeout: "Riot API is busy",
-};
 
 export default function LeaderboardPage() {
   const { platform = "na1" } = useParams();
@@ -83,7 +77,7 @@ export default function LeaderboardPage() {
       {board?.stale && (
         <div className="warning-box">
           Showing saved rankings — couldn't refresh from Riot
-          {board.staleReason && STALE_REASONS[board.staleReason] ? ` (${STALE_REASONS[board.staleReason]})` : ""}.
+          {staleSuffix(board.staleReason)}.
         </div>
       )}
 

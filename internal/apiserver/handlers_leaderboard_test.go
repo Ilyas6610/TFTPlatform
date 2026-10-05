@@ -17,17 +17,23 @@ import (
 	"tft-platform/internal/store/storetest"
 )
 
-// fakeRiot serves a fixed apex ladder and account-v1 by-puuid lookups.
-// accountGate, when set, holds each account lookup until it's closed, so
-// tests can observe a resolution run in flight.
+// fakeRiot serves a fixed apex ladder, account-v1 by-puuid lookups, and
+// tft/match-v1 ids + matches. accountGate / matchGate, when set, hold each
+// account / match-ids request until closed, so tests can observe a
+// background run in flight.
 type fakeRiot struct {
 	ladderStatus atomic.Int32 // non-zero forces this status on league requests
+	matchStatus  atomic.Int32 // non-zero forces this status on match requests
 	ladderCalls  atomic.Int32
 	accountCalls atomic.Int32
+	matchCalls   atomic.Int32
 	mu           sync.Mutex
 	challengers  []riotapi.LeagueEntry
 	accounts     map[string]riotapi.Account
+	matchIDs     map[string][]string // puuid -> ids, newest first
+	matches      map[string]string   // id -> raw match JSON
 	accountGate  chan struct{}
+	matchGate    chan struct{}
 }
 
 func (f *fakeRiot) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -44,6 +50,30 @@ func (f *fakeRiot) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			entries = f.challengers
 		}
 		json.NewEncoder(w).Encode(riotapi.LeagueList{Tier: strings.ToUpper(tier), Entries: entries})
+		return
+	}
+	if rest, ok := strings.CutPrefix(r.URL.Path, "/tft/match/v1/matches/"); ok {
+		f.matchCalls.Add(1)
+		if code := f.matchStatus.Load(); code != 0 {
+			w.WriteHeader(int(code))
+			return
+		}
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		if puuid, ok := strings.CutPrefix(rest, "by-puuid/"); ok {
+			if f.matchGate != nil {
+				f.mu.Unlock()
+				<-f.matchGate
+				f.mu.Lock()
+			}
+			json.NewEncoder(w).Encode(f.matchIDs[strings.TrimSuffix(puuid, "/ids")])
+			return
+		}
+		if m, ok := f.matches[rest]; ok {
+			w.Write([]byte(m))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 	if puuid, ok := strings.CutPrefix(r.URL.Path, "/riot/account/v1/accounts/by-puuid/"); ok {
@@ -70,6 +100,8 @@ func newTestServer(t *testing.T) (*Server, *fakeRiot) {
 			"p1": {PUUID: "p1", GameName: "Alice", TagLine: "NA1"},
 			"p2": {PUUID: "p2", GameName: "Bob", TagLine: "NA1"},
 		},
+		matchIDs: map[string][]string{},
+		matches:  map[string]string{},
 	}
 	return &Server{Riot: riotapitest.NewClient(t, riot), Store: storetest.New(t)}, riot
 }
@@ -90,17 +122,27 @@ func getLeaderboard(t *testing.T, s *Server, path string) (int, LeaderboardRespo
 // waitForResolution blocks until no name-resolution run is in flight.
 func waitForResolution(t *testing.T, s *Server, platform string) {
 	t.Helper()
+	waitForJob(t, s, nameResolutionKey(riotapi.PlatformRegion(platform)))
+}
+
+// waitForJob blocks until no background run for key is in flight.
+func waitForJob(t *testing.T, s *Server, key string) {
+	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		s.leaderboard.mu.Lock()
-		running := s.leaderboard.resolving[platform]
-		s.leaderboard.mu.Unlock()
-		if !running {
+		if !s.jobs.isRunning(key) {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatal("name resolution did not finish")
+	t.Fatalf("background job %s did not finish", key)
+}
+
+// endCooldown lets key's next request start a new run immediately.
+func endCooldown(s *Server, key string) {
+	s.jobs.mu.Lock()
+	defer s.jobs.mu.Unlock()
+	delete(s.jobs.retryAt, key)
 }
 
 func ageSnapshot(t *testing.T, st *store.Store, platform string, by time.Duration) {
@@ -266,9 +308,7 @@ func TestLeaderboard_UnresolvableNamesCoolDownBeforeRetry(t *testing.T) {
 	}
 
 	// Once the cooldown has passed, the leftover is retried.
-	s.leaderboard.mu.Lock()
-	s.leaderboard.retryAt["na1"] = time.Now().Add(-time.Second)
-	s.leaderboard.mu.Unlock()
+	endCooldown(s, nameResolutionKey(riotapi.PlatformNA1))
 	_, resp = getLeaderboard(t, s, "/api/v1/leaderboard/na1")
 	waitForResolution(t, s, "na1")
 	if !resp.Resolving || riot.accountCalls.Load() != calls+1 {

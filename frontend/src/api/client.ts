@@ -45,8 +45,21 @@ export interface PlayerMatchSummary {
   level: number;
 }
 
-export function getPlayerMatches(puuid: string, limit = 20) {
-  return get<PlayerMatchSummary[]>(`/api/v1/players/${encodeURIComponent(puuid)}/matches?limit=${limit}`);
+// Passing region lets the server sync the player's history from Riot in the
+// background when it's out of date; `refreshing` is true while that runs —
+// re-fetch to pick up new matches.
+export interface PlayerMatches {
+  matches: PlayerMatchSummary[];
+  syncedAt: string | null;
+  refreshing: boolean;
+  stale: boolean;
+  staleReason?: string;
+}
+
+export function getPlayerMatches(puuid: string, region: string, limit = 20) {
+  return get<PlayerMatches>(
+    `/api/v1/players/${encodeURIComponent(puuid)}/matches?limit=${limit}&region=${encodeURIComponent(region)}`,
+  );
 }
 
 // Match detail is the raw Riot TFT match payload (see
@@ -145,4 +158,16 @@ export interface AugmentStat {
 
 export function getMetaAugments(set: number) {
   return get<AugmentStat[]>(`/api/v1/meta/augments?set=${set}`);
+}
+
+const STALE_REASONS: Record<string, string> = {
+  riot_api_key_expired: "the Riot API key needs rotation",
+  riot_api_rate_limited: "Riot API rate limit reached",
+  riot_api_timeout: "Riot API is busy",
+};
+
+/** " (reason)" for a known staleReason, or "" — for "couldn't update" notices. */
+export function staleSuffix(reason: string | undefined): string {
+  const text = reason && STALE_REASONS[reason];
+  return text ? ` (${text})` : "";
 }

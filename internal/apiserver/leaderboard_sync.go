@@ -28,14 +28,11 @@ const (
 	nameResolveCooldown = time.Minute
 )
 
-// leaderboardSync coordinates per-platform leaderboard refreshes and
-// background name resolution across concurrent requests. The zero value is
-// ready to use.
+// leaderboardSync serializes per-platform leaderboard refreshes across
+// concurrent requests. The zero value is ready to use.
 type leaderboardSync struct {
 	mu        sync.Mutex
 	refreshMu map[string]*sync.Mutex
-	resolving map[string]bool
-	retryAt   map[string]time.Time
 }
 
 // refreshLock returns the mutex serializing refreshes for platform, so
@@ -84,42 +81,25 @@ func (s *Server) refreshIfStale(ctx context.Context, platform riotapi.PlatformRe
 	return nil
 }
 
-// startNameResolution resolves Riot IDs for puuids in the background unless
-// a run for platform is already in flight or cooling down. It reports
-// whether a run is in flight after the call.
-func (s *Server) startNameResolution(platform riotapi.PlatformRegion, puuids []string) bool {
-	ls := &s.leaderboard
-	ls.mu.Lock()
-	defer ls.mu.Unlock()
-	if ls.resolving == nil {
-		ls.resolving = make(map[string]bool)
-		ls.retryAt = make(map[string]time.Time)
-	}
-	key := string(platform)
-	if ls.resolving[key] {
-		return true
-	}
-	if len(puuids) == 0 || time.Now().Before(ls.retryAt[key]) {
-		return false
-	}
-	ls.resolving[key] = true
+func nameResolutionKey(platform riotapi.PlatformRegion) string {
+	return "names:" + string(platform)
+}
 
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), nameResolveTimeout)
-		defer cancel()
+// startNameResolution resolves Riot IDs for puuids in the background (see
+// backgroundJobs). It reports whether a run is in flight after the call.
+func (s *Server) startNameResolution(platform riotapi.PlatformRegion, puuids []string) bool {
+	key := nameResolutionKey(platform)
+	if len(puuids) == 0 {
+		return s.jobs.isRunning(key)
+	}
+	return s.jobs.start(key, nameResolveTimeout, nameResolveCooldown, func(ctx context.Context) (bool, error) {
 		result, err := ingest.ResolveNames(ctx, s.Riot, s.Store, platform, puuids)
 		if err != nil {
-			log.Printf("leaderboard %s: resolve names: %v", platform, err)
-		} else if result.Stopped != "" {
+			return false, err
+		}
+		if result.Stopped != "" {
 			log.Printf("leaderboard %s: resolve names stopped early: %s", platform, result.Stopped)
 		}
-
-		ls.mu.Lock()
-		defer ls.mu.Unlock()
-		ls.resolving[key] = false
-		if err != nil || result.Resolved < len(puuids) {
-			ls.retryAt[key] = time.Now().Add(nameResolveCooldown)
-		}
-	}()
-	return true
+		return result.Resolved == len(puuids), nil
+	})
 }

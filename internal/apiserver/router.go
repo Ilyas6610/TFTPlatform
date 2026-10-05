@@ -16,6 +16,7 @@ type Server struct {
 	Store *store.Store
 
 	leaderboard leaderboardSync
+	jobs        backgroundJobs
 }
 
 func NewRouter(s *Server) http.Handler {

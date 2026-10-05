@@ -65,8 +65,10 @@ The live TFT set number is `CURRENT_TFT_SET` in `frontend/src/config.ts` — the
 - **db/migrations** — sequential golang-migrate SQL files (`0001`…).
 - **settags** — empty, not yet implemented.
 
-### Leaderboard freshness
-`GET /api/v1/leaderboard/{platform}` re-seeds the platform from Riot (3 requests, via `ingest.SeedLeaderboard`) when its snapshot is older than 2 minutes, and a complete seed prunes players who left master+. Missing Riot IDs on the returned page are resolved in the background via account-v1 by-PUUID (`ingest.ResolveNames`); the response's `resolving` flag tells the frontend to keep polling. Coordination lives in `internal/apiserver/leaderboard_sync.go`.
+### Data freshness (request-triggered Riot fetches)
+- **Leaderboard** — `GET /api/v1/leaderboard/{platform}` re-seeds the platform from Riot (3 requests, `ingest.SeedLeaderboard`) when its snapshot is older than 2 minutes; a complete seed prunes players who left master+. Missing Riot IDs on the returned page are resolved in the background via account-v1 by-PUUID (`ingest.ResolveNames`). Refresh serialization is in `internal/apiserver/leaderboard_sync.go`.
+- **Match history** — `GET /api/v1/players/{puuid}/matches?region=<platform>` starts a background sync (`ingest.SyncPlayerMatches`: ids + any unsaved matches from the last 20) when the player's history wasn't synced in the last 2 minutes. Sync time is `ingest_puuid_queue.last_crawled_at`, so viewed players also join the crawl queue. Without `region` the endpoint is cache-only.
+- Background runs go through `backgroundJobs` (`internal/apiserver/background.go`): one run per key at a time, a 1-minute cooldown after incomplete/failed runs, and the last error surfaced as `stale`/`staleReason`. Responses carry `resolving`/`refreshing` flags; the frontend polls every 3s while set.
 
 ### Key invariant: one rate limiter per process
 Exactly one `riotapi.Client`/`RateLimiter` is built at startup and injected (e.g. into `apiserver.Server`). Handlers and other code must never construct their own client, so live fetches and ingestion can't jointly exceed Riot's rate limits.

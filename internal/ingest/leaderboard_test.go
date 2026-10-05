@@ -16,18 +16,27 @@ import (
 	"tft-platform/internal/store/storetest"
 )
 
-// fakeRiot serves tft/league-v1 apex tiers and account-v1 by-puuid from
-// in-memory data. Any path listed in status gets that status instead.
+// fakeRiot serves tft/league-v1 apex tiers, account-v1 by-puuid, and
+// tft/match-v1 ids + matches from in-memory data. Any path listed in status
+// gets that status instead.
 type fakeRiot struct {
 	mu       sync.Mutex
 	tiers    map[string][]riotapi.LeagueEntry // "challenger" -> entries
 	accounts map[string]riotapi.Account
-	status   map[string]int // path suffix -> forced status
+	matchIDs map[string][]string // puuid -> recent match ids, newest first
+	matches  map[string]string   // match id -> raw match JSON
+	status   map[string]int      // path suffix -> forced status
 	requests []string
 }
 
 func newFakeRiot() *fakeRiot {
-	return &fakeRiot{tiers: map[string][]riotapi.LeagueEntry{}, accounts: map[string]riotapi.Account{}, status: map[string]int{}}
+	return &fakeRiot{
+		tiers:    map[string][]riotapi.LeagueEntry{},
+		accounts: map[string]riotapi.Account{},
+		matchIDs: map[string][]string{},
+		matches:  map[string]string{},
+		status:   map[string]int{},
+	}
 }
 
 func (f *fakeRiot) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -44,6 +53,16 @@ func (f *fakeRiot) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if tier, ok := strings.CutPrefix(r.URL.Path, "/tft/league/v1/"); ok {
 		json.NewEncoder(w).Encode(riotapi.LeagueList{Tier: strings.ToUpper(tier), Entries: f.tiers[tier]})
 		return
+	}
+	if rest, ok := strings.CutPrefix(r.URL.Path, "/tft/match/v1/matches/"); ok {
+		if puuid, ok := strings.CutPrefix(rest, "by-puuid/"); ok {
+			json.NewEncoder(w).Encode(f.matchIDs[strings.TrimSuffix(puuid, "/ids")])
+			return
+		}
+		if m, ok := f.matches[rest]; ok {
+			w.Write([]byte(m))
+			return
+		}
 	}
 	if puuid, ok := strings.CutPrefix(r.URL.Path, "/riot/account/v1/accounts/by-puuid/"); ok {
 		if a, ok := f.accounts[puuid]; ok {

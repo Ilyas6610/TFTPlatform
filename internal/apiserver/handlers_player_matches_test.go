@@ -1,0 +1,174 @@
+package apiserver
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"sync"
+	"testing"
+)
+
+func matchJSON(id string, gameDatetime int64, puuid string) string {
+	return fmt.Sprintf(`{"metadata":{"match_id":%q},"info":{"game_datetime":%d,"game_version":"test","tft_set_number":18,`+
+		`"participants":[{"puuid":%q,"placement":3,"level":8,"units":[],"traits":[]}]}}`, id, gameDatetime, puuid)
+}
+
+func getMatches(t *testing.T, s *Server, path string) (int, PlayerMatchesResponse) {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	NewRouter(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	var resp PlayerMatchesResponse
+	if rec.Code == http.StatusOK {
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+	}
+	return rec.Code, resp
+}
+
+func newMatchServer(t *testing.T) (*Server, *fakeRiot) {
+	s, riot := newTestServer(t)
+	riot.matchIDs["me"] = []string{"NA1_2", "NA1_1"}
+	riot.matches["NA1_2"] = matchJSON("NA1_2", 2000, "me")
+	riot.matches["NA1_1"] = matchJSON("NA1_1", 1000, "me")
+	return s, riot
+}
+
+const meMatches = "/api/v1/players/me/matches?region=na1"
+
+func TestPlayerMatches_FirstOpenSyncsInBackground(t *testing.T) {
+	s, _ := newMatchServer(t)
+
+	code, resp := getMatches(t, s, meMatches)
+	if code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", code)
+	}
+	if !resp.Refreshing || resp.SyncedAt != nil {
+		t.Errorf("expected a sync in flight and no prior sync, got %+v", resp)
+	}
+
+	waitForJob(t, s, matchSyncKey("me"))
+	_, resp = getMatches(t, s, meMatches)
+	if resp.Refreshing || resp.SyncedAt == nil || resp.Stale {
+		t.Errorf("expected a finished sync, got %+v", resp)
+	}
+	if len(resp.Matches) != 2 || resp.Matches[0].MatchID != "NA1_2" || resp.Matches[0].Placement != 3 {
+		t.Errorf("expected both matches newest first, got %+v", resp.Matches)
+	}
+}
+
+func TestPlayerMatches_RecentlySyncedSkipsRiot(t *testing.T) {
+	s, riot := newMatchServer(t)
+	getMatches(t, s, meMatches)
+	waitForJob(t, s, matchSyncKey("me"))
+	calls := riot.matchCalls.Load()
+
+	_, resp := getMatches(t, s, meMatches)
+
+	if resp.Refreshing || riot.matchCalls.Load() != calls {
+		t.Errorf("expected no sync within %s of the last one", matchHistoryStaleAfter)
+	}
+}
+
+func TestPlayerMatches_OutdatedHistorySyncsNewMatches(t *testing.T) {
+	s, riot := newMatchServer(t)
+	getMatches(t, s, meMatches)
+	waitForJob(t, s, matchSyncKey("me"))
+
+	if _, err := s.Store.Pool.Exec(t.Context(),
+		`UPDATE ingest_puuid_queue SET last_crawled_at = now() - interval '1 hour' WHERE puuid = 'me'`); err != nil {
+		t.Fatal(err)
+	}
+	riot.mu.Lock()
+	riot.matchIDs["me"] = []string{"NA1_3", "NA1_2", "NA1_1"}
+	riot.matches["NA1_3"] = matchJSON("NA1_3", 3000, "me")
+	riot.mu.Unlock()
+	calls := riot.matchCalls.Load()
+
+	_, resp := getMatches(t, s, meMatches)
+	if !resp.Refreshing {
+		t.Fatal("expected an outdated history to trigger a sync")
+	}
+	waitForJob(t, s, matchSyncKey("me"))
+	_, resp = getMatches(t, s, meMatches)
+
+	if len(resp.Matches) != 3 || resp.Matches[0].MatchID != "NA1_3" {
+		t.Errorf("expected the new match first, got %+v", resp.Matches)
+	}
+	if got := riot.matchCalls.Load() - calls; got != 2 {
+		t.Errorf("expected 2 requests (ids + the one new match), got %d", got)
+	}
+}
+
+func TestPlayerMatches_WithoutRegionIsCacheOnly(t *testing.T) {
+	s, riot := newMatchServer(t)
+
+	code, resp := getMatches(t, s, "/api/v1/players/me/matches")
+
+	if code != http.StatusOK || resp.Refreshing || len(resp.Matches) != 0 {
+		t.Errorf("expected an empty cache-only response, got %d %+v", code, resp)
+	}
+	if riot.matchCalls.Load() != 0 {
+		t.Error("expected no Riot requests without a region")
+	}
+}
+
+func TestPlayerMatches_UnknownRegionIsBadRequest(t *testing.T) {
+	s, _ := newMatchServer(t)
+
+	if code, _ := getMatches(t, s, "/api/v1/players/me/matches?region=nope"); code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", code)
+	}
+}
+
+func TestPlayerMatches_FailedSyncIsReportedStaleAndCoolsDown(t *testing.T) {
+	s, riot := newMatchServer(t)
+	riot.matchStatus.Store(http.StatusForbidden)
+
+	getMatches(t, s, meMatches)
+	waitForJob(t, s, matchSyncKey("me"))
+	calls := riot.matchCalls.Load()
+
+	_, resp := getMatches(t, s, meMatches)
+	if !resp.Stale || resp.StaleReason != "riot_api_key_expired" {
+		t.Errorf("expected stale with riot_api_key_expired, got %+v", resp)
+	}
+	if resp.Refreshing || riot.matchCalls.Load() != calls {
+		t.Error("expected no retry during cooldown")
+	}
+
+	// After the cooldown a working key syncs normally and clears the warning.
+	riot.matchStatus.Store(0)
+	endCooldown(s, matchSyncKey("me"))
+	getMatches(t, s, meMatches)
+	waitForJob(t, s, matchSyncKey("me"))
+	_, resp = getMatches(t, s, meMatches)
+	if resp.Stale || len(resp.Matches) != 2 {
+		t.Errorf("expected a clean sync after recovery, got %+v", resp)
+	}
+}
+
+func TestPlayerMatches_ConcurrentViewsShareOneSync(t *testing.T) {
+	s, riot := newMatchServer(t)
+	riot.matchGate = make(chan struct{})
+
+	var wg sync.WaitGroup
+	for range 5 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, resp := getMatches(t, s, meMatches); !resp.Refreshing {
+				t.Error("expected every response to report the sync in flight")
+			}
+		}()
+	}
+	wg.Wait()
+	close(riot.matchGate)
+	waitForJob(t, s, matchSyncKey("me"))
+
+	// One sync: 1 ids request + 2 match fetches.
+	if got := riot.matchCalls.Load(); got != 3 {
+		t.Errorf("expected 3 match requests from a single sync, got %d", got)
+	}
+}

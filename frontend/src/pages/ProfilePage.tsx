@@ -1,9 +1,13 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ApiError, PlayerMatchSummary, PlayerProfile, getPlayerMatches, getPlayerProfile } from "../api/client";
+import { ApiError, PlayerMatches, PlayerProfile, getPlayerMatches, getPlayerProfile, staleSuffix } from "../api/client";
 import { profileIconUrl, useManifest } from "../assets/tft";
 
 const PLATFORMS = ["na1", "euw1", "eun1", "kr", "jp1", "br1", "la1", "la2", "oc1", "tr1", "ru"];
+
+// While the server is syncing match history in the background, re-fetch at
+// this interval so new matches appear as they're ingested.
+const SYNC_POLL_MS = 3000;
 
 export default function ProfilePage() {
   const { region, name, tag } = useParams();
@@ -13,27 +17,51 @@ export default function ProfilePage() {
   const [platform, setPlatform] = useState(region ?? "na1");
 
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
-  const [matches, setMatches] = useState<PlayerMatchSummary[]>([]);
+  const [history, setHistory] = useState<PlayerMatches | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const manifest = useManifest();
 
+  // Opening a profile loads its saved match history, and makes the server
+  // sync newer matches from Riot if the history is out of date.
   useEffect(() => {
     if (!region || !name || !tag) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    function loadMatches(puuid: string) {
+      return getPlayerMatches(puuid, region!, 20).then((h) => {
+        if (cancelled) return;
+        setHistory(h);
+        if (h.refreshing) {
+          timer = setTimeout(() => loadMatches(puuid).catch(() => {}), SYNC_POLL_MS);
+        }
+      });
+    }
+
     setLoading(true);
     setError(null);
     setProfile(null);
+    setHistory(null);
     getPlayerProfile(region, name, tag)
       .then((p) => {
+        if (cancelled) return;
         setProfile(p);
-        return getPlayerMatches(p.puuid, 20);
+        return loadMatches(p.puuid);
       })
-      .then(setMatches)
       .catch((e: unknown) => {
-        setError(e instanceof ApiError ? e.message : "failed to load profile");
+        if (!cancelled) setError(e instanceof ApiError ? e.message : "failed to load profile");
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [region, name, tag]);
+
+  const matches = history?.matches ?? [];
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -96,7 +124,21 @@ export default function ProfilePage() {
       {profile && (
         <div className="panel">
           <h3>Recent Matches</h3>
-          {matches.length === 0 && <p className="muted">No matches ingested yet for this player.</p>}
+          {history && (
+            <p className="muted">
+              {history.syncedAt ? `Updated ${new Date(history.syncedAt).toLocaleTimeString()}` : "Not yet updated"}
+              {history.refreshing && " · fetching new matches…"}
+            </p>
+          )}
+          {history?.stale && (
+            <div className="warning-box">
+              Showing saved matches — couldn't update from Riot
+              {staleSuffix(history.staleReason)}.
+            </div>
+          )}
+          {history && matches.length === 0 && (
+            <p className="muted">{history.refreshing ? "Loading matches from Riot…" : "No matches found for this player."}</p>
+          )}
           {matches.length > 0 && (
             <table>
               <thead>
