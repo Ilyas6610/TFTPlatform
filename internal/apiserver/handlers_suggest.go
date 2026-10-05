@@ -26,7 +26,8 @@ const (
 //
 //	set=18                  required
 //	queue=1100, level=8-    scope of the boards the advice comes from
-//	have_unit=ID            repeatable: units on the board and bench
+//	have_unit=ID            repeatable: units on the board and bench; with
+//	                        none, the units the items fit best are suggested
 //	have_item=ID            repeatable, once per copy: inventory, completed
 //	                        items or components
 func (s *Server) handleExploreSuggest(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +51,7 @@ func (s *Server) handleExploreSuggest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_filter", err.Error())
 		return
 	}
-	if len(units) == 0 {
+	if len(units) == 0 && len(items) == 0 {
 		writeJSON(w, http.StatusOK, suggest.Advise(suggest.Input{}))
 		return
 	}

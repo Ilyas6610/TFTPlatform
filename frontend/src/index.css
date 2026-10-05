@@ -1303,8 +1303,21 @@ details.patch[open] > summary::before {
   margin-bottom: 10px;
 }
 
-.advisor-label {
-  width: 48px;
+/* The pickers sit side by side in one row; what is chosen shows below. */
+.advisor-pickers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.advisor-chosen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-bottom: 10px;
 }
 
 .chip {

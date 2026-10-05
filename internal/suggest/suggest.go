@@ -89,6 +89,10 @@ type Result struct {
 	// whole inventory (so the same item may appear in several).
 	Units []UnitAdvice `json:"units"`
 	Comps []CompMatch  `json:"comps"`
+	// Candidates is set when no units were given: the units whose real
+	// builds this inventory fits best, one build each, closest to ready
+	// first.
+	Candidates []PlanEntry `json:"candidates"`
 }
 
 type inventory map[string]int
@@ -174,16 +178,18 @@ func better(a, b BuildOption) bool {
 // Advise computes the plan, per-unit alternatives and matching comps.
 func Advise(in Input) Result {
 	inv := newInventory(in.Items)
-	res := Result{Plan: []PlanEntry{}, Leftover: []string{}, Units: []UnitAdvice{}, Comps: []CompMatch{}}
+	res := Result{Plan: []PlanEntry{}, Leftover: []string{}, Units: []UnitAdvice{}, Comps: []CompMatch{}, Candidates: []PlanEntry{}}
 
 	// Per-unit alternatives against the whole inventory.
 	owned := dedupe(in.Units)
 	for _, u := range owned {
 		adv := UnitAdvice{ID: u, Options: []BuildOption{}}
+		// Builds the inventory can't help with are still listed, after the
+		// ones it can: a unit with nothing to build yet shows what to aim
+		// for rather than nothing.
 		for _, b := range in.Builds[u] {
-			if o, _ := option(b, inv, in.Recipes); len(o.Steps) > 0 {
-				adv.Options = append(adv.Options, o)
-			}
+			o, _ := option(b, inv, in.Recipes)
+			adv.Options = append(adv.Options, o)
 		}
 		sort.SliceStable(adv.Options, func(i, j int) bool { return better(adv.Options[i], adv.Options[j]) })
 		if len(adv.Options) > maxOptionsPerUnit {
@@ -220,12 +226,30 @@ func Advise(in Input) Result {
 		left = bestLeft
 		remaining = append(remaining[:bestIdx], remaining[bestIdx+1:]...)
 	}
+	// Units nothing fits yet get the build that places best, to aim for.
+	for _, u := range remaining {
+		var best *BuildOption
+		for _, b := range in.Builds[u] {
+			o, _ := option(b, left, in.Recipes)
+			if best == nil || better(o, *best) {
+				o := o
+				best = &o
+			}
+		}
+		if best != nil {
+			res.Plan = append(res.Plan, PlanEntry{Unit: u, Build: *best})
+		}
+	}
 	for it, n := range left {
 		for ; n > 0; n-- {
 			res.Leftover = append(res.Leftover, it)
 		}
 	}
 	sort.Strings(res.Leftover)
+
+	if len(owned) == 0 && len(in.Items) > 0 {
+		res.Candidates = candidates(in, inv)
+	}
 
 	res.Comps = matchComps(in, owned, inv)
 	return res
@@ -304,4 +328,43 @@ func nonNilStr(s []string) []string {
 		return []string{}
 	}
 	return s
+}
+
+// maxCandidates bounds the units suggested for an inventory.
+const maxCandidates = 8
+
+// candidates ranks every unit by how well its best-fitting real build uses
+// the inventory; units with nothing makeable are left out.
+func candidates(in Input, inv inventory) []PlanEntry {
+	out := []PlanEntry{}
+	for unit, builds := range in.Builds {
+		var best *BuildOption
+		for _, b := range builds {
+			o, _ := option(b, inv, in.Recipes)
+			if len(o.Steps) == 0 {
+				continue
+			}
+			if best == nil || better(o, *best) {
+				o := o
+				best = &o
+			}
+		}
+		if best != nil {
+			out = append(out, PlanEntry{Unit: unit, Build: *best})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i].Build, out[j].Build
+		if better(a, b) {
+			return true
+		}
+		if better(b, a) {
+			return false
+		}
+		return out[i].Unit < out[j].Unit // deterministic
+	})
+	if len(out) > maxCandidates {
+		out = out[:maxCandidates]
+	}
+	return out
 }

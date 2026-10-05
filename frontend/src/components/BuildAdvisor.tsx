@@ -63,7 +63,7 @@ export function BuildAdvisor({
   }, [scope, units.join(","), items.join(",")]);
 
   useEffect(() => {
-    if (!options || units.length === 0) {
+    if (!options || (units.length === 0 && items.length === 0)) {
       setResult(null);
       return;
     }
@@ -83,7 +83,6 @@ export function BuildAdvisor({
   // and artifacts. All end up in one inventory (hi); the fields only keep the
   // pickers short. Without set data, only the completed items seen in matches.
   const groups = useMemo(() => {
-    const kindOf = new Map((setData?.items ?? []).map((i) => [i.apiName, i.kind]));
     const optionsFor = (pred: (k: string) => boolean): PickerOption[] =>
       (setData?.items ?? [])
         .filter((i) => pred(i.kind))
@@ -93,9 +92,9 @@ export function BuildAdvisor({
       ? optionsFor((k) => k === "component" || k === "completed")
       : (options?.items ?? []).map((i) => ({ id: i.id, boards: 0 }));
     return [
-      { key: "items", label: "Items", placeholder: "Add item…", options: base, has: (id: string) => !["emblem", "artifact"].includes(kindOf.get(id) ?? "") },
-      { key: "emblems", label: "Emblems", placeholder: "Add emblem…", options: optionsFor((k) => k === "emblem"), has: (id: string) => kindOf.get(id) === "emblem" },
-      { key: "artifacts", label: "Artifacts", placeholder: "Add artifact…", options: optionsFor((k) => k === "artifact"), has: (id: string) => kindOf.get(id) === "artifact" },
+      { key: "items", placeholder: "Add item…", options: base },
+      { key: "emblems", placeholder: "Add emblem…", options: optionsFor((k) => k === "emblem") },
+      { key: "artifacts", placeholder: "Add artifact…", options: optionsFor((k) => k === "artifact") },
     ].filter((g) => g.key === "items" || g.options.length > 0);
   }, [setData, options]);
 
@@ -112,97 +111,106 @@ export function BuildAdvisor({
     if (i >= 0) setList("hi", items.filter((_, j) => j !== i));
   };
 
+  const clear = () =>
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("hu");
+        next.delete("hi");
+        return next;
+      },
+      { replace: true },
+    );
+
+  const itemChips = (ids: string[]) =>
+    itemCounts
+      .filter(([id]) => ids.includes(id))
+      .map(([id, n]) => (
+        <span key={id} className="chip">
+          <GameIcon kind="items" id={id} size={22} fallbackSrc={names.icon(id)} fallbackName={names.name(id)} />
+          {names.name(id)}
+          <button type="button" className="chip-step" title="One fewer" onClick={() => removeItem(id)}>
+            −
+          </button>
+          <strong>{n}</strong>
+          <button type="button" className="chip-step" title="One more" onClick={() => addItem(id)}>
+            +
+          </button>
+        </span>
+      ));
+
   return (
     <div className="panel advisor">
       <h2>What can I build?</h2>
       <p className="muted">
-        Add the units you have and what is in your inventory: items (whole or still components), emblems and artifacts. You get builds that real
-        boards ran, with what you can make right now and what's missing.
+        Add the units you have and what is in your inventory: items (whole or still components), emblems and
+        artifacts. Units alone show their best builds; items alone show which units they fit.
       </p>
 
-      <div className="advisor-row">
-        <span className="muted advisor-label">Units</span>
-        {units.map((u) => (
-          <button
-            type="button"
-            key={u}
-            className="chip"
-            title={`Remove ${names.name(u)}`}
-            onClick={() =>
-              setList(
-                "hu",
-                units.filter((x) => x !== u),
-              )
-            }
-          >
-            <GameIcon kind="champions" id={u} size={22} fallbackSrc={names.icon(u)} fallbackName={names.name(u)} />
-            {names.name(u)} ×
-          </button>
-        ))}
-        {units.length < MAX_UNITS && (
+      <div className="advisor-pickers">
+        <Picker
+          exclude={units}
+          placeholder="Add unit…"
+          kind="champions"
+          options={units.length < MAX_UNITS ? (options?.units ?? []) : []}
+          names={names}
+          onPick={(id) => setList("hu", [...units, id])}
+        />
+        {groups.map((g) => (
           <Picker
-            exclude={units}
-            placeholder="Add unit…"
-            kind="champions"
-            options={options?.units ?? []}
+            key={g.key}
+            placeholder={g.placeholder}
+            kind="items"
+            options={items.length < MAX_ITEMS ? g.options : []}
             names={names}
-            onPick={(id) => setList("hu", [...units, id])}
+            onPick={addItem}
           />
+        ))}
+        {(units.length > 0 || items.length > 0) && (
+          <button type="button" onClick={clear}>
+            Clear
+          </button>
         )}
       </div>
 
-      {groups.map((g) => (
-        <div className="advisor-row" key={g.key}>
-          <span className="muted advisor-label">{g.label}</span>
-          {itemCounts
-            .filter(([id]) => g.has(id))
-            .map(([id, n]) => (
-              <span key={id} className="chip">
-                <GameIcon kind="items" id={id} size={22} fallbackSrc={names.icon(id)} fallbackName={names.name(id)} />
-                {names.name(id)}
-                <button type="button" className="chip-step" title="One fewer" onClick={() => removeItem(id)}>
-                  −
-                </button>
-                <strong>{n}</strong>
-                <button type="button" className="chip-step" title="One more" onClick={() => addItem(id)}>
-                  +
-                </button>
-              </span>
-            ))}
-          {items.length < MAX_ITEMS && (
-            <Picker placeholder={g.placeholder} kind="items" options={g.options} names={names} onPick={addItem} />
-          )}
-          {g.key === "items" && (units.length > 0 || items.length > 0) && (
+      {(units.length > 0 || items.length > 0) && (
+        <div className="advisor-chosen">
+          {units.map((u) => (
             <button
               type="button"
+              key={u}
+              className="chip"
+              title={`Remove ${names.name(u)}`}
               onClick={() =>
-                setParams(
-                  (prev) => {
-                    const next = new URLSearchParams(prev);
-                    next.delete("hu");
-                    next.delete("hi");
-                    return next;
-                  },
-                  { replace: true },
+                setList(
+                  "hu",
+                  units.filter((x) => x !== u),
                 )
               }
             >
-              Clear
+              <GameIcon kind="champions" id={u} size={22} fallbackSrc={names.icon(u)} fallbackName={names.name(u)} />
+              {names.name(u)} ×
             </button>
-          )}
+          ))}
+          {itemChips(itemCounts.map(([id]) => id))}
         </div>
-      ))}
+      )}
 
       {error && <div className="error-box">{error}</div>}
-      {units.length === 0 && <p className="muted">Add at least one unit to get suggestions.</p>}
-      {units.length > 0 && items.length === 0 && (
-        <p className="muted">Add the items you hold to see which builds you can make.</p>
+      {units.length === 0 && items.length === 0 && (
+        <p className="muted">Pick a unit, an item, an emblem or an artifact to get suggestions.</p>
       )}
-      {result && units.length > 0 && (
+      {result && (units.length > 0 || items.length > 0) && (
         <div className={loading ? "advisor-results stale" : "advisor-results"}>
-          <Plan result={result} names={names} />
-          <Alternatives result={result} names={names} />
-          <Comps comps={result.comps} names={names} ownedUnits={units} />
+          {units.length > 0 ? (
+            <>
+              <Plan result={result} names={names} hasItems={items.length > 0} />
+              <Alternatives result={result} names={names} />
+              <Comps comps={result.comps} names={names} ownedUnits={units} />
+            </>
+          ) : (
+            <Candidates result={result} names={names} />
+          )}
         </div>
       )}
     </div>
@@ -283,14 +291,12 @@ function UnitHead({ id, names }: { id: string; names: Names }) {
   );
 }
 
-function Plan({ result, names }: { result: SuggestResult; names: Names }) {
+function Plan({ result, names, hasItems }: { result: SuggestResult; names: Names; hasItems: boolean }) {
   return (
     <div className="advisor-section">
-      <h3>Suggested plan</h3>
+      <h3>{hasItems ? "Suggested plan" : "Best builds"}</h3>
       {result.plan.length === 0 ? (
-        <p className="muted">
-          None of your items fit a build seen for these units yet. Try other items, or check the comps below.
-        </p>
+        <p className="muted">No builds have been seen for these units in this queue and level range.</p>
       ) : (
         <div className="plan-list">
           {result.plan.map((p) => (
@@ -322,6 +328,30 @@ function Plan({ result, names }: { result: SuggestResult; names: Names }) {
         <span className="build-item held">held</span> you have it · <span className="build-item combine">combine</span>{" "}
         make it from the two small icons · <span className="build-item missing">missing</span> not possible yet
       </p>
+    </div>
+  );
+}
+
+/** Items only: the units whose builds those items fit best. */
+function Candidates({ result, names }: { result: SuggestResult; names: Names }) {
+  return (
+    <div className="advisor-section">
+      <h3>Units that fit your items</h3>
+      {result.candidates.length === 0 ? (
+        <p className="muted">No unit has a build seen with these items in this queue and level range.</p>
+      ) : (
+        <div className="plan-list">
+          {result.candidates.map((c) => (
+            <div className="plan-row" key={c.unit}>
+              <UnitHead id={c.unit} names={names} />
+              <BuildItems build={c.build} names={names} />
+              <BuildStatus build={c.build} />
+              <BuildStats build={c.build} />
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="muted">Add a unit above to see its other builds and the comps that fit.</p>
     </div>
   );
 }

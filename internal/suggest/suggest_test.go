@@ -96,8 +96,9 @@ func TestAdvise_PlanDoesNotSpendItemsTwice(t *testing.T) {
 		},
 	}
 	r := Advise(in)
-	if len(r.Plan) != 1 || r.Plan[0].Unit != "A" {
-		t.Fatalf("plan = %+v, want only the better-placing unit A", r.Plan)
+	// A (better placing) gets the items; B only its build to aim for.
+	if len(r.Plan) != 2 || r.Plan[0].Unit != "A" || !r.Plan[0].Build.Ready || r.Plan[1].Unit != "B" || len(r.Plan[1].Build.Steps) != 0 {
+		t.Fatalf("plan = %+v, want A ready and B with nothing makeable", r.Plan)
 	}
 	// Alternatives are per unit against the whole inventory, so B still lists it.
 	if len(r.Units[1].Options) != 1 {
@@ -122,14 +123,50 @@ func TestAdvise_PlanSplitsInventoryAcrossUnits(t *testing.T) {
 	}
 }
 
-func TestAdvise_UnitsWithNothingBuildableAreLeftOut(t *testing.T) {
+func TestAdvise_UnitWithNothingBuildableShowsWhatToAimFor(t *testing.T) {
 	in := Input{
 		Units: []string{"A"}, Items: []string{"Rod"}, Recipes: rec,
-		Builds: map[string][]store.MetaBuild{"A": {build(3, 10, "IE", "Bow")}},
+		Builds: map[string][]store.MetaBuild{"A": {build(4, 10, "IE", "Bow"), build(3, 10, "IE", "JG")}},
 	}
 	r := Advise(in)
-	if len(r.Plan) != 0 || len(r.Units[0].Options) != 0 || !slices.Equal(r.Leftover, []string{"Rod"}) {
+	if len(r.Plan) != 1 || r.Plan[0].Build.AvgPlacement != 3 || len(r.Plan[0].Build.Steps) != 0 || r.Plan[0].Build.Ready {
+		t.Fatalf("plan = %+v, want the best-placing build, nothing makeable", r.Plan)
+	}
+	if len(r.Units[0].Options) != 2 || !slices.Equal(r.Leftover, []string{"Rod"}) {
+		t.Fatalf("options = %+v leftover = %v", r.Units[0].Options, r.Leftover)
+	}
+}
+
+func TestAdvise_UnitsOnlyListsTheirBestBuilds(t *testing.T) {
+	r := Advise(Input{
+		Units:  []string{"A"},
+		Builds: map[string][]store.MetaBuild{"A": {build(4, 10, "IE", "Bow"), build(3, 20, "IE", "JG")}},
+	})
+	if len(r.Plan) != 1 || r.Plan[0].Build.AvgPlacement != 3 || len(r.Units[0].Options) != 2 {
 		t.Fatalf("%+v", r)
+	}
+}
+
+func TestAdvise_ItemsOnlySuggestsUnits(t *testing.T) {
+	in := Input{
+		Items: []string{"Sword", "Glove", "JG"}, Recipes: rec,
+		Builds: map[string][]store.MetaBuild{
+			"A": {build(3.0, 10, "IE", "JG")},                                  // fully makeable
+			"B": {build(2.0, 10, "IE", "Bow", "GS")},                           // IE only
+			"C": {build(2.0, 10, "GS", "Bow", "Rod")},                          // nothing: left out
+			"D": {build(3.5, 10, "IE", "JG"), build(2.5, 5, "IE", "JG", "GS")}, // best fit is IE+JG
+		},
+	}
+	r := Advise(in)
+	var ids []string
+	for _, c := range r.Candidates {
+		ids = append(ids, c.Unit)
+	}
+	if !slices.Equal(ids, []string{"A", "D", "B"}) {
+		t.Fatalf("candidates = %v, want [A D B] (ready first, then placement; C left out)", ids)
+	}
+	if len(r.Plan) != 0 {
+		t.Errorf("no units given, so no plan: %+v", r.Plan)
 	}
 }
 
@@ -168,7 +205,7 @@ func TestAdvise_SingleOwnedUnitStillMatchesComps(t *testing.T) {
 
 func TestAdvise_EmptyInputGivesEmptyLists(t *testing.T) {
 	r := Advise(Input{})
-	if r.Plan == nil || r.Units == nil || r.Comps == nil || r.Leftover == nil {
+	if r.Plan == nil || r.Units == nil || r.Comps == nil || r.Leftover == nil || r.Candidates == nil {
 		t.Fatalf("lists must be non-nil for JSON: %+v", r)
 	}
 }

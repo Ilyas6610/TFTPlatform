@@ -393,6 +393,8 @@ export interface SuggestResult {
   leftover: string[];
   units: { id: string; options: SuggestBuild[] }[];
   comps: SuggestComp[];
+  // Only without units: the units the items fit best.
+  candidates: { unit: string; build: SuggestBuild }[];
 }
 
 /** query: set and optional queue/level, plus have_unit and have_item (repeat per copy). */

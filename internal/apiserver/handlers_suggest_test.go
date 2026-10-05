@@ -122,9 +122,21 @@ func TestExploreSuggest_BuildsFromComponents(t *testing.T) {
 		t.Errorf("partial plan = %+v", part.Plan)
 	}
 
-	// An item the unit never builds proposes nothing.
+	// An item the unit never builds: its best build is shown to aim for.
 	none := get("set=18&queue=1100&have_unit=Zyra&have_item=Warmogs")
-	if len(none.Plan) != 0 || !slices.Equal(none.Leftover, []string{"Warmogs"}) {
+	if len(none.Plan) != 1 || len(none.Plan[0].Build.Steps) != 0 || !slices.Equal(none.Leftover, []string{"Warmogs"}) {
 		t.Errorf("unrelated item: %+v", none)
+	}
+
+	// Units only: no items needed to see what the unit builds.
+	only := get("set=18&queue=1100&have_unit=Zyra")
+	if len(only.Plan) != 1 || len(only.Units[0].Options) != 1 {
+		t.Errorf("units only: %+v", only)
+	}
+
+	// Items only: the units those items fit.
+	byItems := get("set=18&queue=1100&have_item=JG&have_item=GS")
+	if len(byItems.Candidates) != 1 || byItems.Candidates[0].Unit != "Zyra" {
+		t.Errorf("items only: %+v", byItems.Candidates)
 	}
 }
