@@ -151,3 +151,14 @@ func TestMetaComps_ShapeAndCache(t *testing.T) {
 		t.Errorf("got %d boards, want the cached 6", again.Boards)
 	}
 }
+
+func TestSetNumberIsBounded(t *testing.T) {
+	s := &Server{} // rejected before the store is touched
+	for _, path := range []string{"/api/v1/meta/comps?set=999999999", "/api/v1/explore/options?set=101", "/api/v1/explore?set=101&unit=A"} {
+		rec := httptest.NewRecorder()
+		NewRouter(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: got %d, want 400", path, rec.Code)
+		}
+	}
+}

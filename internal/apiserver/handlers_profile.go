@@ -1,7 +1,9 @@
 package apiserver
 
 import (
+	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"tft-platform/internal/riotapi"
@@ -27,12 +29,16 @@ func (s *Server) handlePlayerProfile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_region", err.Error())
 		return
 	}
+	if !validRiotID(gameName, tagLine) {
+		writeError(w, http.StatusBadRequest, "invalid_riot_id", "game name must be 1-16 characters and tag 1-5")
+		return
+	}
 
 	ctx := r.Context()
 
 	account, err := s.Store.GetAccountByRiotID(ctx, gameName, tagLine)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", err.Error())
+		writeDBError(w, r, err)
 		return
 	}
 
@@ -40,7 +46,7 @@ func (s *Server) handlePlayerProfile(w http.ResponseWriter, r *http.Request) {
 	if account != nil {
 		summoner, err = s.Store.GetSummonerByPUUID(ctx, account.PUUID)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "db_error", err.Error())
+			writeDBError(w, r, err)
 			return
 		}
 	}
@@ -58,8 +64,23 @@ func (s *Server) handlePlayerProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	missKey := "riotid:" + string(routing) + ":" + strings.ToLower(gameName) + "#" + strings.ToLower(tagLine)
+	if s.live.knownMissing(missKey) {
+		writeError(w, http.StatusNotFound, "not_found", "player not found")
+		return
+	}
+	release, ok := s.live.acquire(w, ctx)
+	if !ok {
+		return
+	}
+	defer release()
+
 	riotAccount, err := s.Riot.GetAccountByRiotID(ctx, routing, gameName, tagLine)
 	if err != nil {
+		var notFound *riotapi.ErrNotFound
+		if errors.As(err, &notFound) {
+			s.live.rememberMissing(missKey)
+		}
 		writeRiotError(w, err)
 		return
 	}
@@ -75,7 +96,7 @@ func (s *Server) handlePlayerProfile(w http.ResponseWriter, r *http.Request) {
 		TagLine:       riotAccount.TagLine,
 		RoutingRegion: string(routing),
 	}); err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", err.Error())
+		writeDBError(w, r, err)
 		return
 	}
 	if err := s.Store.UpsertSummoner(ctx, store.Summoner{
@@ -85,7 +106,7 @@ func (s *Server) handlePlayerProfile(w http.ResponseWriter, r *http.Request) {
 		ProfileIconID:  riotSummoner.ProfileIconID,
 		SummonerLevel:  riotSummoner.SummonerLevel,
 	}); err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", err.Error())
+		writeDBError(w, r, err)
 		return
 	}
 

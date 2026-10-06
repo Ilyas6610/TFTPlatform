@@ -46,7 +46,9 @@ func writeRiotError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadGateway, "riot_api_key_expired",
 			"live data temporarily unavailable: riot api key needs rotation")
 	default:
-		writeError(w, http.StatusBadGateway, "riot_api_error", err.Error())
+		// The detail can carry Riot's response body; it goes to the log only.
+		log.Printf("riot api error: %v", err)
+		writeError(w, http.StatusBadGateway, "riot_api_error", "riot api request failed")
 	}
 }
 

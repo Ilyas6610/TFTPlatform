@@ -64,7 +64,27 @@ func (s Source) get(ctx context.Context, path string) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("fetch %s: status %d", url, resp.StatusCode)
 	}
-	return io.ReadAll(resp.Body)
+	return readLimited(resp.Body, maxExportBytes, url)
+}
+
+// Download size caps. The CommunityDragon TFT export is ~25 MB and the
+// tactics.tools locale file ~2 MB; the caps leave room to grow while
+// keeping a broken or hostile upstream from exhausting memory.
+const (
+	maxExportBytes   = 200 << 20
+	maxOverrideBytes = 32 << 20
+)
+
+// readLimited reads r fully, failing if it holds more than max bytes.
+func readLimited(r io.Reader, max int64, what string) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(r, max+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > max {
+		return nil, fmt.Errorf("%s: response larger than %d bytes", what, max)
+	}
+	return body, nil
 }
 
 // PatchOf returns the "major.minor" patch of a version ("16.19.8230722" ->

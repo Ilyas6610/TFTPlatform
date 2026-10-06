@@ -50,8 +50,8 @@ func (s *Server) handleExplore(w http.ResponseWriter, r *http.Request) {
 // queues, units, items, traits and levels present in that set's matches.
 func (s *Server) handleExploreOptions(w http.ResponseWriter, r *http.Request) {
 	set, err := strconv.Atoi(r.URL.Query().Get("set"))
-	if err != nil || set <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid_set", "set must be a positive number")
+	if err != nil || set <= 0 || set > maxSetNumber {
+		writeError(w, http.StatusBadRequest, "invalid_set", fmt.Sprintf("set must be a number from 1 to %d", maxSetNumber))
 		return
 	}
 	opts, err := s.Store.ExploreOptions(r.Context(), set)
@@ -65,8 +65,8 @@ func (s *Server) handleExploreOptions(w http.ResponseWriter, r *http.Request) {
 func parseExploreFilter(q url.Values) (store.ExploreFilter, error) {
 	var f store.ExploreFilter
 	set, err := strconv.Atoi(q.Get("set"))
-	if err != nil || set <= 0 {
-		return f, fmt.Errorf("set must be a positive number")
+	if err != nil || set <= 0 || set > maxSetNumber {
+		return f, fmt.Errorf("set must be a number from 1 to %d", maxSetNumber)
 	}
 	f.Set = set
 
@@ -194,6 +194,7 @@ func (s *Server) handleMetaBuilds(w http.ResponseWriter, r *http.Request) {
 		writeDBError(w, r, err)
 		return
 	}
+	w.Header().Set("Cache-Control", metaCacheControl)
 	writeJSON(w, http.StatusOK, res)
 }
 
@@ -227,8 +228,13 @@ func (s *Server) handleMetaComps(w http.ResponseWriter, r *http.Request) {
 		writeDBError(w, r, err)
 		return
 	}
+	w.Header().Set("Cache-Control", metaCacheControl)
 	writeJSON(w, http.StatusOK, res)
 }
+
+// metaCacheControl lets browsers and proxies reuse meta responses for as
+// long as the server does.
+const metaCacheControl = "public, max-age=300"
 
 // metaCacheKey identifies a meta result by kind and scope (set, queues in
 // any order, level range). Board conditions never reach here.

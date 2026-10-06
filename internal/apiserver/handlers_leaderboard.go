@@ -66,7 +66,7 @@ func (s *Server) handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 
 	entries, err := s.Store.GetLeaderboard(ctx, string(platform), limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", err.Error())
+		writeDBError(w, r, err)
 		return
 	}
 	if len(entries) == 0 && refreshErr != nil {
@@ -76,7 +76,7 @@ func (s *Server) handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 
 	fetchedAt, err := s.Store.LeaderboardFetchedAt(ctx, string(platform))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", err.Error())
+		writeDBError(w, r, err)
 		return
 	}
 	if fetchedAt != nil {
@@ -86,7 +86,7 @@ func (s *Server) handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 
 	unresolved, err := s.Store.UnresolvedLeaderboardPUUIDs(ctx, string(platform), limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", err.Error())
+		writeDBError(w, r, err)
 		return
 	}
 	resp.Resolving = s.startNameResolution(platform, unresolved)

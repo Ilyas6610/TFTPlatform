@@ -17,6 +17,16 @@ name: tft-platform
 # `id -u` / `id -g` on the host) and the key can stay owner-only (chmod 600).
 x-backend-user: &backend-user "${APP_UID:-10001}:${APP_GID:-10001}"
 
+# Hardening shared by the app containers: no Linux capabilities, no
+# privilege escalation, read-only root filesystem (they write nothing to
+# disk; /tmp is a small tmpfs just in case).
+x-hardened: &hardened
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  read_only: true
+  tmpfs:
+    - /tmp:size=16m
+
 x-backend-env: &backend-env
   DATABASE_URL: postgres://${POSTGRES_USER:-tft}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}@postgres:5432/${POSTGRES_DB:-tft}?sslmode=disable
   # The key is read from this file on every request, so rotating it is
@@ -29,6 +39,10 @@ services:
   postgres:
     image: postgres:16
     restart: unless-stopped
+    # Postgres's entrypoint needs its capabilities to drop to the postgres
+    # user, so only privilege escalation is blocked here.
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${POSTGRES_MEM_LIMIT:-2g}
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-tft}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
@@ -61,6 +75,8 @@ services:
     image: ${IMAGE_PREFIX:-tft-platform}-backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     user: *backend-user
+    <<: *hardened
+    mem_limit: ${API_MEM_LIMIT:-1g}
     environment:
       <<: *backend-env
       HTTP_ADDR: :8080
@@ -78,8 +94,16 @@ services:
         FETCH_ASSETS: ${FETCH_ASSETS:-1}
     image: ${IMAGE_PREFIX:-tft-platform}-frontend:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    <<: *hardened
+    # nginx renders its config into conf.d at startup and keeps temp files
+    # and its pid in /tmp. conf.d must belong to the nginx user (101), or
+    # the config isn't rendered and nginx starts without it.
+    tmpfs:
+      - /tmp:size=64m
+      - /etc/nginx/conf.d:size=1m,uid=101,gid=101
+    mem_limit: ${FRONTEND_MEM_LIMIT:-256m}
     ports:
-      - "${HTTP_PORT:-80}:80"
+      - "${HTTP_PORT:-80}:8080"
     depends_on:
       api:
         condition: service_healthy
@@ -94,6 +118,8 @@ services:
     profiles: ["ingest"]
     restart: unless-stopped
     user: *backend-user
+    <<: *hardened
+    mem_limit: ${RIOTSYNC_MEM_LIMIT:-512m}
     command: ["riotsync"]
     environment:
       <<: *backend-env

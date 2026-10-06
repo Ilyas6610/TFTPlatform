@@ -46,9 +46,17 @@ func main() {
 	server := &apiserver.Server{Riot: riotClient, Store: st}
 	handler := apiserver.NewRouter(server)
 
+	// Timeouts keep slow or idle clients from holding connections open.
+	// WriteTimeout must outlast the slowest handler (a leaderboard refresh
+	// waits up to 10s on Riot) and stay above nginx's 30s proxy timeout.
 	httpServer := &http.Server{
-		Addr:    cfg.HTTPAddr,
-		Handler: handler,
+		Addr:              cfg.HTTPAddr,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      45 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    16 << 10,
 	}
 
 	if cfg.SetDataSyncInterval > 0 {

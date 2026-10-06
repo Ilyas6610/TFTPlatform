@@ -142,7 +142,7 @@ func waitForJob(t *testing.T, s *Server, key string) {
 func endCooldown(s *Server, key string) {
 	s.jobs.mu.Lock()
 	defer s.jobs.mu.Unlock()
-	delete(s.jobs.retryAt, key)
+	delete(s.jobs.failed, key)
 }
 
 func ageSnapshot(t *testing.T, st *store.Store, platform string, by time.Duration) {

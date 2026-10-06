@@ -76,13 +76,16 @@ func (s *Store) SetAccountRiotID(ctx context.Context, puuid, gameName, tagLine s
 
 // GetAccountByRiotID looks up a cached account by Riot ID. Returns
 // (nil, nil) on a cache miss (not an error) so callers can fall through to a
-// live Riot API fetch.
+// live Riot API fetch. Matching ignores case, as Riot IDs do; if a name was
+// held by several accounts over time, the most recently fetched wins.
 func (s *Store) GetAccountByRiotID(ctx context.Context, gameName, tagLine string) (*Account, error) {
 	var a Account
 	err := s.Pool.QueryRow(ctx, `
 		SELECT puuid, game_name, tag_line, routing_region, last_fetched_at
 		FROM accounts
-		WHERE game_name = $1 AND tag_line = $2
+		WHERE lower(game_name) = lower($1) AND lower(tag_line) = lower($2)
+		ORDER BY last_fetched_at DESC NULLS LAST
+		LIMIT 1
 	`, gameName, tagLine).Scan(&a.PUUID, &a.GameName, &a.TagLine, &a.RoutingRegion, &a.LastFetchedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil

@@ -7,6 +7,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -39,6 +40,14 @@ func NewClient(keySource KeySource, limiter *RateLimiter, opts ...Option) *Clien
 }
 
 const maxAttempts = 4
+
+// maxResponseBytes caps how much of a Riot response is read. The largest
+// legitimate one, a full match, is ~100 KB.
+const maxResponseBytes = 4 << 20
+
+// maxErrorBodyBytes caps how much of an error response is kept in the
+// error message (which reaches logs, never clients).
+const maxErrorBodyBytes = 512
 
 // do executes a single Riot API GET request against url, identified by
 // methodKey for rate-limit accounting (e.g. "tft-match-v1.get-match"),
@@ -76,8 +85,11 @@ func (c *Client) do(ctx context.Context, methodKey, url string, out interface{})
 			return lastErr
 		}
 
-		body, readErr := io.ReadAll(resp.Body)
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 		resp.Body.Close()
+		if readErr == nil && len(body) > maxResponseBytes {
+			readErr = fmt.Errorf("response larger than %d bytes", maxResponseBytes)
+		}
 
 		switch resp.StatusCode {
 		case http.StatusOK:
@@ -103,18 +115,35 @@ func (c *Client) do(ctx context.Context, methodKey, url string, out interface{})
 			return &ErrNotFound{Resource: methodKey}
 
 		case http.StatusBadRequest:
-			return fmt.Errorf("riot api bad request (%s): %s", methodKey, string(body))
+			return fmt.Errorf("riot api bad request (%s): %s", methodKey, errorBody(body))
 
 		default:
 			if resp.StatusCode >= 500 && attempt < maxAttempts {
-				lastErr = fmt.Errorf("riot api server error %d (%s): %s", resp.StatusCode, methodKey, string(body))
+				lastErr = fmt.Errorf("riot api server error %d (%s): %s", resp.StatusCode, methodKey, errorBody(body))
 				time.Sleep(backoff(attempt))
 				continue
 			}
-			return fmt.Errorf("riot api unexpected status %d (%s): %s", resp.StatusCode, methodKey, string(body))
+			return fmt.Errorf("riot api unexpected status %d (%s): %s", resp.StatusCode, methodKey, errorBody(body))
 		}
 	}
 	return lastErr
+}
+
+// pathSegment escapes a caller-supplied id (PUUID, match id, Riot ID part)
+// as one URL path segment. "." and ".." are refused: escaping leaves them
+// as-is and they'd move the request to another endpoint.
+func pathSegment(s string) (string, error) {
+	if s == "" || s == "." || s == ".." {
+		return "", fmt.Errorf("riot api: invalid path parameter %q", s)
+	}
+	return url.PathEscape(s), nil
+}
+
+func errorBody(body []byte) string {
+	if len(body) > maxErrorBodyBytes {
+		return string(body[:maxErrorBodyBytes]) + "..."
+	}
+	return string(body)
 }
 
 func backoff(attempt int) time.Duration {

@@ -2,6 +2,8 @@ package apiserver
 
 import (
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http"
 	"strings"
 
@@ -16,10 +18,14 @@ import (
 func (s *Server) handleMatchDetail(w http.ResponseWriter, r *http.Request) {
 	matchID := r.PathValue("matchId")
 	ctx := r.Context()
+	if !validMatchID(matchID) {
+		writeError(w, http.StatusBadRequest, "invalid_match_id", "match id must look like NA1_1234567890")
+		return
+	}
 
 	raw, _, found, err := s.Store.GetMatchRaw(ctx, matchID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", err.Error())
+		writeDBError(w, r, err)
 		return
 	}
 	if found {
@@ -33,14 +39,29 @@ func (s *Server) handleMatchDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	missKey := "match:" + matchID
+	if s.live.knownMissing(missKey) {
+		writeError(w, http.StatusNotFound, "not_found", "match not found")
+		return
+	}
+	release, ok := s.live.acquire(w, ctx)
+	if !ok {
+		return
+	}
+	defer release()
+
 	match, rawLive, err := s.Riot.GetTFTMatch(ctx, routing, matchID)
 	if err != nil {
+		var notFound *riotapi.ErrNotFound
+		if errors.As(err, &notFound) {
+			s.live.rememberMissing(missKey)
+		}
 		writeRiotError(w, err)
 		return
 	}
 
 	if err := ingest.StoreMatch(ctx, s.Store, routing, matchID, match, rawLive); err != nil {
-		writeError(w, http.StatusInternalServerError, "db_error", err.Error())
+		writeDBError(w, r, err)
 		return
 	}
 
@@ -71,7 +92,8 @@ func writeRawJSONWithSource(w http.ResponseWriter, raw []byte, source string) {
 	// a slower live one, same as the player profile endpoint.
 	var body map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &body); err != nil {
-		writeError(w, http.StatusInternalServerError, "decode_error", err.Error())
+		log.Printf("decode match payload: %v", err)
+		writeError(w, http.StatusInternalServerError, "decode_error", "stored match could not be read")
 		return
 	}
 	sourceJSON, _ := json.Marshal(source)
