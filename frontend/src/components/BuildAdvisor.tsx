@@ -11,6 +11,7 @@ import {
   getExploreSuggest,
 } from "../api/client";
 import { GameIcon } from "../assets/tft";
+import { CompName } from "./CompName";
 import { Picker, PickerOption } from "./Picker";
 import { Names, avg, placementTone, pct } from "./stats";
 
@@ -397,6 +398,7 @@ function Comps({ comps, names, ownedUnits }: { comps: SuggestComp[]; names: Name
         {comps.map((c, i) => (
           <div className="advisor-comp" key={i}>
             <div className="advisor-comp-head">
+              <CompName comp={c.comp} names={names} />
               <strong>
                 {c.have.length} of {c.comp.board.length} units
               </strong>

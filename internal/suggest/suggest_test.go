@@ -260,3 +260,55 @@ func TestAdvise_CompsWithTheSameOwnedUnitsAreCollapsed(t *testing.T) {
 		t.Fatalf("comps = %+v, want the single best A+B comp", r.Comps)
 	}
 }
+
+func TestShrunkAverageDownweightsSmallSamples(t *testing.T) {
+	if shrunk(1.5, 4) <= shrunk(3.2, 40) {
+		t.Fatalf("4 boards at 1.5 (%.2f) should rank behind 40 boards at 3.2 (%.2f)", shrunk(1.5, 4), shrunk(3.2, 40))
+	}
+	if d := shrunk(3.0, 1000) - 3.0; d > 0.05 {
+		t.Errorf("a big sample should barely move: %.3f", d)
+	}
+}
+
+func TestAdvise_WellSampledBuildBeatsLuckyOne(t *testing.T) {
+	in := Input{
+		Units: []string{"A"}, Items: []string{"IE", "JG", "Bow"}, Recipes: rec,
+		// Both builds are fully covered; one is 3 lucky boards, the other a
+		// real sample.
+		Builds: map[string][]store.MetaBuild{"A": {build(1.6, 3, "IE", "JG"), build(3.0, 80, "IE", "Bow")}},
+	}
+	r := Advise(in)
+	if got := r.Plan[0].Build.Boards; got != 80 {
+		t.Fatalf("plan picked the %d-board build, want the well-sampled one", got)
+	}
+	if r.Units[0].Options[0].Boards != 80 {
+		t.Errorf("alternatives should list the well-sampled build first: %+v", r.Units[0].Options)
+	}
+}
+
+func TestAdvise_CompsRankByShrunkAverage(t *testing.T) {
+	r := Advise(Input{
+		Units: []string{"A", "B", "C"},
+		Comps: []comps.Comp{
+			// Each overlaps two owned units (different pairs).
+			comp(1.6, 5, comps.BoardUnit{ID: "A"}, comps.BoardUnit{ID: "B"}, comps.BoardUnit{ID: "X"}),
+			comp(3.1, 42, comps.BoardUnit{ID: "A"}, comps.BoardUnit{ID: "C"}, comps.BoardUnit{ID: "Y"}),
+		},
+	})
+	if len(r.Comps) != 2 || r.Comps[0].Comp.Boards != 42 {
+		t.Fatalf("comps = %+v, want the 42-board comp ahead of the lucky 5-board one", r.Comps)
+	}
+}
+
+func TestAdvise_ThinSamplesSortBehindReliableOnes(t *testing.T) {
+	r := Advise(Input{
+		Units: []string{"A", "B", "C"},
+		Comps: []comps.Comp{
+			comp(1.6, 5, comps.BoardUnit{ID: "A"}, comps.BoardUnit{ID: "B"}, comps.BoardUnit{ID: "X"}),
+			comp(3.5, 19, comps.BoardUnit{ID: "A"}, comps.BoardUnit{ID: "C"}, comps.BoardUnit{ID: "Y"}),
+		},
+	})
+	if r.Comps[0].Comp.Boards != 19 {
+		t.Fatalf("a 5-board comp must not outrank a 19-board one: %+v", r.Comps)
+	}
+}

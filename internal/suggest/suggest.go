@@ -167,14 +167,44 @@ func option(b store.MetaBuild, inv inventory, rec Recipes) (BuildOption, invento
 	}, left
 }
 
-// better orders options: closest to ready, then the best placement, then
-// the most-played, so results are deterministic.
+// Placement averages from a handful of boards are mostly luck, so ranking
+// does two things. Samples under reliableBoards sort behind better-sampled
+// ones, and averages are pulled toward the middle of the field: shrunk adds
+// shrinkBoards imaginary boards that placed shrinkMean (100 boards at 3.0
+// barely move; 4 boards at 1.5 land near 3.9). The real numbers are still
+// what's shown.
+const (
+	reliableBoards = 10
+	shrinkBoards   = 10
+	shrinkMean     = 4.5
+)
+
+func shrunk(avg float64, boards int) float64 {
+	n := float64(boards)
+	return (avg*n + shrinkBoards*shrinkMean) / (n + shrinkBoards)
+}
+
+// lessSampled orders by trustworthiness then shrunk placement, for two
+// results with equal standing otherwise (same number of items missing, same
+// owned units).
+func lessSampled(avgA float64, boardsA int, avgB float64, boardsB int) (less, decided bool) {
+	if thinA, thinB := boardsA < reliableBoards, boardsB < reliableBoards; thinA != thinB {
+		return !thinA, true
+	}
+	if sa, sb := shrunk(avgA, boardsA), shrunk(avgB, boardsB); sa != sb {
+		return sa < sb, true
+	}
+	return false, false
+}
+
+// better orders options: closest to ready, then the best (shrunk) placement,
+// then the most-played, so results are deterministic.
 func better(a, b BuildOption) bool {
 	if len(a.Missing) != len(b.Missing) {
 		return len(a.Missing) < len(b.Missing)
 	}
-	if a.AvgPlacement != b.AvgPlacement {
-		return a.AvgPlacement < b.AvgPlacement
+	if less, ok := lessSampled(a.AvgPlacement, a.Boards, b.AvgPlacement, b.Boards); ok {
+		return less
 	}
 	return a.Boards > b.Boards
 }
@@ -294,8 +324,8 @@ func matchComps(in Input, owned []string, inv inventory) []CompMatch {
 		if len(a.Have) != len(b.Have) {
 			return len(a.Have) > len(b.Have)
 		}
-		if a.Comp.AvgPlacement != b.Comp.AvgPlacement {
-			return a.Comp.AvgPlacement < b.Comp.AvgPlacement
+		if less, ok := lessSampled(a.Comp.AvgPlacement, a.Comp.Boards, b.Comp.AvgPlacement, b.Comp.Boards); ok {
+			return less
 		}
 		return a.Comp.Boards > b.Comp.Boards
 	})

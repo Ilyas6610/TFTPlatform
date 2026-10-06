@@ -1369,6 +1369,12 @@ details.patch[open] > summary::before {
   gap: 6px;
 }
 
+/* One line, not squeezed word by word beside the items; the row wraps
+   instead when the screen is narrow. */
+.build-stats {
+  white-space: nowrap;
+}
+
 .build-item {
   position: relative;
   display: inline-flex;
