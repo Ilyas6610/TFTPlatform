@@ -113,6 +113,22 @@ export function decodeBoard(q: URLSearchParams, defaultSet: number): Board {
   return b;
 }
 
+/** "1 unit and 2 augments": only the non-zero parts, singular or plural. */
+export function droppedSummary(d: Dropped): string {
+  const parts = (
+    [
+      [d.units, "unit", "units"],
+      [d.items, "item", "items"],
+      [d.augments, "augment", "augments"],
+      [d.traits, "trait", "traits"],
+    ] as const
+  )
+    .filter(([n]) => n > 0)
+    .map(([n, one, many]) => `${n} ${n === 1 ? one : many}`);
+  if (parts.length <= 1) return parts[0] ?? "";
+  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+
 /** What `sanitize` removed, for a notice. */
 export interface Dropped {
   units: number;
@@ -125,7 +141,8 @@ export interface Dropped {
 /** Removes units, items and augments the set data doesn't know. */
 export function sanitize(b: Board, data: SetData): { board: Board; dropped: Dropped } {
   const units = new Set(data.units.map((u) => u.apiName));
-  const items = new Set(data.items.map((i) => i.apiName));
+  // Only what the planner offers: components, consumables and the like can't be held.
+  const items = new Set(data.items.filter((i) => HOLDABLE_KINDS.has(i.kind)).map((i) => i.apiName));
   const augmentById = new Map(data.augments.map((a) => [a.apiName, a]));
   const dropped: Dropped = { units: 0, items: 0, augments: 0, traits: 0 };
   const choices = buildTraitChoices(data);

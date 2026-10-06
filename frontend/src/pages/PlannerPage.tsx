@@ -20,6 +20,7 @@ import {
   addItemChecked,
   canHoldItem,
   dropRedundantEmblems,
+  droppedSummary,
   teamSizeBonus,
   addUnit,
   augmentsByTier,
@@ -209,8 +210,7 @@ export default function PlannerPage() {
         {error && <div className="error-box">{error}</div>}
         {(dropped.units > 0 || dropped.items > 0 || dropped.augments > 0 || dropped.traits > 0) && (
           <p className="warning-box">
-            This link had {dropped.units} units, {dropped.items} items, {dropped.augments} augments and {dropped.traits} traits that aren&apos;t
-            in Set {set}; they were skipped.
+            Skipped from this link: {droppedSummary(dropped)} (not in Set {set}, or not allowed there).
           </p>
         )}
       </div>

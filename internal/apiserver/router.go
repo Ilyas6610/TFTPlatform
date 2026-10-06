@@ -24,6 +24,7 @@ type Server struct {
 	meta        resultCache
 	sets        resultCache
 	live        liveFetches
+	plannerFail failureMemo
 }
 
 func NewRouter(s *Server) http.Handler {

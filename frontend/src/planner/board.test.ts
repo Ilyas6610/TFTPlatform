@@ -12,6 +12,7 @@ import {
   addItemChecked,
   canHoldItem,
   dropRedundantEmblems,
+  droppedSummary,
   removeItem,
   teamSizeBonus,
   buildTraitChoices,
@@ -44,6 +45,7 @@ const data = {
     { apiName: "I_IE", name: "Infinity Edge", kind: "completed" },
     { apiName: "I_EmblemSage", name: "Sage Emblem", kind: "emblem" },
     { apiName: "I_EmblemBlade", name: "Blade Emblem", kind: "emblem" },
+    { apiName: "I_Part", name: "Some Component", kind: "component" },
     { apiName: "I_Crown", name: "Tactician's Crown", kind: "completed", desc: "Your team gains +1 maximum team size. 10% chance to drop gold." },
     { apiName: "I_Cape", name: "Tactician's Cape", kind: "completed", desc: "Your team gains +1 maximum team size." },
   ],
@@ -538,5 +540,23 @@ describe("units that take two team slots (Elder Dragon)", () => {
     expect(t.Beast.tier).toBe(0);
     expect(t.Apex.count).toBe(1);
     expect(Object.fromEntries(computeTraits(addUnit(emptyBoard(18), "U_Dragon", 0), dragonData).map((x) => [x.name, x.count])).Beast).toBe(2);
+  });
+});
+
+describe("items a link may carry", () => {
+  it("only holdable kinds survive: a component or consumable in a link is dropped", () => {
+    const b = decodeBoard(new URLSearchParams("u=U_B.1.2.I_Part,I_IE"), 18);
+    const { board, dropped } = sanitize(b, data);
+    expect(board.units[0].items).toEqual(["I_IE"]);
+    expect(dropped.items).toBe(1);
+  });
+});
+
+describe("droppedSummary", () => {
+  it("lists only what was dropped, with the right plural", () => {
+    expect(droppedSummary({ units: 1, items: 0, augments: 1, traits: 0 })).toBe("1 unit and 1 augment");
+    expect(droppedSummary({ units: 2, items: 1, augments: 3, traits: 4 })).toBe("2 units, 1 item, 3 augments and 4 traits");
+    expect(droppedSummary({ units: 0, items: 5, augments: 0, traits: 0 })).toBe("5 items");
+    expect(droppedSummary({ units: 0, items: 0, augments: 0, traits: 0 })).toBe("");
   });
 });

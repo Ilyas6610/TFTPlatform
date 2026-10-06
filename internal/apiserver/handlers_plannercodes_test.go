@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"tft-platform/internal/setdata"
 )
@@ -57,5 +58,43 @@ func TestPlannerCodes_UpstreamFailureIsGeneric(t *testing.T) {
 	}
 	if b := rec.Body.String(); len(b) > 0 && (strings.Contains(b, "secret") || strings.Contains(b, up.URL)) {
 		t.Errorf("response leaks upstream detail: %s", b)
+	}
+}
+
+func TestPlannerCodes_FailureIsRememberedBriefly(t *testing.T) {
+	old := plannerFailCooldown
+	plannerFailCooldown = 150 * time.Millisecond
+	defer func() { plannerFailCooldown = old }()
+
+	var fetches atomic.Int32
+	var fail atomic.Bool
+	fail.Store(true)
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fetches.Add(1)
+		if fail.Load() {
+			http.Error(w, "down", http.StatusInternalServerError)
+			return
+		}
+		w.Write([]byte(`{"TFTSet18": [{"character_id": "DA_18_Ahri", "team_planner_code": 1001}]}`))
+	}))
+	defer up.Close()
+	s := &Server{Source: &setdata.Source{BaseURL: up.URL, HTTP: up.Client()}}
+	get := func() int {
+		rec := httptest.NewRecorder()
+		NewRouter(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/sets/18/planner-codes", nil))
+		return rec.Code
+	}
+
+	if get() != http.StatusBadGateway || get() != http.StatusBadGateway || get() != http.StatusBadGateway {
+		t.Fatal("a failing source should answer 502")
+	}
+	if n := fetches.Load(); n != 1 {
+		t.Errorf("source fetched %d times; the failure should be remembered, not retried per request", n)
+	}
+	// Once the cooldown passes and the source is back, it recovers.
+	fail.Store(false)
+	time.Sleep(200 * time.Millisecond)
+	if c := get(); c != http.StatusOK {
+		t.Errorf("after the cooldown got %d, want 200", c)
 	}
 }
