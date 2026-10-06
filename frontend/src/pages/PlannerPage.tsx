@@ -201,62 +201,79 @@ export default function PlannerPage() {
       <div className="planner-layout">
         <div className="planner-main">
         <div className="panel planner-boardpanel">
-          <div className="planner-board" role="grid" aria-label="Board">
-            {Array.from({ length: ROWS * COLS }, (_, pos) => {
-              const u = unitAt(pos);
-              const row = Math.floor(pos / COLS);
-              return (
-                <button
-                  type="button"
-                  key={pos}
-                  className={`planner-cell${row % 2 ? " odd" : ""}${u ? " filled" : ""}${selected === pos ? " selected" : ""}`}
-                  aria-label={u ? `${names.name(u.id)}, ${u.star} star` : "Empty cell"}
-                  draggable={!!u}
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData("text/plain", String(pos));
-                    e.dataTransfer.effectAllowed = "move";
-                  }}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    const from = Number(e.dataTransfer.getData("text/plain"));
-                    if (Number.isInteger(from)) {
-                      update((b) => moveUnit(b, from, pos));
-                      setSelected(pos);
-                    }
-                  }}
-                  onClick={() => onCellClick(pos)}
-                >
-                  {u && (
-                    <>
-                      <span className="planner-stars" aria-hidden>
-                        {"★".repeat(u.star)}
-                      </span>
-                      <GameIcon
-                        kind="champions"
-                        id={u.id}
-                        size={44}
-                        fallbackSrc={names.icon(u.id)}
-                        fallbackName={names.name(u.id)}
-                        className={unitInfo(u.id) ? `cost-${unitInfo(u.id)!.cost}` : ""}
-                      />
-                      <span className="planner-cell-items">
-                        {u.items.map((it, i) => (
+          <div className="planner-board-wrap">
+            <div className="planner-board" role="grid" aria-label="Board">
+              {Array.from({ length: ROWS * COLS }, (_, pos) => {
+                const u = unitAt(pos);
+                const row = Math.floor(pos / COLS);
+                const col = pos % COLS;
+                const cost = u ? unitInfo(u.id)?.cost : undefined;
+                return (
+                  // Hexes sit on a 15-column grid, two columns wide; odd rows start one column in.
+                  <div
+                    key={pos}
+                    className={`planner-slot${cost ? ` cost-${cost}` : ""}${selected === pos ? " selected" : ""}`}
+                    style={{ gridColumn: `${1 + col * 2 + (row % 2)} / span 2`, gridRow: row + 1 }}
+                  >
+                    <button
+                      type="button"
+                      className={`planner-cell${u ? " filled" : ""}${selected === pos ? " selected" : ""}`}
+                      aria-label={u ? `${names.name(u.id)}, ${u.star} star` : "Empty cell"}
+                      draggable={!!u}
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("text/plain", String(pos));
+                        e.dataTransfer.effectAllowed = "move";
+                      }}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const from = Number(e.dataTransfer.getData("text/plain"));
+                        if (Number.isInteger(from)) {
+                          update((b) => moveUnit(b, from, pos));
+                          setSelected(pos);
+                        }
+                      }}
+                      onClick={() => onCellClick(pos)}
+                    >
+                      <span className="hex-frame" />
+                      <span className="hex-art">
+                        {u && (
                           <GameIcon
-                            key={i}
-                            kind="items"
-                            id={it}
-                            size={14}
-                            fallbackSrc={names.icon(it)}
-                            fallbackName={names.name(it)}
+                            kind="champions"
+                            id={u.id}
+                            size={96}
+                            fallbackSrc={names.icon(u.id)}
+                            fallbackName={names.name(u.id)}
+                            className="planner-hex-img"
                           />
-                        ))}
+                        )}
                       </span>
-                    </>
-                  )}
-                </button>
-              );
-            })}
+                    </button>
+                    {u && (
+                      <>
+                        <span className="planner-stars" aria-hidden>
+                          {"★".repeat(u.star)}
+                        </span>
+                        {u.items.length > 0 && (
+                          <span className="planner-cell-items">
+                            {u.items.map((it, i) => (
+                              <GameIcon
+                                key={i}
+                                kind="items"
+                                id={it}
+                                size={24}
+                                fallbackSrc={names.icon(it)}
+                                fallbackName={names.name(it)}
+                              />
+                            ))}
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
           <p className="muted planner-hint">
             Click a unit to select it, then an empty cell to move it. Drag a unit onto another to swap. Front line is at the top.
