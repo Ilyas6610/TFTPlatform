@@ -65,6 +65,16 @@ export interface PlayerMatchSummary {
   lp?: { delta: number; games: number };
 }
 
+/** A rank snapshot with its place on one linear LP scale (100 per division, Master = 2800). */
+export interface RankPoint extends RankEntry {
+  value: number;
+}
+
+/** Every recorded rank change per ranked queue, oldest first. */
+export function getRankHistory(puuid: string) {
+  return get<Record<string, RankPoint[]>>(`/api/v1/players/${encodeURIComponent(puuid)}/ranks`);
+}
+
 export interface RankEntry {
   queueType: string; // RANKED_TFT, RANKED_TFT_DOUBLE_UP
   tier: string;

@@ -11,6 +11,7 @@ import {
   getSetData,
 } from "../api/client";
 import { profileIconUrl, useManifest } from "../assets/tft";
+import { LPHistory } from "../components/LPHistory";
 import { MatchHistory } from "../components/MatchHistory";
 import { PlayerStats } from "../components/PlayerStats";
 import { buildNames } from "../components/stats";
@@ -139,6 +140,13 @@ export default function ProfilePage() {
             </div>
           )}
         </div>
+      )}
+
+      {profile && (
+        <LPHistory
+          puuid={profile.puuid}
+          reloadKey={ranks.map((r) => `${r.queueType}:${r.leaguePoints}:${r.wins + r.losses}`).join(",")}
+        />
       )}
 
       {profile && (

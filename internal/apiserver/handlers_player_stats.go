@@ -179,3 +179,31 @@ func (s *Server) playerPatches(ctx context.Context, puuid string, f store.Explor
 	sort.Slice(out, func(i, j int) bool { return order[out[i].Patch].After(order[out[j].Patch]) })
 	return out, nil
 }
+
+// RankPoint is one rank snapshot placed on the linear LP scale (lp.Value),
+// for charting LP over time.
+type RankPoint struct {
+	store.RankSnapshot
+	Value int `json:"value"`
+}
+
+// handlePlayerRankHistory serves GET /api/v1/players/{puuid}/ranks: every
+// recorded rank change per ranked queue, oldest first. Snapshots exist from
+// the player's first profile sync (or apex ladder refresh) on.
+func (s *Server) handlePlayerRankHistory(w http.ResponseWriter, r *http.Request) {
+	puuid := r.PathValue("puuid")
+	if !validPUUID(puuid) {
+		writeError(w, http.StatusBadRequest, "invalid_puuid", "puuid must be 1-100 letters, digits, '-' or '_'")
+		return
+	}
+	history, err := s.Store.RankHistory(r.Context(), puuid)
+	if err != nil {
+		writeDBError(w, r, err)
+		return
+	}
+	out := map[string][]RankPoint{}
+	for _, h := range history {
+		out[h.QueueType] = append(out[h.QueueType], RankPoint{RankSnapshot: h, Value: lp.Value(h)})
+	}
+	writeJSON(w, http.StatusOK, out)
+}

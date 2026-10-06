@@ -162,3 +162,31 @@ func TestPlayerHistory_PatchAndLP(t *testing.T) {
 		t.Errorf("patches = %+v, want 18.3 (+45 LP) then 18.2 (no LP)", res.Patches)
 	}
 }
+
+func TestPlayerRankHistory(t *testing.T) {
+	s := &Server{Store: storetest.New(t)}
+	ctx := context.Background()
+	if err := s.Store.UpsertAccountPUUIDOnly(ctx, "me", "americas"); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []store.RankSnapshot{
+		{QueueType: "RANKED_TFT", Tier: "DIAMOND", Rank: "I", LeaguePoints: 80, Wins: 1, Losses: 1},
+		{QueueType: "RANKED_TFT", Tier: "DIAMOND", Rank: "I", LeaguePoints: 80, Wins: 1, Losses: 1}, // unchanged: not recorded
+		{QueueType: "RANKED_TFT", Tier: "MASTER", Rank: "I", LeaguePoints: 10, Wins: 2, Losses: 1},
+		{QueueType: "RANKED_TFT_DOUBLE_UP", Tier: "GOLD", Rank: "II", LeaguePoints: 5, Wins: 1, Losses: 0},
+	} {
+		if _, err := s.Store.AddRankSnapshot(ctx, "me", r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rec := httptest.NewRecorder()
+	NewRouter(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/players/me/ranks", nil))
+	var res map[string][]RankPoint
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatalf("%v: %s", err, rec.Body)
+	}
+	ranked := res["RANKED_TFT"]
+	if len(ranked) != 2 || ranked[0].Value != 2780 || ranked[1].Value != 2810 || len(res["RANKED_TFT_DOUBLE_UP"]) != 1 {
+		t.Errorf("history = %+v, want Diamond I 80 (2780) -> Master 10 (2810) and one Double Up point", res)
+	}
+}

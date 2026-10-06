@@ -1731,3 +1731,69 @@ tr.dim {
 .rank-badge.tier-silver { border-left-color: #9aa4af; }
 .rank-badge.tier-bronze { border-left-color: #a87452; }
 .rank-badge.tier-iron { border-left-color: #6e6a66; }
+
+.lp-chart {
+  position: relative;
+  margin-top: 8px;
+}
+
+.lp-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.lp-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.lp-axis {
+  fill: var(--text-dim);
+  font-size: 11px;
+}
+
+.lp-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.lp-dot {
+  fill: var(--accent);
+  stroke: var(--panel);
+  stroke-width: 2;
+}
+
+.lp-dot-active {
+  stroke-width: 2;
+}
+
+.lp-crosshair {
+  stroke: var(--text-dim);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.lp-tooltip {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.lp-table summary {
+  cursor: pointer;
+  font-size: 0.8rem;
+  margin-top: 4px;
+}
