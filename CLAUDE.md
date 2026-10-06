@@ -39,7 +39,7 @@ Personal Riot API keys expire every 24h — refresh `deploy/.secrets/riot-api-ke
 ### Frontend (`frontend/`)
 ```bash
 npm install
-npm run dev      # Vite dev server on :5173, proxies /api to localhost:8080
+npm run dev      # Vite dev server on :5173, proxies /api to localhost:8080 (API_URL=http://localhost:<port> npm run dev to use another backend)
 npm run build    # tsc -b && vite build
 npm run assets   # download TFT icons + manifest from Data Dragon into public/tft/ (gitignored, ~100 MB; re-run after a patch)
 ```
@@ -65,6 +65,9 @@ The live TFT set number is `CURRENT_TFT_SET` in `frontend/src/config.ts` — the
 - **db/migrations** — sequential golang-migrate SQL files (`0001`…).
 - **setdata** — static set data (units, traits, augments, items) from CommunityDragon, stored as per-version snapshots; see below.
 - **settags** — empty, not yet implemented.
+
+### Build advisor (Explorer)
+`GET /api/v1/explore/suggest?set=&queue=&level=&have_unit=…&have_item=…` (`handlers_suggest.go`, pure logic in `internal/suggest`) answers "what can I build with what I hold right now". Inputs are the player's units and inventory (one `have_item` per copy; completed items or components). It takes the exact 3-item builds per unit (`store.MetaBuilds`, wider than the Meta page's) and comps (`comps.Build`, shared cache with `/meta/comps`) from real boards, then: `craft` decides which build items the inventory covers, from a whole item or two components (recipes = `Composition` of the newest set-data snapshot, cached; without a snapshot only whole items match), never spending a piece twice; `plan` greedily gives each unit its best-fitting build without double-spending items; `units` are per-unit alternatives against the whole inventory; `comps` are comps ranked by owned units on their board, with item fits. Units alone list their best builds (nothing makeable yet = aim-for builds, all missing); items alone (no `have_unit`) return `candidates`, the units whose builds the inventory fits best. Emblems are recipes too (Spatula/Frying Pan + component); artifacts only count when held whole. Frontend: `components/BuildAdvisor.tsx` in the Explorer; its lists are the `hu`/`hi` URL params.
 
 ### Data freshness (request-triggered Riot fetches)
 - **Leaderboard** — `GET /api/v1/leaderboard/{platform}` re-seeds the platform from Riot (3 requests, `ingest.SeedLeaderboard`) when its snapshot is older than 2 minutes; a complete seed prunes players who left master+. Missing Riot IDs on the returned page are resolved in the background via account-v1 by-PUUID (`ingest.ResolveNames`). Refresh serialization is in `internal/apiserver/leaderboard_sync.go`.

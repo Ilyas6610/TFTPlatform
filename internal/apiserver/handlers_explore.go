@@ -222,13 +222,7 @@ func (s *Server) handleMetaComps(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_filter", err.Error())
 		return
 	}
-	res, err := s.meta.get(r.Context(), metaCacheKey("comps", f), func(ctx context.Context) (any, error) {
-		boards, err := s.Store.FinalBoards(ctx, f, compMinLevel)
-		if err != nil {
-			return nil, err
-		}
-		return MetaCompsResponse{Boards: len(boards), Comps: comps.Build(boards, comps.Options{})}, nil
-	})
+	res, err := s.metaComps(r.Context(), f)
 	if err != nil {
 		writeDBError(w, r, err)
 		return

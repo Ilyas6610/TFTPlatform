@@ -359,3 +359,45 @@ export interface MetaComp extends PlacementStats {
 export function getMetaComps(query: string) {
   return get<{ boards: number; comps: MetaComp[] }>(`/api/v1/meta/comps?${query}`);
 }
+
+// Build suggestions from the units and items a player holds — see
+// internal/suggest and handlers_suggest.go.
+export interface SuggestStep {
+  item: string;
+  from?: string[]; // the two components to combine; absent = held as is
+}
+
+export interface SuggestBuild extends PlacementStats {
+  items: string[]; // the full build, sorted
+  steps: SuggestStep[]; // items makeable now
+  missing: string[];
+  ready: boolean;
+}
+
+export interface SuggestFit {
+  unit: string;
+  items: string[];
+  steps: SuggestStep[];
+  missing: string[];
+}
+
+export interface SuggestComp {
+  comp: MetaComp;
+  have: string[];
+  need: string[];
+  fits: SuggestFit[];
+}
+
+export interface SuggestResult {
+  plan: { unit: string; build: SuggestBuild; aim: boolean }[]; // aim: a target, nothing builds toward it yet
+  leftover: string[];
+  units: { id: string; options: SuggestBuild[] }[];
+  comps: SuggestComp[];
+  // Only without units: the units the items fit best.
+  candidates: { unit: string; build: SuggestBuild }[];
+}
+
+/** query: set and optional queue/level, plus have_unit and have_item (repeat per copy). */
+export function getExploreSuggest(query: string) {
+  return get<SuggestResult>(`/api/v1/explore/suggest?${query}`);
+}
