@@ -12,7 +12,8 @@ const RELOAD_EVERY = 20;
  */
 export function SetBackfill({ puuid, region, onGames }: { puuid: string; region: string; onGames: () => void }) {
   const [status, setStatus] = useState<BackfillStatus | null>(null);
-  const [busy, setBusy] = useState(false);
+  // Why the server refused to start a load (busy, cooldown, unknown player).
+  const [refused, setRefused] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>();
   const reported = useRef(0);
 
@@ -46,11 +47,15 @@ export function SetBackfill({ puuid, region, onGames }: { puuid: string; region:
   }, [puuid]);
 
   function start() {
-    setBusy(false);
+    setRefused(null);
     startBackfill(puuid, region)
       .then(track)
       .catch((e: unknown) => {
-        if (e instanceof ApiError && e.status === 409) setBusy(true);
+        if (e instanceof ApiError && (e.status === 409 || e.status === 404)) {
+          setRefused(e.message.charAt(0).toUpperCase() + e.message.slice(1) + ".");
+        } else {
+          setRefused("Couldn't start loading the set.");
+        }
       });
   }
 
@@ -81,7 +86,7 @@ export function SetBackfill({ puuid, region, onGames }: { puuid: string; region:
           {status.fetched > 0 ? ` (${status.fetched} games loaded)` : ""}.
         </span>
       )}
-      {busy && <span className="muted">Another player's history is loading; try again in a few minutes.</span>}
+      {refused && <span className="muted">{refused}</span>}
       {status?.state !== "done" && (
         <button type="button" className="show-more" onClick={start} title="Fetch every game of this set from Riot">
           Load whole set

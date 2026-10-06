@@ -60,21 +60,6 @@ func (s *Store) WriteLeagueSnapshot(ctx context.Context, platform string, entrie
 				hot_streak = EXCLUDED.hot_streak,
 				fetched_at = now()
 		`, e.PUUID, platform, e.Tier, nullIfEmpty(e.Rank), e.LeaguePoints, e.Wins, e.Losses, e.HotStreak)
-		// The ladder doubles as rank history for apex players: record the
-		// entry if it changed since their last snapshot (per-game LP).
-		batch.Queue(`
-			INSERT INTO rank_snapshots (puuid, queue_type, tier, rank, league_points, wins, losses)
-			SELECT $1, 'RANKED_TFT', $2, $3, $4, $5, $6
-			WHERE NOT EXISTS (
-				SELECT 1 FROM (
-					SELECT tier, rank, league_points, wins, losses FROM rank_snapshots
-					WHERE puuid = $1 AND queue_type = 'RANKED_TFT'
-					ORDER BY fetched_at DESC LIMIT 1
-				) last
-				WHERE last.tier = $2 AND last.rank IS NOT DISTINCT FROM $3 AND last.league_points = $4
-					AND last.wins = $5 AND last.losses = $6
-			)
-		`, e.PUUID, e.Tier, nullIfEmpty(e.Rank), e.LeaguePoints, e.Wins, e.Losses)
 		batch.Queue(`
 			INSERT INTO ingest_puuid_queue (puuid, platform_region, routing_region, priority)
 			VALUES ($1, $2, $3, $4)
@@ -82,6 +67,22 @@ func (s *Store) WriteLeagueSnapshot(ctx context.Context, platform string, entrie
 				priority = GREATEST(ingest_puuid_queue.priority, EXCLUDED.priority)
 		`, e.PUUID, platform, e.RoutingRegion, e.Priority)
 	}
+	// The ladder doubles as rank history for apex players: one statement
+	// records every entry written above (fetched_at = now()) whose standing
+	// changed since the player's last snapshot (per-game LP).
+	batch.Queue(`
+		INSERT INTO rank_snapshots (puuid, queue_type, tier, rank, league_points, wins, losses)
+		SELECT le.puuid, 'RANKED_TFT', le.tier, le.rank, le.league_points, le.wins, le.losses
+		FROM league_entries le
+		LEFT JOIN LATERAL (
+			SELECT tier, rank, league_points, wins, losses FROM rank_snapshots rs
+			WHERE rs.puuid = le.puuid AND rs.queue_type = 'RANKED_TFT'
+			ORDER BY rs.fetched_at DESC LIMIT 1
+		) last ON true
+		WHERE le.platform_region = $1 AND le.queue_type = 'RANKED_TFT' AND le.fetched_at = now()
+			AND (last.tier, last.rank, last.league_points, last.wins, last.losses)
+				IS DISTINCT FROM (le.tier, le.rank, le.league_points, le.wins, le.losses)
+	`, platform)
 	if complete {
 		batch.Queue(`DELETE FROM league_entries WHERE platform_region = $1 AND fetched_at < now()`, platform)
 	}

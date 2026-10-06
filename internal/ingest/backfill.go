@@ -23,21 +23,35 @@ type BackfillProgress struct {
 // BackfillSet loads a player's whole history since since (the set's start):
 // every match id Riot lists from then on, up to maxGames, then each one not
 // stored yet. report is called after the id listing and after every game.
-// A rate limit doesn't end the run: it waits out Riot's Retry-After (the
-// shared limiter normally prevents that) and carries on.
+// Requests are spaced at least pace apart, so a long load leaves the shared
+// key's budget for other callers instead of queueing them behind it. A rate
+// limit doesn't end the run: it waits out Riot's Retry-After (the shared
+// limiter normally prevents that) and carries on.
 func BackfillSet(ctx context.Context, riot *riotapi.Client, st *store.Store, platform riotapi.PlatformRegion, puuid string,
-	since time.Time, maxGames int, report func(BackfillProgress)) (BackfillProgress, error) {
+	since time.Time, maxGames int, pace time.Duration, report func(BackfillProgress)) (BackfillProgress, error) {
 	var p BackfillProgress
 	routing, err := riotapi.RoutingForPlatform(platform)
 	if err != nil {
 		return p, err
+	}
+	var last time.Time
+	paced := func(fn func() error) error {
+		if wait := time.Until(last.Add(pace)); !last.IsZero() && wait > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(wait):
+			}
+		}
+		last = time.Now()
+		return withRateLimitRetry(ctx, fn)
 	}
 
 	var ids []string
 	for start := 0; len(ids) < maxGames; start += riotIDPageMax {
 		count := min(riotIDPageMax, maxGames-len(ids))
 		var page []string
-		err := withRateLimitRetry(ctx, func() error {
+		err := paced(func() error {
 			var err error
 			page, err = riot.GetTFTMatchIDsSince(ctx, routing, puuid, start, count, since)
 			return err
@@ -66,7 +80,7 @@ func BackfillSet(ctx context.Context, riot *riotapi.Client, st *store.Store, pla
 	for _, id := range missing {
 		var match *riotapi.TFTMatch
 		var raw []byte
-		err := withRateLimitRetry(ctx, func() error {
+		err := paced(func() error {
 			var err error
 			match, raw, err = riot.GetTFTMatch(ctx, routing, id)
 			return err

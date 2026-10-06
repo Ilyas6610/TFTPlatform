@@ -67,7 +67,7 @@ func TestBackfillSet(t *testing.T) {
 	calls := matchCalls.Load()
 
 	var reports int
-	p, err := ingest.BackfillSet(ctx, riot, st, riotapi.PlatformNA1, "me", setStart, 500, func(ingest.BackfillProgress) { reports++ })
+	p, err := ingest.BackfillSet(ctx, riot, st, riotapi.PlatformNA1, "me", setStart, 500, 0, func(ingest.BackfillProgress) { reports++ })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestBackfillSet(t *testing.T) {
 	}
 
 	// A cap stops the listing early.
-	p, err = ingest.BackfillSet(ctx, riot, st, riotapi.PlatformNA1, "me", time.Time{}, 50, func(ingest.BackfillProgress) {})
+	p, err = ingest.BackfillSet(ctx, riot, st, riotapi.PlatformNA1, "me", time.Time{}, 50, 0, func(ingest.BackfillProgress) {})
 	if err != nil || p.Found != 50 || p.Missing != 0 {
 		t.Errorf("capped run = %+v, %v; want 50 found, none missing", p, err)
 	}
@@ -100,4 +100,32 @@ func mustJSON(v any) string {
 		panic(err)
 	}
 	return string(b)
+}
+
+func TestBackfillSet_Paced(t *testing.T) {
+	st := storetest.New(t)
+	ids := []string{"NA1_3", "NA1_2", "NA1_1"}
+	var times []time.Time
+	riot := riotapitest.NewClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		times = append(times, time.Now())
+		if r.URL.Query().Has("count") {
+			fmt.Fprintf(w, "%s", mustJSON(ids))
+			return
+		}
+		id := r.URL.Path[len("/tft/match/v1/matches/"):]
+		w.Write([]byte(matchJSON(id, 1000, "me")))
+	}))
+	const pace = 40 * time.Millisecond
+	p, err := ingest.BackfillSet(context.Background(), riot, st, riotapi.PlatformNA1, "me", time.Time{}, 500, pace, func(ingest.BackfillProgress) {})
+	if err != nil || p.Fetched != 3 {
+		t.Fatalf("%+v %v", p, err)
+	}
+	if len(times) != 4 { // the listing, then three games
+		t.Fatalf("%d requests, want 4", len(times))
+	}
+	for i := 1; i < len(times); i++ {
+		if gap := times[i].Sub(times[i-1]); gap < pace-5*time.Millisecond {
+			t.Errorf("request %d came %v after the previous, want >= %v", i, gap, pace)
+		}
+	}
 }

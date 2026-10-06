@@ -273,6 +273,15 @@ func TestPlayerStats_DoubleUpPartners(t *testing.T) {
 
 func TestPlayerAdvice(t *testing.T) {
 	s := &Server{Store: storetest.New(t)}
+	// Not registered while the panel is disabled; mount it here.
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/v1/players/{puuid}/advice", s.handlePlayerAdvice)
+	if rec := httptest.NewRecorder(); func() int {
+		NewRouter(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/players/me/advice?set=18", nil))
+		return rec.Code
+	}() != http.StatusNotFound {
+		t.Errorf("advice is registered on the public router")
+	}
 	for path, want := range map[string]int{
 		"/api/v1/players/bad%20id/advice?set=18":     http.StatusBadRequest,
 		"/api/v1/players/me/advice?set=18&unit=X":    http.StatusBadRequest,
@@ -280,7 +289,7 @@ func TestPlayerAdvice(t *testing.T) {
 		"/api/v1/players/me/advice?set=18":           http.StatusOK, // no games: empty advice
 	} {
 		rec := httptest.NewRecorder()
-		NewRouter(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		if rec.Code != want {
 			t.Errorf("%s: got %d, want %d: %s", path, rec.Code, want, rec.Body)
 		}

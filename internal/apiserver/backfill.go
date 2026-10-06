@@ -1,9 +1,12 @@
 package apiserver
 
 import (
+	"cmp"
 	"context"
+	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -14,10 +17,19 @@ import (
 const (
 	// backfillMaxGames caps one whole-set load (like the history's paging).
 	backfillMaxGames = 500
-	// backfillTimeout bounds a run; on a personal key 500 games take ~10 min.
-	backfillTimeout = 30 * time.Minute
-	// backfillRecent is how long a finished load is reported (and not rerun).
+	// backfillPace spaces a load's Riot requests: 50 per 2 minutes, half a
+	// personal key's budget, so live pages and riotsync keep the rest
+	// instead of queueing behind the load. 500 games take ~20 minutes.
+	backfillPace = 2400 * time.Millisecond
+	// backfillTimeout bounds a run.
+	backfillTimeout = 40 * time.Minute
+	// backfillRecent is how long a finished load is reported and not rerun
+	// for its player; a failed one isn't retried for as long either.
 	backfillRecent = 10 * time.Minute
+	// backfillGap is the server-wide pause after any load ends before the
+	// next may start, so loads for different players can't be chained to
+	// keep the key busy.
+	backfillGap = 10 * time.Minute
 	// backfillKeep bounds remembered statuses.
 	backfillKeep = 200
 )
@@ -31,13 +43,22 @@ type BackfillStatus struct {
 	FinishedAt *time.Time `json:"finishedAt,omitempty"`
 }
 
-// backfills runs whole-set loads one at a time server-wide: each spends
-// hundreds of Riot requests from the key the live pages share, so two at
-// once would starve everything else. The zero value is ready.
+// backfills runs whole-set loads one at a time server-wide, with a gap
+// between them: each spends hundreds of Riot requests from the key the
+// live pages share. The zero value is ready; pace and gap default to
+// backfillPace and backfillGap (tests shorten them).
 type backfills struct {
-	mu      sync.Mutex
-	running string // puuid of the load in flight, if any
-	status  map[string]*BackfillStatus
+	mu         sync.Mutex
+	running    string // puuid of the load in flight, if any
+	lastFinish time.Time
+	status     map[string]*BackfillStatus
+	pace, gap  time.Duration
+}
+
+// backfillRefusal says why a load can't start now.
+type backfillRefusal struct {
+	code, message string
+	retryAfter    time.Duration
 }
 
 func (b *backfills) get(puuid string) BackfillStatus {
@@ -49,21 +70,44 @@ func (b *backfills) get(puuid string) BackfillStatus {
 	return BackfillStatus{State: "idle"}
 }
 
-// start begins a load for puuid unless one is running or just finished for
-// it (then its status is returned). busy is set when another player's load
-// is in flight.
-func (b *backfills) start(puuid string, run func(ctx context.Context, report func(ingest.BackfillProgress)) (*time.Time, error)) (st BackfillStatus, busy bool) {
+// minutes renders a wait for messages, rounded up.
+func minutes(d time.Duration) string {
+	n := int((d + time.Minute - 1) / time.Minute)
+	if n <= 1 {
+		return "a minute"
+	}
+	return fmt.Sprintf("%d minutes", n)
+}
+
+// start begins a load for puuid. A running or just finished load for it is
+// reported instead (no refusal). It's refused while another player's load
+// runs, within the gap after any load, and for a while after this
+// player's last load failed.
+func (b *backfills) start(puuid string, run func(ctx context.Context, pace time.Duration, report func(ingest.BackfillProgress)) (*time.Time, error)) (BackfillStatus, *backfillRefusal) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.status == nil {
 		b.status = map[string]*BackfillStatus{}
 	}
-	if cur := b.status[puuid]; cur != nil && (cur.State == "running" ||
-		(cur.State == "done" && cur.FinishedAt != nil && time.Since(*cur.FinishedAt) < backfillRecent)) {
-		return *cur, false
+	pace, gap := cmp.Or(b.pace, backfillPace), cmp.Or(b.gap, backfillGap)
+	if cur := b.status[puuid]; cur != nil {
+		if cur.State == "running" {
+			return *cur, nil
+		}
+		if cur.FinishedAt != nil {
+			if left := backfillRecent - time.Since(*cur.FinishedAt); left > 0 {
+				if cur.State == "done" {
+					return *cur, nil
+				}
+				return *cur, &backfillRefusal{"cooldown", "this player's load just failed; try again in " + minutes(left), left}
+			}
+		}
 	}
 	if b.running != "" {
-		return BackfillStatus{State: "idle"}, true
+		return BackfillStatus{State: "idle"}, &backfillRefusal{"busy", "another player's history is loading; try again in a few minutes", time.Minute}
+	}
+	if left := gap - time.Since(b.lastFinish); !b.lastFinish.IsZero() && left > 0 {
+		return BackfillStatus{State: "idle"}, &backfillRefusal{"busy", "another player's history just loaded; try again in " + minutes(left), left}
 	}
 	b.pruneLocked()
 	cur := &BackfillStatus{State: "running"}
@@ -73,7 +117,7 @@ func (b *backfills) start(puuid string, run func(ctx context.Context, report fun
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), backfillTimeout)
 		defer cancel()
-		since, err := run(ctx, func(p ingest.BackfillProgress) {
+		since, err := run(ctx, pace, func(p ingest.BackfillProgress) {
 			b.mu.Lock()
 			cur.BackfillProgress = p
 			b.mu.Unlock()
@@ -86,9 +130,9 @@ func (b *backfills) start(puuid string, run func(ctx context.Context, report fun
 			log.Printf("backfill %s: %v", puuid, err)
 			cur.State, cur.Error = "failed", riotErrorCode(err)
 		}
-		b.running = ""
+		b.running, b.lastFinish = "", now
 	}()
-	return *cur, false
+	return *cur, nil
 }
 
 // pruneLocked forgets finished loads once there are too many.
@@ -106,7 +150,8 @@ func (b *backfills) pruneLocked() {
 // handlePlayerBackfill serves GET (status) and POST (start) on
 // /api/v1/players/{puuid}/backfill[?region=<platform>]: loading every game
 // of the player's current set from Riot, from the set's start (the patch
-// calendar's first patch) up to backfillMaxGames, in the background.
+// calendar's first patch) up to backfillMaxGames, in the background. Only
+// stored players can be loaded; refusals are 409 with Retry-After.
 func (s *Server) handlePlayerBackfill(w http.ResponseWriter, r *http.Request) {
 	puuid := r.PathValue("puuid")
 	if !validPUUID(puuid) {
@@ -122,7 +167,18 @@ func (s *Server) handlePlayerBackfill(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_region", "region must be a platform like na1")
 		return
 	}
-	st, busy := s.backfill.start(puuid, func(ctx context.Context, report func(ingest.BackfillProgress)) (*time.Time, error) {
+	// Only players we already know (a history page synced them): a load
+	// can't be pointed at arbitrary PUUIDs.
+	sets, err := s.Store.PlayerSets(r.Context(), puuid)
+	if err != nil {
+		writeDBError(w, r, err)
+		return
+	}
+	if len(sets) == 0 {
+		writeError(w, http.StatusNotFound, "unknown_player", "no stored games for this player; open their profile first")
+		return
+	}
+	st, refused := s.backfill.start(puuid, func(ctx context.Context, pace time.Duration, report func(ingest.BackfillProgress)) (*time.Time, error) {
 		since, err := s.currentSetStart(ctx)
 		if err != nil {
 			return nil, err
@@ -133,15 +189,15 @@ func (s *Server) handlePlayerBackfill(w http.ResponseWriter, r *http.Request) {
 			// which the profile's set filter leaves out anyway.
 			since = since.Add(-24 * time.Hour)
 		}
-		_, err = ingest.BackfillSet(ctx, s.Riot, s.Store, platform, puuid, since, backfillMaxGames, report)
+		_, err = ingest.BackfillSet(ctx, s.Riot, s.Store, platform, puuid, since, backfillMaxGames, pace, report)
 		if since.IsZero() {
 			return nil, err
 		}
 		return &since, err
 	})
-	if busy {
-		w.Header().Set("Retry-After", "60")
-		writeError(w, http.StatusConflict, "busy", "another player's history is loading; try again in a few minutes")
+	if refused != nil {
+		w.Header().Set("Retry-After", strconv.Itoa(int(refused.retryAfter.Seconds()+0.5)))
+		writeError(w, http.StatusConflict, refused.code, refused.message)
 		return
 	}
 	writeJSON(w, http.StatusAccepted, st)

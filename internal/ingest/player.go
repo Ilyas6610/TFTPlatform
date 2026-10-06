@@ -44,8 +44,9 @@ func SyncPlayerMatches(ctx context.Context, riot *riotapi.Client, st *store.Stor
 // SyncOlderMatches fetches one older page of a player's history: the count
 // match ids after the start most recent, and any of those matches not yet
 // stored (one request for the ids plus one per new match). It doesn't touch
-// the sync time, which tracks the newest page. The player must already be
-// stored (a newest-page sync confirmed the PUUID).
+// the sync time, which tracks the newest page. Like the newest-page
+// sync it stores a PUUID only once Riot returns match ids for it; callers
+// bound how often it runs (backgroundJobs).
 func SyncOlderMatches(ctx context.Context, riot *riotapi.Client, st *store.Store, platform riotapi.PlatformRegion, puuid string, start, count int) (CrawlResult, error) {
 	routing, err := riotapi.RoutingForPlatform(platform)
 	if err != nil {
