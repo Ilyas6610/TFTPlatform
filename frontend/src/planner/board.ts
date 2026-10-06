@@ -16,6 +16,8 @@ export const AUGMENT_COUNT = AUGMENT_SLOTS.length;
 export const MAX_LEVEL = 10;
 export const DEFAULT_LEVEL = 8;
 export const MAX_TITLE = 40;
+/** The most evolved traits any unit can hold (Kha'Zix's four choices). */
+export const MAX_EXTRA_TRAITS = 4;
 
 export interface PlacedUnit {
   id: string;
@@ -23,6 +25,8 @@ export interface PlacedUnit {
   /** 0 .. ROWS*COLS-1, row-major; row 0 is the front line. */
   pos: number;
   items: string[];
+  /** Trait apiNames the unit gained by evolving (Kha'Zix); see buildTraitChoices. */
+  extra: string[];
 }
 
 export interface Board {
@@ -52,7 +56,8 @@ const clampStar = (n: number): 1 | 2 | 3 => (n >= 3 ? 3 : n === 2 ? 2 : 1);
 /**
  * The board as URL parameters:
  *   set=18  t=<title>  lv=8  a1= a2= a3= <augment> (first, second, third slot)
- *   u=<unitId>.<star>.<pos>[.<item>,<item>,<item>] (repeated)
+ *   u=<unitId>.<star>.<pos>[.<item>,<item>,<item>[.<trait>,<trait>]] (repeated;
+ *     the item field stays empty when only evolved traits are given)
  * Positions and ids use only characters that need no URL escaping.
  */
 export function encodeBoard(b: Board): URLSearchParams {
@@ -62,7 +67,12 @@ export function encodeBoard(b: Board): URLSearchParams {
   if (b.level !== DEFAULT_LEVEL) q.set("lv", String(b.level));
   b.augments.forEach((a, i) => a && q.set(`a${i + 1}`, a));
   for (const u of [...b.units].sort((x, y) => x.pos - y.pos))
-    q.append("u", `${u.id}.${u.star}.${u.pos}${u.items.length ? "." + u.items.join(",") : ""}`);
+    q.append(
+      "u",
+      `${u.id}.${u.star}.${u.pos}` +
+        (u.items.length || u.extra.length ? "." + u.items.join(",") : "") +
+        (u.extra.length ? "." + u.extra.join(",") : ""),
+    );
   return q;
 }
 
@@ -89,15 +99,16 @@ export function decodeBoard(q: URLSearchParams, defaultSet: number): Board {
   }
   const taken = new Set<number>();
   for (const raw of q.getAll("u")) {
-    const [id, star, pos, items = ""] = raw.split(".");
+    const [id, star, pos, items = "", extra = ""] = raw.split(".");
     const p = Number(pos);
     if (!id || !ID.test(id) || !Number.isInteger(p) || p < 0 || p >= ROWS * COLS || taken.has(p)) continue;
     const list = items
       .split(",")
       .filter((i) => ID.test(i))
       .slice(0, MAX_ITEMS);
+    const traits = [...new Set(extra.split(",").filter((t) => ID.test(t)))].slice(0, MAX_EXTRA_TRAITS);
     taken.add(p);
-    b.units.push({ id, star: clampStar(Number(star)), pos: p, items: list });
+    b.units.push({ id, star: clampStar(Number(star)), pos: p, items: list, extra: traits });
   }
   return b;
 }
@@ -107,6 +118,8 @@ export interface Dropped {
   units: number;
   items: number;
   augments: number;
+  /** Evolved traits the unit can't have. */
+  traits: number;
 }
 
 /** Removes units, items and augments the set data doesn't know. */
@@ -114,7 +127,8 @@ export function sanitize(b: Board, data: SetData): { board: Board; dropped: Drop
   const units = new Set(data.units.map((u) => u.apiName));
   const items = new Set(data.items.map((i) => i.apiName));
   const augmentById = new Map(data.augments.map((a) => [a.apiName, a]));
-  const dropped: Dropped = { units: 0, items: 0, augments: 0 };
+  const dropped: Dropped = { units: 0, items: 0, augments: 0, traits: 0 };
+  const choices = buildTraitChoices(data);
   const board: Board = {
     ...b,
     units: b.units.flatMap((u) => {
@@ -124,7 +138,10 @@ export function sanitize(b: Board, data: SetData): { board: Board; dropped: Drop
       }
       const kept = u.items.filter((i) => items.has(i));
       dropped.items += u.items.length - kept.length;
-      return [{ ...u, items: kept }];
+      const allowed = new Set(choices.get(u.id)?.traits.map((t) => t.id));
+      const extra = u.extra.filter((t) => allowed.has(t));
+      dropped.traits += u.extra.length - extra.length;
+      return [{ ...u, items: kept, extra }];
     }),
     // Unknown augments go, and so do ones the slot's stage can't offer.
     augments: b.augments.map((a, slot) => {
@@ -135,7 +152,7 @@ export function sanitize(b: Board, data: SetData): { board: Board; dropped: Drop
       return null;
     }),
   };
-  return { board, dropped };
+  return { board: normalizeForms(board, buildFormIndex(data.units)), dropped };
 }
 
 // ---- Edits (pure: each returns a new board) --------------------------------
@@ -151,7 +168,7 @@ export function firstFreeCell(b: Board): number | null {
 export function addUnit(b: Board, id: string, pos?: number): Board {
   const at = pos ?? firstFreeCell(b);
   if (at === null || at < 0 || at >= ROWS * COLS || b.units.some((u) => u.pos === at)) return b;
-  return { ...b, units: [...b.units, { id, star: 1, pos: at, items: [] }] };
+  return { ...b, units: [...b.units, { id, star: 1, pos: at, items: [], extra: [] }] };
 }
 
 export const removeUnit = (b: Board, pos: number): Board => ({ ...b, units: b.units.filter((u) => u.pos !== pos) });
@@ -226,9 +243,91 @@ export function buildFormIndex(units: SetUnit[]): FormIndex {
   return idx;
 }
 
-/** Swaps the unit at `pos` for another form of the same unit (or its base); everything else stays. */
-export function setForm(b: Board, pos: number, id: string): Board {
-  return { ...b, units: b.units.map((u) => (u.pos === pos ? { ...u, id } : u)) };
+/**
+ * Sets the trait of a unit with forms (Lux) to form `id` (or its base for
+ * "none"). Every copy of that unit on the board takes the same form: all
+ * Avatars share the trait that was chosen.
+ */
+export function setForm(b: Board, pos: number, id: string, idx: FormIndex): Board {
+  const at = b.units.find((u) => u.pos === pos);
+  if (!at) return b;
+  const base = idx.baseOf.get(at.id) ?? at.id;
+  return { ...b, units: b.units.map((u) => ((idx.baseOf.get(u.id) ?? u.id) === base ? { ...u, id } : u)) };
+}
+
+/**
+ * Makes all copies of a unit with forms agree: the first copy (front line
+ * first) that has a trait chosen decides, so a Lux added to a board whose Lux
+ * is Coven comes in as Coven too.
+ */
+export function normalizeForms(b: Board, idx: FormIndex): Board {
+  if (idx.forms.size === 0) return b;
+  const decided = new Map<string, string>(); // base -> form id
+  for (const u of [...b.units].sort((x, y) => x.pos - y.pos)) {
+    const base = idx.baseOf.get(u.id);
+    if (base && !decided.has(base)) decided.set(base, u.id);
+  }
+  let changed = false;
+  const units = b.units.map((u) => {
+    const base = idx.baseOf.get(u.id) ?? (idx.forms.has(u.id) ? u.id : undefined);
+    const want = base && decided.get(base);
+    if (!want || want === u.id) return u;
+    changed = true;
+    return { ...u, id: want };
+  });
+  return changed ? { ...b, units } : b;
+}
+
+// ---- Units that gain traits by evolving (Kha'Zix) ---------------------------
+
+export interface TraitChoice {
+  /** Trait apiName, as stored in links. */
+  id: string;
+  name: string;
+}
+
+export interface TraitChoices {
+  /** Most traits the unit can end up with from evolving. */
+  max: number;
+  traits: TraitChoice[];
+}
+
+/**
+ * Reads, from trait text like "Takedowns evolve Kha'Zix, permanently granting
+ * him your choice of Executioner, Rapidfire, Ravager, or Spellweaver.", which
+ * unit picks up which extra traits. Only traits that exist in the set and that
+ * the unit doesn't already have are kept.
+ */
+export function buildTraitChoices(data: Pick<SetData, "units" | "traits">): Map<string, TraitChoices> {
+  const unitByName = new Map(data.units.map((u) => [u.name, u]));
+  const traitByName = new Map(data.traits.map((t) => [t.name, t]));
+  const out = new Map<string, TraitChoices>();
+  const re = /evolve ([^,.]+?), permanently granting \w+ your choice of ([^.]+)\./g;
+  for (const t of data.traits) {
+    for (const text of [t.desc, ...t.breakpoints.map((bp) => bp.text ?? "")]) {
+      for (const m of (text ?? "").matchAll(re)) {
+        const unit = unitByName.get(m[1].trim());
+        if (!unit) continue;
+        const traits: TraitChoice[] = m[2]
+          .split(/,\s*(?:or\s+)?|\s+or\s+/)
+          .map((n) => traitByName.get(n.trim()))
+          .filter((tr): tr is SetTrait => !!tr && !unit.traits.includes(tr.name))
+          .map((tr) => ({ id: tr.apiName, name: tr.name }));
+        if (traits.length > 0) out.set(unit.apiName, { max: Math.min(traits.length, MAX_EXTRA_TRAITS), traits });
+      }
+    }
+  }
+  return out;
+}
+
+/** Adds or removes an evolved trait on the unit at `pos`, up to the unit's maximum. */
+export function toggleExtraTrait(b: Board, pos: number, trait: string, choices: TraitChoices): Board {
+  const unit = b.units.find((u) => u.pos === pos);
+  if (!unit || !choices.traits.some((t) => t.id === trait)) return b;
+  const on = unit.extra.includes(trait);
+  if (!on && unit.extra.length >= choices.max) return b;
+  const extra = on ? unit.extra.filter((t) => t !== trait) : [...unit.extra, trait];
+  return { ...b, units: b.units.map((u) => (u.pos === pos ? { ...u, extra } : u)) };
 }
 
 export const setStar = (b: Board, pos: number, star: 1 | 2 | 3): Board => ({
@@ -282,6 +381,7 @@ export function computeTraits(b: Board, data: SetData): TraitCount[] {
   const itemById = new Map<string, SetItem>(data.items.map((i) => [i.apiName, i]));
 
   const forms = buildFormIndex(data.units);
+  const traitNameByApi = new Map(data.traits.map((t) => [t.apiName, t.name]));
   // trait name -> distinct unit ids (+ emblem holders) and what each counts for
   const members = new Map<string, Map<string, number>>();
   const add = (trait: string, unit: string, weight = 1) => {
@@ -295,6 +395,11 @@ export function computeTraits(b: Board, data: SetData): TraitCount[] {
     // A form's chosen trait (Lux's) is counted twice.
     const chosen = forms.chosen.get(placed.id);
     for (const t of unit.traits) add(t, placed.id, t === chosen ? 2 : 1);
+    // Traits gained by evolving count once each (never again for one it has).
+    for (const tid of placed.extra) {
+      const name = traitNameByApi.get(tid);
+      if (name && !unit.traits.includes(name)) add(name, placed.id);
+    }
     for (const it of placed.items) {
       const item = itemById.get(it);
       if (item?.kind !== "emblem") continue;

@@ -12,6 +12,7 @@ import {
   Board,
   COLS,
   FormIndex,
+  TraitChoices,
   MAX_ITEMS,
   MAX_LEVEL,
   MAX_TITLE,
@@ -20,6 +21,7 @@ import {
   addUnit,
   augmentsByTier,
   buildFormIndex,
+  buildTraitChoices,
   boardCost,
   cleanTitle,
   clickCell,
@@ -29,12 +31,14 @@ import {
   encodeBoard,
   holdableItems,
   moveUnit,
+  normalizeForms,
   removeItem,
   removeUnit,
   sanitize,
   setAugment,
   setForm,
   setStar,
+  toggleExtraTrait,
 } from "../planner/board";
 
 // Board planner. The whole board lives in the page URL (see planner/board.ts),
@@ -74,7 +78,7 @@ export default function PlannerPage() {
   // Until set data arrives the board is shown as decoded; afterwards, with
   // anything the set doesn't know removed.
   const { board, dropped } = useMemo(
-    () => (data ? sanitize(raw, data) : { board: raw, dropped: { units: 0, items: 0, augments: 0 } }),
+    () => (data ? sanitize(raw, data) : { board: raw, dropped: { units: 0, items: 0, augments: 0, traits: 0 } }),
     [raw, data],
   );
   const names = useMemo(() => buildNames(data), [data]);
@@ -85,7 +89,9 @@ export default function PlannerPage() {
     setParams(
       (prev) => {
         const current = decodeBoard(prev, CURRENT_TFT_SET);
-        return encodeBoard(edit(data ? sanitize(current, data).board : current));
+        const edited = edit(data ? sanitize(current, data).board : current);
+        // All copies of a unit with forms (Lux) share one trait.
+        return encodeBoard(data ? normalizeForms(edited, buildFormIndex(data.units)) : edited);
       },
       { replace: true },
     );
@@ -97,6 +103,7 @@ export default function PlannerPage() {
   const unitInfo = (id: string) => data?.units.find((u) => u.apiName === id);
 
   const allItems = useMemo(() => (data ? holdableItems(data) : []), [data]);
+  const traitChoices = useMemo(() => (data ? buildTraitChoices(data) : new Map<string, TraitChoices>()), [data]);
   const formIndex = useMemo(() => buildFormIndex(data?.units ?? []), [data]);
   // Units with a chosen trait show once (their base); the trait is a menu on the placed unit.
   const pickableUnits = useMemo(() => (data?.units ?? []).filter((u) => !formIndex.baseOf.has(u.apiName)), [data, formIndex]);
@@ -183,9 +190,9 @@ export default function PlannerPage() {
           <span>Cost {cost}g</span>
         </div>
         {error && <div className="error-box">{error}</div>}
-        {(dropped.units > 0 || dropped.items > 0 || dropped.augments > 0) && (
+        {(dropped.units > 0 || dropped.items > 0 || dropped.augments > 0 || dropped.traits > 0) && (
           <p className="warning-box">
-            This link had {dropped.units} units, {dropped.items} items and {dropped.augments} augments that aren&apos;t
+            This link had {dropped.units} units, {dropped.items} items, {dropped.augments} augments and {dropped.traits} traits that aren&apos;t
             in Set {set}; they were skipped.
           </p>
         )}
@@ -293,6 +300,7 @@ export default function PlannerPage() {
                 items={allItems}
                 components={components}
                 formIndex={formIndex}
+                traitChoices={traitChoices}
                 update={update}
                 onRemoved={() => setSelected(null)}
               />
@@ -388,6 +396,7 @@ function UnitEditor({
   items,
   components,
   formIndex,
+  traitChoices,
   update,
   onRemoved,
 }: {
@@ -398,6 +407,7 @@ function UnitEditor({
   items: SetItem[];
   components: SetItem[];
   formIndex: FormIndex;
+  traitChoices: Map<string, TraitChoices>;
   update: (edit: (b: Board) => Board) => void;
   onRemoved: () => void;
 }) {
@@ -406,6 +416,7 @@ function UnitEditor({
   const info = data?.units.find((u) => u.apiName === unit.id);
   const baseId = formIndex.baseOf.get(unit.id) ?? unit.id;
   const forms = formIndex.forms.get(baseId) ?? [];
+  const evolve = traitChoices.get(unit.id);
   return (
     <div className="planner-editor">
       <h3 className="game-label">
@@ -430,7 +441,7 @@ function UnitEditor({
       {forms.length > 0 && (
         <label className="planner-form">
           <span className="muted">Trait</span>
-          <select value={unit.id} aria-label="Trait" onChange={(e) => update((b) => setForm(b, pos, e.target.value))}>
+          <select value={unit.id} aria-label="Trait" onChange={(e) => update((b) => setForm(b, pos, e.target.value, formIndex))}>
             <option value={baseId}>None chosen</option>
             {forms.map((f) => (
               <option key={f.id} value={f.id}>
@@ -438,8 +449,30 @@ function UnitEditor({
               </option>
             ))}
           </select>
-          <span className="muted">counts twice for its trait bonus</span>
+          <span className="muted">counts twice; all {names.name(baseId)} share it</span>
         </label>
+      )}
+      {evolve && (
+        <fieldset className="planner-evolve">
+          <legend className="muted">
+            Evolved traits ({unit.extra.length}/{evolve.max})
+          </legend>
+          {evolve.traits.map((t) => {
+            const on = unit.extra.includes(t.id);
+            return (
+              <label key={t.id} className={on ? "on" : undefined}>
+                <input
+                  type="checkbox"
+                  checked={on}
+                  disabled={!on && unit.extra.length >= evolve.max}
+                  onChange={() => update((b) => toggleExtraTrait(b, pos, t.id, evolve))}
+                />
+                <GameIcon kind="traits" id={t.id} size={18} fallbackSrc={names.icon(t.id)} fallbackName={t.name} />
+                {t.name}
+              </label>
+            );
+          })}
+        </fieldset>
       )}
       <div className="planner-items">
         {unit.items.map((it, i) => (

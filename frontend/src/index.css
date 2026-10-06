@@ -1887,3 +1887,25 @@ details.patch[open] > summary::before {
   gap: 8px;
   margin-bottom: 10px;
 }
+
+/* Planner: traits a unit gains by evolving (Kha'Zix) */
+.planner-evolve {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 0 0 10px;
+  padding: 6px 10px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.planner-evolve label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.planner-evolve label.on {
+  color: var(--accent);
+}

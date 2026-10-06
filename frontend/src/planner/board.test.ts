@@ -7,6 +7,9 @@ import {
   addItem,
   addUnit,
   boardCost,
+  buildTraitChoices,
+  toggleExtraTrait,
+  normalizeForms,
   buildFormIndex,
   setForm,
   clickCell,
@@ -97,7 +100,7 @@ describe("sanitize", () => {
     expect(board.units.map((u) => u.id)).toEqual(["U_A"]);
     expect(board.units[0].items).toEqual(["I_IE"]);
     expect(board.augments).toEqual(["A_One", null, null]);
-    expect(dropped).toEqual({ units: 1, items: 1, augments: 1 });
+    expect(dropped).toEqual({ units: 1, items: 1, augments: 1, traits: 0 });
   });
 });
 
@@ -272,8 +275,9 @@ describe("units with a chosen trait (Lux)", () => {
     augments: [],
   } as unknown as SetData;
 
+  const idx = buildFormIndex(luxData.units);
+
   it("recognises forms by name, base and trait", () => {
-    const idx = buildFormIndex(luxData.units);
     expect(idx.forms.get("U_Lux")).toEqual([
       { id: "U_Lux_Blade", trait: "Blade" },
       { id: "U_Lux_Moon", trait: "Sage" },
@@ -288,8 +292,8 @@ describe("units with a chosen trait (Lux)", () => {
   it("changing the trait swaps the unit for that form and keeps its cell, stars and items", () => {
     let b = addUnit(emptyBoard(18), "U_Lux", 9);
     b = { ...b, units: [{ ...b.units[0], star: 2, items: ["I_X"] }] };
-    const back = setForm(setForm(b, 9, "U_Lux_Blade"), 9, "U_Lux");
-    expect(setForm(b, 9, "U_Lux_Blade").units).toEqual([{ id: "U_Lux_Blade", star: 2, pos: 9, items: ["I_X"] }]);
+    const back = setForm(setForm(b, 9, "U_Lux_Blade", idx), 9, "U_Lux", idx);
+    expect(setForm(b, 9, "U_Lux_Blade", idx).units).toEqual([{ id: "U_Lux_Blade", star: 2, pos: 9, items: ["I_X"], extra: [] }]);
     expect(back.units).toEqual(b.units);
   });
 
@@ -300,12 +304,113 @@ describe("units with a chosen trait (Lux)", () => {
     expect(t.Blade.count).toBe(3); // Lux counts 2, A counts 1
     expect(t.Blade.tier).toBe(0);
     expect(t.Avatar.count).toBe(1);
-    b = setForm(b, 0, "U_Lux"); // no trait chosen
+    b = setForm(b, 0, "U_Lux", idx); // no trait chosen
     t = traits(b);
     expect(t.Blade.count).toBe(1);
     expect(t.Avatar.count).toBe(1);
-    b = addUnit(addUnit(setForm(b, 0, "U_Lux_Blade"), "U_B", 2), "U_Odd2", 3);
+    b = addUnit(addUnit(setForm(b, 0, "U_Lux_Blade", idx), "U_B", 2), "U_Odd2", 3);
     expect(traits(b).Blade.count).toBe(5); // 2 + A + B + Odd2
     expect(traits(b).Blade.tier).toBe(1);
+  });
+
+  it("every copy of the unit takes the trait that is chosen", () => {
+    let b = addUnit(addUnit(addUnit(emptyBoard(18), "U_Lux", 0), "U_A", 1), "U_Lux", 5);
+    b = setForm(b, 5, "U_Lux_Blade", idx);
+    expect(b.units.filter((u) => u.id.startsWith("U_Lux")).map((u) => u.id)).toEqual(["U_Lux_Blade", "U_Lux_Blade"]);
+    b = setForm(b, 0, "U_Lux_Moon", idx);
+    expect(b.units.filter((u) => u.id.startsWith("U_Lux")).map((u) => u.id)).toEqual(["U_Lux_Moon", "U_Lux_Moon"]);
+    b = setForm(b, 5, "U_Lux", idx); // back to none, for both
+    expect(b.units.filter((u) => u.id.startsWith("U_Lux")).map((u) => u.id)).toEqual(["U_Lux", "U_Lux"]);
+    expect(b.units.find((u) => u.id === "U_A")).toBeTruthy(); // others untouched
+  });
+
+  it("a Lux added later joins the trait already chosen, and links with mixed forms are made to agree", () => {
+    let b = setForm(addUnit(emptyBoard(18), "U_Lux", 9), 9, "U_Lux_Blade", idx);
+    b = normalizeForms(addUnit(b, "U_Lux", 2), idx); // new base Lux at the front
+    expect(b.units.map((u) => u.id)).toEqual(["U_Lux_Blade", "U_Lux_Blade"]);
+    const mixed = decodeBoard(new URLSearchParams("u=U_Lux_Moon.1.3&u=U_Lux_Blade.1.8&u=U_Lux.1.20"), 18);
+    const clean = sanitize(mixed, luxData).board;
+    expect(clean.units.map((u) => u.id)).toEqual(["U_Lux_Moon", "U_Lux_Moon", "U_Lux_Moon"]); // front-most chosen form wins
+  });
+
+  it("two Luxes are one unit for trait counts: the chosen trait is still just 2", () => {
+    const b = setForm(addUnit(addUnit(emptyBoard(18), "U_Lux", 0), "U_Lux", 1), 0, "U_Lux_Blade", idx);
+    const t = Object.fromEntries(computeTraits(b, luxData).map((x) => [x.name, x]));
+    expect(t.Blade.count).toBe(2);
+  });
+});
+
+describe("traits gained by evolving (Kha'Zix)", () => {
+  const kz = {
+    units: [
+      { apiName: "U_Kha", name: "Kha'Zix", cost: 3, traits: ["Rival"] },
+      { apiName: "U_Rengar", name: "Rengar", cost: 4, traits: ["Rival"] },
+      { apiName: "U_X", name: "X", cost: 1, traits: ["Slayer"] },
+    ],
+    traits: [
+      { apiName: "T_Rival", name: "Rival", desc: "", breakpoints: [{ minUnits: 1, style: 1, text: "(1) Takedowns evolve Kha'Zix, permanently granting him your choice of Executioner, Rapidfire, Ravager, or Spellweaver.\n\nRengar grants gold." }] },
+      { apiName: "T_Exec", name: "Executioner", breakpoints: [{ minUnits: 2, style: 1 }, { minUnits: 4, style: 2 }] },
+      { apiName: "T_Rapid", name: "Rapidfire", breakpoints: [{ minUnits: 2, style: 1 }] },
+      { apiName: "T_Rav", name: "Ravager", breakpoints: [{ minUnits: 2, style: 1 }] },
+      { apiName: "T_Spell", name: "Spellweaver", breakpoints: [{ minUnits: 2, style: 1 }] },
+      { apiName: "T_Slayer", name: "Slayer", breakpoints: [{ minUnits: 2, style: 1 }] },
+    ],
+    items: [],
+    augments: [],
+  } as unknown as SetData;
+  const choices = buildTraitChoices(kz).get("U_Kha")!;
+
+  it("reads the choices from the Rival trait's text", () => {
+    expect(choices.traits.map((t) => t.name)).toEqual(["Executioner", "Rapidfire", "Ravager", "Spellweaver"]);
+    expect(choices.max).toBe(4);
+    expect(buildTraitChoices(kz).has("U_Rengar")).toBe(false);
+  });
+
+  it("a unit can hold each choice once, up to the maximum", () => {
+    let b = addUnit(emptyBoard(18), "U_Kha", 4);
+    for (const t of ["T_Exec", "T_Rapid", "T_Rav", "T_Spell"]) b = toggleExtraTrait(b, 4, t, choices);
+    expect(b.units[0].extra).toEqual(["T_Exec", "T_Rapid", "T_Rav", "T_Spell"]);
+    b = toggleExtraTrait(b, 4, "T_Rav", choices); // off again
+    expect(b.units[0].extra).toEqual(["T_Exec", "T_Rapid", "T_Spell"]);
+    expect(toggleExtraTrait(b, 4, "T_Slayer", choices)).toBe(b); // not one of its choices
+    const capped = { ...choices, max: 2 };
+    expect(toggleExtraTrait(addUnit(emptyBoard(18), "U_Kha", 4), 4, "T_Exec", capped).units[0].extra).toEqual(["T_Exec"]);
+  });
+
+  it("each evolved trait counts for the unit, and the unit's own trait is unchanged", () => {
+    let b = addUnit(addUnit(emptyBoard(18), "U_Kha", 0), "U_X", 1);
+    b = toggleExtraTrait(toggleExtraTrait(b, 0, "T_Exec", choices), 0, "T_Rapid", choices);
+    const t = Object.fromEntries(computeTraits(b, kz).map((x) => [x.name, x]));
+    expect(t.Executioner.count).toBe(1);
+    expect(t.Rapidfire.count).toBe(1);
+    expect(t.Rival.count).toBe(1);
+    const two = toggleExtraTrait(addUnit(b, "U_Rengar", 2), 0, "T_Rav", choices);
+    expect(Object.fromEntries(computeTraits(two, kz).map((x) => [x.name, x.count])).Rival).toBe(2);
+  });
+
+  it("round-trips through the link, with and without items", () => {
+    let b = addUnit(addUnit(emptyBoard(18), "U_Kha", 6), "U_X", 7);
+    b = toggleExtraTrait(toggleExtraTrait(b, 6, "T_Exec", choices), 6, "T_Spell", choices);
+    b = addItem(b, 6, "I_IE");
+    b = addItem(addUnit(b, "U_Rengar", 9), 9, "I_IE");
+    const q = encodeBoard(b);
+    expect(q.getAll("u")).toEqual(["U_Kha.1.6.I_IE.T_Exec,T_Spell", "U_X.1.7", "U_Rengar.1.9.I_IE"]);
+    expect(decodeBoard(new URLSearchParams(q.toString()), 18).units.map((u) => u.extra)).toEqual([["T_Exec", "T_Spell"], [], []]);
+    const onlyTraits = toggleExtraTrait(addUnit(emptyBoard(18), "U_Kha", 3), 3, "T_Rav", choices);
+    expect(encodeBoard(onlyTraits).get("u")).toBe("U_Kha.1.3..T_Rav");
+    expect(decodeBoard(encodeBoard(onlyTraits), 18).units[0]).toEqual({ id: "U_Kha", star: 1, pos: 3, items: [], extra: ["T_Rav"] });
+  });
+
+  it("a loaded link keeps only the traits the unit can have, at most four", () => {
+    const b = decodeBoard(
+      new URLSearchParams("u=U_Kha.1.0..T_Exec,T_Slayer,T_Nope,T_Exec,T_Rav&u=U_X.1.1..T_Exec&u=U_Kha.1.2..a,b,c,d,e,f"),
+      18,
+    );
+    expect(b.units[2].extra).toHaveLength(4); // capped while decoding
+    const { board, dropped } = sanitize(b, kz);
+    expect(board.units[0].extra).toEqual(["T_Exec", "T_Rav"]);
+    expect(board.units[1].extra).toEqual([]); // X can't evolve
+    expect(board.units[2].extra).toEqual([]);
+    expect(dropped.traits).toBe(2 + 1 + 4); // Slayer + Nope, X's Exec, and the four unknown ones
   });
 });
