@@ -263,11 +263,11 @@ export function boardCost(b: Board, data: SetData): number {
   return b.units.reduce((sum, u) => sum + (cost.get(u.id) ?? 0) * 3 ** (u.star - 1), 0);
 }
 
-/** Items a unit can hold in the planner. */
-export const HOLDABLE_KINDS = new Set(["component", "completed", "emblem", "artifact", "radiant"]);
+/** Items a unit can hold in the planner (components are left out: they are only recipe parts). */
+export const HOLDABLE_KINDS = new Set(["completed", "emblem", "artifact", "radiant"]);
 
 export function holdableItems(data: SetData): SetItem[] {
-  const order: Record<string, number> = { completed: 0, radiant: 1, artifact: 2, emblem: 3, component: 4 };
+  const order: Record<string, number> = { completed: 0, radiant: 1, artifact: 2, emblem: 3 };
   return data.items
     .filter((i) => HOLDABLE_KINDS.has(i.kind))
     .sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9) || a.name.localeCompare(b.name));

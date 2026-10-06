@@ -3,10 +3,10 @@ import { useSearchParams } from "react-router-dom";
 import { ApiError, SetData, SetItem, getSetData } from "../api/client";
 import { GameIcon } from "../assets/tft";
 import { Picker, PickerOption } from "../components/Picker";
-import { ItemTable, UnitTable } from "../components/PickTables";
+import { ItemTable, UnitGrid } from "../components/PickTables";
 import { Names, TIER_STYLE, buildNames } from "../components/stats";
 import { CURRENT_TFT_SET } from "../config";
-import { AUGMENT_SLOTS, availableAt } from "../planner/augmentStages";
+import { AUGMENT_SLOTS, augmentTier, availableAt } from "../planner/augmentStages";
 import {
   Board,
   COLS,
@@ -36,7 +36,6 @@ import {
 // so copying the address shares it: no account or server storage needed.
 
 const AUGMENT_TIERS: Record<number, string> = { 1: "Silver", 2: "Gold", 3: "Prismatic" };
-// Tier 0 augments (set-specific specials) have no tier name.
 const tierName = (tier: number) => AUGMENT_TIERS[tier] ?? "";
 
 export default function PlannerPage() {
@@ -64,7 +63,17 @@ export default function PlannerPage() {
     [raw, data],
   );
   const names = useMemo(() => buildNames(data), [data]);
-  const update = (next: Board) => setParams(encodeBoard(next), { replace: true });
+  // Edits are applied to the URL's current board, not to the board this
+  // render saw: two quick edits (clicking several units) would otherwise
+  // each start from the same stale board and the second would undo the first.
+  const update = (edit: (b: Board) => Board) =>
+    setParams(
+      (prev) => {
+        const current = decodeBoard(prev, CURRENT_TFT_SET);
+        return encodeBoard(edit(data ? sanitize(current, data).board : current));
+      },
+      { replace: true },
+    );
 
   const traits = useMemo(() => (data ? computeTraits(board, data) : []), [board, data]);
   const cost = data ? boardCost(board, data) : 0;
@@ -81,7 +90,7 @@ export default function PlannerPage() {
           .map((a) => ({
             id: a.apiName,
             boards: 0,
-            label: tierName(a.tier) ? `${a.name} (${tierName(a.tier)})` : a.name,
+            label: tierName(augmentTier(a)) ? `${a.name} (${tierName(augmentTier(a))})` : a.name,
           }))
       : [];
 
@@ -89,7 +98,7 @@ export default function PlannerPage() {
     const here = unitAt(pos);
     if (selected !== null && selected !== pos && unitAt(selected)) {
       // Move (or swap) the selected unit here; the selection follows it.
-      update(moveUnit(board, selected, pos));
+      update((b) => moveUnit(b, selected, pos));
       setSelected(pos);
     } else {
       setSelected(here && selected !== pos ? pos : null);
@@ -122,12 +131,12 @@ export default function PlannerPage() {
               value={board.title}
               maxLength={MAX_TITLE}
               placeholder="My board"
-              onChange={(e) => update({ ...board, title: cleanTitle(e.target.value) })}
+              onChange={(e) => update((b) => ({ ...b, title: cleanTitle(e.target.value) }))}
             />
           </label>
           <label className="muted">
             Level{" "}
-            <select value={board.level} onChange={(e) => update({ ...board, level: Number(e.target.value) })}>
+            <select value={board.level} onChange={(e) => update((b) => ({ ...b, level: Number(e.target.value) }))}>
               {Array.from({ length: MAX_LEVEL }, (_, i) => i + 1).map((n) => (
                 <option key={n} value={n}>
                   {n}
@@ -142,7 +151,7 @@ export default function PlannerPage() {
             <button
               type="button"
               onClick={() => {
-                update(emptyBoard(set));
+                update(() => emptyBoard(set));
                 setSelected(null);
               }}
             >
@@ -188,7 +197,7 @@ export default function PlannerPage() {
                     e.preventDefault();
                     const from = Number(e.dataTransfer.getData("text/plain"));
                     if (Number.isInteger(from)) {
-                      update(moveUnit(board, from, pos));
+                      update((b) => moveUnit(b, from, pos));
                       setSelected(pos);
                     }
                   }}
@@ -233,11 +242,11 @@ export default function PlannerPage() {
         <div className="panel planner-units">
           <h3>Units</h3>
           {data ? (
-            <UnitTable
+            <UnitGrid
               units={data.units}
               names={names}
               disabled={board.units.length >= ROWS * COLS}
-              onPick={(id) => update(addUnit(board, id))}
+              onPick={(id) => update((b) => addUnit(b, id))}
             />
           ) : (
             <p className="muted">Loading units…</p>
@@ -255,7 +264,7 @@ export default function PlannerPage() {
                 names={names}
                 data={data}
                 items={allItems}
-                update={(b) => update(b)}
+                update={update}
                 onRemoved={() => setSelected(null)}
               />
             ) : (
@@ -263,7 +272,7 @@ export default function PlannerPage() {
             )}
           </div>
 
-          <div className="panel">
+          <div className="panel planner-augments-panel">
             <h3>Augments</h3>
             <div className="planner-augments">
               {AUGMENT_SLOTS.map((slot, i) => {
@@ -285,13 +294,13 @@ export default function PlannerPage() {
                         />
                         <span title={aug?.desc}>
                           <strong>{names.name(id)}</strong>
-                          {aug && tierName(aug.tier) && <span className="muted"> · {tierName(aug.tier)}</span>}
+                          {aug && tierName(augmentTier(aug)) && <span className="muted"> · {tierName(augmentTier(aug))}</span>}
                         </span>
                         <button
                           type="button"
                           className="remove"
                           title="Remove"
-                          onClick={() => update(setAugment(board, i, null))}
+                          onClick={() => update((b) => setAugment(b, i, null))}
                         >
                           ×
                         </button>
@@ -302,7 +311,7 @@ export default function PlannerPage() {
                         kind="augments"
                         options={augmentOptions(i)}
                         names={names}
-                        onPick={(a) => update(setAugment(board, i, a))}
+                        onPick={(a) => update((b) => setAugment(b, i, a))}
                       />
                     )}
                   </div>
@@ -356,7 +365,7 @@ function UnitEditor({
   names: Names;
   data: SetData | null;
   items: SetItem[];
-  update: (b: Board) => void;
+  update: (edit: (b: Board) => Board) => void;
   onRemoved: () => void;
 }) {
   const unit = board.units.find((u) => u.pos === pos);
@@ -377,7 +386,7 @@ function UnitEditor({
             key={s}
             className={unit.star === s ? "active" : undefined}
             aria-pressed={unit.star === s}
-            onClick={() => update(setStar(board, pos, s))}
+            onClick={() => update((b) => setStar(b, pos, s))}
           >
             {"★".repeat(s)}
           </button>
@@ -390,7 +399,7 @@ function UnitEditor({
             key={i}
             className="chip"
             title={`Remove ${names.name(it)}`}
-            onClick={() => update(removeItem(board, pos, i))}
+            onClick={() => update((b) => removeItem(b, pos, i))}
           >
             <GameIcon kind="items" id={it} size={22} fallbackSrc={names.icon(it)} fallbackName={names.name(it)} />
             {names.name(it)} ×
@@ -401,12 +410,12 @@ function UnitEditor({
         items={items}
         names={names}
         disabled={unit.items.length >= MAX_ITEMS}
-        onPick={(it) => update(addItem(board, pos, it))}
+        onPick={(it) => update((b) => addItem(b, pos, it))}
       />
       <button
         type="button"
         onClick={() => {
-          update(removeUnit(board, pos));
+          update((b) => removeUnit(b, pos));
           onRemoved();
         }}
       >

@@ -1,0 +1,2003 @@
+{
+ "source": "https://tactics.tools/info/augments",
+ "fetched": "2026-10-06",
+ "stages": [
+  "2-1",
+  "3-2",
+  "4-2"
+ ],
+ "augments": {
+  "DA_AugmentedPower": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_BackupBows": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_BandOfThieves": {
+   "tier": "silver",
+   "stages": [
+    1,
+    1,
+    1
+   ]
+  },
+  "DA_BoxingLessons": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_18_BranchingOut": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_18_BranchingOutPlus": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_CalledShot": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_CapitalGainsI": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_18_CaretakersAlly": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_CarveAPath": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_CelestialBlessingI": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_ChampDelivery": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_ChampDeliveryPlus": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_ChampDeliveryPlusPlus": {
+   "tier": "silver",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_CognitiveTax": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_CognitiveTaxPlus": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_ComponentBuffet": {
+   "tier": "silver",
+   "stages": [
+    0,
+    0,
+    0
+   ]
+  },
+  "DA_Corrosion": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_CraftedCrafting": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_Dummify": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_ElectrochargeI": {
+   "tier": "silver",
+   "stages": [
+    1,
+    1,
+    1
+   ]
+  },
+  "DA_Expedition": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_ExtraBuckles": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_FeelingLucky": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_FindYourCenter": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_18_InfernoTraitAugment": {
+   "tier": "silver",
+   "stages": [
+    0,
+    0,
+    0
+   ]
+  },
+  "DA_FlowingTears": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_FocusedFire": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_FutureFocused": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_GlassCannon_Silver": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_18_GoodForSomethingI": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_GroupHugI": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_HealingOrbsI": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_IronAssets": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_ItemGrabBag": {
+   "tier": "silver",
+   "stages": [
+    1,
+    1,
+    1
+   ]
+  },
+  "DA_KickStart": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_Kingslayer": {
+   "tier": "silver",
+   "stages": [
+    1,
+    1,
+    0
+   ]
+  },
+  "DA_LateGameSpecialist": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_LatentForge": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_LoadedDice": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_MakeshiftArmorI": {
+   "tier": "silver",
+   "stages": [
+    1,
+    1,
+    0
+   ]
+  },
+  "DA_MissedConnections": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_18_OneTwoFive": {
+   "tier": "silver",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_18_OnesTwosThree": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_PandorasBench": {
+   "tier": "silver",
+   "stages": [
+    1,
+    1,
+    0
+   ]
+  },
+  "DA_PandorasItemsI": {
+   "tier": "silver",
+   "stages": [
+    1,
+    1,
+    1
+   ]
+  },
+  "DA_PartialAscension": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_PatienceIsAVirtue": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_QuickStreaks": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_Recombobulator": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_18_ResidualMagic": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_18_ResidualMagicPlus": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_18_ResidualMagicPlusPlus": {
+   "tier": "silver",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_RollingForDays": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_SilverDestiny": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_SilverDestinyPlus": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_SilverDestinyPlusPlus": {
+   "tier": "silver",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_SilverSpoon": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_SliceOfLife": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_SlightlyMagicRoll": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_SmallGrabBag": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_StandUnited": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_TeamBuilding": {
+   "tier": "silver",
+   "stages": [
+    1,
+    1,
+    0
+   ]
+  },
+  "DA_TheTower": {
+   "tier": "silver",
+   "stages": [
+    1,
+    1,
+    1
+   ]
+  },
+  "DA_TwinGuardians": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_VerticalityI": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_18_WispRebatePlus": {
+   "tier": "silver",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_18_WispRebatePlusPlus": {
+   "tier": "silver",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_YoungAndWildAndFree": {
+   "tier": "silver",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_AdvancedLoan": {
+   "tier": "gold",
+   "stages": [
+    0,
+    0,
+    0
+   ]
+  },
+  "DA_AdvancedLoanPlus": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_ArcaneViktory": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_Ascension": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_BacklineBlueprint": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_18_PrimalAugment_Nidalee": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_18_PrimalAugment_Sivir": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_18_PrimalAugmentPlus_Nidalee": {
+   "tier": "gold",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_18_PrimalAugmentPlus_Sivir": {
+   "tier": "gold",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_18_BigGrabBag": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_BirthdayReunion": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_18_BlossomTraitAugment": {
+   "tier": "gold",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_BodyguardTraining": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_BonusGift": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_BonusGiftPlus": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_BoosterPack": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_BoosterPackPlus": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_BoosterPackPlusPlus": {
+   "tier": "gold",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_BronzeForLifeI": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_CapitalGainsII": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_CaretakersFavor": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_CelestialBlessingII": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_ChallengersGrace": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_18_SolarTraitAugment": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_ClearMind": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_ClockworkAccelerator": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_ClutteredMind": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_CognitiveOverload": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_18_FloraFatalisAugment": {
+   "tier": "gold",
+   "stages": [
+    1,
+    1,
+    0
+   ]
+  },
+  "DA_CookingPot": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_18_CovenTraitAugment": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_CryMeARiver": {
+   "tier": "gold",
+   "stages": [
+    1,
+    1,
+    0
+   ]
+  },
+  "DA_CyberneticImplants_Gold": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_CyberneticUplink_Gold": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_18_CovenTraitAugment_LootToAP": {
+   "tier": "gold",
+   "stages": [
+    1,
+    1,
+    0
+   ]
+  },
+  "DA_18_DuoQueue": {
+   "tier": "gold",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_EarlyLearnings": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_ElectrochargeII": {
+   "tier": "gold",
+   "stages": [
+    1,
+    1,
+    1
+   ]
+  },
+  "DA_18_FaeTraitAugment": {
+   "tier": "gold",
+   "stages": [
+    1,
+    1,
+    1
+   ]
+  },
+  "DA_EpicRolldown": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_Epoch": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_EpochPlus": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_ExclusiveCustomization": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_ExplosiveGrowth": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_ExplosiveGrowthPlus": {
+   "tier": "gold",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_18_FOURcing": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_FrontlineFoundation": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_GainGold": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_GildedSteel": {
+   "tier": "gold",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_GlassCannon_Gold": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_GoldDestiny": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_GoldDestinyPlus": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_GroupHugII": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_HardBargain": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_HealingOrbsII": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_HeartOfSteel": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_HeroicGrabBag": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_HeroicGrabBagPlus": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_HeroicGrabBagPlusPlus": {
+   "tier": "gold",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_Hustler": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_InfinityProtection": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_InvestmentStrategyI": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_ItsMeBaby": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_BlackthornTraitAugment": {
+   "tier": "gold",
+   "stages": [
+    1,
+    1,
+    0
+   ]
+  },
+  "DA_JeweledLotus_I": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_KnowYourEnemy": {
+   "tier": "gold",
+   "stages": [
+    0,
+    0,
+    0
+   ]
+  },
+  "DA_LateGameScaling": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_LegionOfThrees": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_MagicRoll": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_MakeshiftArmorII": {
+   "tier": "gold",
+   "stages": [
+    1,
+    1,
+    0
+   ]
+  },
+  "DA_MaliciousMonetization": {
+   "tier": "gold",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_MaxBuild": {
+   "tier": "gold",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_MoneyHungry_NotBroken": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_MoneyHungryPlus": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_NoScoutNoPivot": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_18_ElderwoodTraitAugment": {
+   "tier": "gold",
+   "stages": [
+    1,
+    1,
+    1
+   ]
+  },
+  "DA_18_RiftbeastTraitAugment": {
+   "tier": "gold",
+   "stages": [
+    1,
+    1,
+    1
+   ]
+  },
+  "DA_PandorasItemsII": {
+   "tier": "gold",
+   "stages": [
+    1,
+    1,
+    1
+   ]
+  },
+  "DA_PatientStudy": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_Pilfer": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_PlotArmor": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_PortableForge": {
+   "tier": "gold",
+   "stages": [
+    1,
+    1,
+    1
+   ]
+  },
+  "DA_PromisedProtection": {
+   "tier": "gold",
+   "stages": [
+    1,
+    1,
+    0
+   ]
+  },
+  "DA_Replication": {
+   "tier": "gold",
+   "stages": [
+    1,
+    1,
+    0
+   ]
+  },
+  "DA_SalvageBin": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_SalvageBinPlus": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_SeraphimsStaff": {
+   "tier": "gold",
+   "stages": [
+    1,
+    1,
+    0
+   ]
+  },
+  "DA_Slammin": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_SlamminPlus": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_18_SprykinAugment": {
+   "tier": "gold",
+   "stages": [
+    1,
+    1,
+    1
+   ]
+  },
+  "DA_SoloLeveling": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_SoloPlate": {
+   "tier": "gold",
+   "stages": [
+    1,
+    1,
+    0
+   ]
+  },
+  "DA_SpeedyDoubleKill": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_SpiritOfRedemption": {
+   "tier": "gold",
+   "stages": [
+    1,
+    1,
+    0
+   ]
+  },
+  "DA_SpreadingRoots": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_SpreadingRootsPlus": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_Staffsmith": {
+   "tier": "gold",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_18_LunarTraitAugment": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_18_LunarTraitAugmentPlus": {
+   "tier": "gold",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_Swordsmith": {
+   "tier": "gold",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_TheGoldenDragon": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_TimeSkip": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_TonsOfStatsI": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_TradeSector": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_TradeSectorPlus": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_URF": {
+   "tier": "gold",
+   "stages": [
+    1,
+    1,
+    1
+   ]
+  },
+  "DA_18_RivalsAugment": {
+   "tier": "gold",
+   "stages": [
+    1,
+    1,
+    0
+   ]
+  },
+  "DA_VerticalityII": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_Warpath": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_18_WeightTheWorth": {
+   "tier": "gold",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_WorththeWait": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_WovenMagic": {
+   "tier": "gold",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_BandOfThievesII": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_BandOfThievesIIPlus": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_BandOfThievesIIPlusPlus": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_BaronsLair": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_BeltOverflow": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_BirthdayPresent": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_BronzeForLifeII": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_BuildABud": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_BuriedTreasuresIII": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_CallToChaos": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_CelestialBlessingIII": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_ComebackStory": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_CommerceCore": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_ComponentQuest": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_Coronation": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_DeadlierBlades": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_DeadlierCaps": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_Flexible": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_ForgedInStrength": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_GiantAndMighty": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_GoingLong": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_GoldenGamble": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_GoldenGamblePlus": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_GoldenGamblePlusPlus": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_HardCommit": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_HedgeFund": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_HoldTheLine": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_InvestedPlus": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_InvestedPlusPlus": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_InvestmentStrategy": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_JeweledLotus_II": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_LevelUp": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_LivingForge": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_LuckyGloves": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_LuckyGlovesPlus": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_LuxurySubscription": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_18_LuxAugmentII": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_Min_Max": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_MoneyMonsoon": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_NestingAnvils": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_NestingAnvilsPlus": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_NestingDollsPlus": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_NestingDollsPlusPlus": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_OneBuffTwoBuff": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_PandorasItemsIII": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    1,
+    0
+   ]
+  },
+  "DA_PrismaticDestiny": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_PrismaticDestinyPlus": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_PrismaticTicket": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    1,
+    0
+   ]
+  },
+  "DA_RadiantRascal": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_RadiantRelic": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    1,
+    1
+   ]
+  },
+  "DA_Retribution": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_ShimmerscaleEssence": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_ShoppingSpree": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_SoulAwakening": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_SweetTreats": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_SwordOverflow": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_TonsOfStatsII": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_TacticiansKitchen": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_GoldenEgg": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    0,
+    1
+   ]
+  },
+  "DA_TheTraitTree": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_TheTraitTreePlus": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    0
+   ]
+  },
+  "DA_TraitLadder": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_UpwardMobility": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_UrfsGrabBag": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_VerticalityIII": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_WandOverflow": {
+   "tier": "prismatic",
+   "stages": [
+    0,
+    1,
+    1
+   ]
+  },
+  "DA_WeStickTogether": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  },
+  "DA_WorththeWaitII": {
+   "tier": "prismatic",
+   "stages": [
+    1,
+    0,
+    0
+   ]
+  }
+ }
+}

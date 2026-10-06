@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SetData } from "../api/client";
-import { SLOT_EXCEPTIONS, availableAt } from "./augmentStages";
+import { STAGE_DATA, StageEntry, augmentTier, availableAt, stagesOf } from "./augmentStages";
 import {
   COLS,
   ROWS,
@@ -174,22 +174,53 @@ describe("traits and cost", () => {
 });
 
 describe("augment stages", () => {
-  it("every tier is offered in every slot by default", () => {
-    for (const tier of [0, 1, 2, 3]) for (const slot of [0, 1, 2]) expect(availableAt({ apiName: "X", tier }, slot)).toBe(true);
-    expect(availableAt({ apiName: "X", tier: 1 }, 3)).toBe(false); // no fourth slot
+  const table: Record<string, StageEntry> = {
+    A_First: { tier: "silver", stages: [1, 0, 0] },
+    A_Late: { tier: "prismatic", stages: [0, 1, 1] },
+    A_Never: { tier: "gold", stages: [0, 0, 0] },
+  };
+
+  it("offers an augment only where the data says it can appear", () => {
+    expect([0, 1, 2].map((s) => availableAt({ apiName: "A_First" }, s, table))).toEqual([true, false, false]);
+    expect([0, 1, 2].map((s) => availableAt({ apiName: "A_Late" }, s, table))).toEqual([false, true, true]);
+    expect([0, 1, 2].map((s) => availableAt({ apiName: "A_Never" }, s, table))).toEqual([false, false, false]);
+    expect(stagesOf({ apiName: "A_Late" }, table)).toEqual(["3-2", "4-2"]);
   });
 
-  it("an augment tied to some stages is dropped from the others when a link is loaded", () => {
-    SLOT_EXCEPTIONS["A_Two"] = [2];
-    try {
-      const b = decodeBoard(new URLSearchParams("a1=A_Two&a3=A_One"), 18);
-      const { board, dropped } = sanitize(b, data);
-      expect(board.augments).toEqual([null, null, "A_One"]);
-      expect(dropped.augments).toBe(1);
-      const ok = sanitize(decodeBoard(new URLSearchParams("a3=A_Two"), 18), data);
-      expect(ok.board.augments).toEqual([null, null, "A_Two"]);
-    } finally {
-      delete SLOT_EXCEPTIONS["A_Two"];
-    }
+  it("treats an augment the data doesn't know as offerable in the three slots only", () => {
+    expect([0, 1, 2].map((s) => availableAt({ apiName: "A_New" }, s, table))).toEqual([true, true, true]);
+    expect(availableAt({ apiName: "A_New" }, 3, table)).toBe(false);
+    expect(stagesOf({ apiName: "A_New" }, table)).toBeNull();
+  });
+
+  it("falls back to the stage data's tier when ours is unknown", () => {
+    expect(augmentTier({ apiName: "A_Late", tier: 0 }, table)).toBe(3);
+    expect(augmentTier({ apiName: "A_Late", tier: 2 }, table)).toBe(2);
+    expect(augmentTier({ apiName: "A_New", tier: 0 }, table)).toBe(0);
+  });
+
+  it("the shipped data is complete: three flags each, known tiers, mostly limited stages", () => {
+    const entries = Object.values(STAGE_DATA);
+    expect(entries.length).toBeGreaterThan(200);
+    expect(entries.every((e) => e.stages.length === 3 && e.stages.every((f) => f === 0 || f === 1))).toBe(true);
+    expect(entries.every((e) => ["silver", "gold", "prismatic"].includes(e.tier))).toBe(true);
+    expect(entries.filter((e) => e.stages.includes(0)).length).toBeGreaterThan(100);
+  });
+
+  it("an augment is dropped from a slot its stage can't offer when a link is loaded", () => {
+    const aug = (id: string) => ({ apiName: id, name: id, tier: 1 });
+    const d = { ...data, augments: [aug("A_First"), aug("A_Late")] } as unknown as SetData;
+    // Uses the shipped table, which doesn't know these ids: both stay.
+    const loose = sanitize(decodeBoard(new URLSearchParams("a1=A_Late&a3=A_First"), 18), d);
+    expect(loose.board.augments).toEqual(["A_Late", null, "A_First"]);
+    // A real restricted augment from the shipped data.
+    const [id, entry] = Object.entries(STAGE_DATA).find(([, e]) => e.stages.join() === "1,0,0")!;
+    const real = { ...data, augments: [aug(id)] } as unknown as SetData;
+    const ok = sanitize(decodeBoard(new URLSearchParams(`a1=${id}`), 18), real);
+    expect(ok.board.augments).toEqual([id, null, null]);
+    const bad = sanitize(decodeBoard(new URLSearchParams(`a3=${id}`), 18), real);
+    expect(bad.board.augments).toEqual([null, null, null]);
+    expect(bad.dropped.augments).toBe(1);
+    expect(entry.stages).toEqual([1, 0, 0]);
   });
 });

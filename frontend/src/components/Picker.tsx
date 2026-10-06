@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { AssetKind, GameIcon } from "../assets/tft";
 import { Names } from "./stats";
 
@@ -31,6 +31,13 @@ export function Picker({
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
+  // The list closes shortly after blur (so a click on an entry still lands);
+  // refocusing or typing in that window must cancel the pending close.
+  const closeTimer = useRef<ReturnType<typeof setTimeout>>();
+  const keepOpen = () => {
+    clearTimeout(closeTimer.current);
+    setOpen(true);
+  };
   const label = (o: PickerOption) => o.label ?? names.name(o.id);
   const shown = options
     .filter((o) => !exclude.includes(o.id) && label(o).toLowerCase().includes(query.trim().toLowerCase()))
@@ -47,10 +54,13 @@ export function Picker({
         placeholder={placeholder}
         onChange={(e) => {
           setQuery(e.target.value);
-          setOpen(true);
+          keepOpen();
         }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onFocus={keepOpen}
+        onBlur={() => {
+          clearTimeout(closeTimer.current);
+          closeTimer.current = setTimeout(() => setOpen(false), 150);
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter" && shown[0]) pick(shown[0].id);
           if (e.key === "Escape") setOpen(false);
