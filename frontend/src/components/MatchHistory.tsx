@@ -46,6 +46,7 @@ export function MatchHistory({
   // pages[i] is the response for offset i*PAGE.
   const [pages, setPages] = useState<PlayerMatches[]>([]);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [mode, setMode] = useState<number | "all">("all");
   const [error, setError] = useState<string | null>(null);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const alive = useRef(true);
@@ -55,6 +56,7 @@ export function MatchHistory({
   useEffect(() => {
     alive.current = true;
     setPages([]);
+    setMode("all");
     counts.current = [];
     setError(null);
     loadPage(0);
@@ -94,7 +96,14 @@ export function MatchHistory({
 
   const first = pages[0];
   const last = pages[pages.length - 1];
-  const matches = pages.flatMap((p) => p?.matches ?? []);
+  const loaded = pages.flatMap((p) => p?.matches ?? []);
+  // Modes among the loaded games, most played first. Riot's match list can't
+  // be asked for one mode, so filtering happens here and "Load more" keeps
+  // paging through every mode.
+  const modes = [
+    ...loaded.reduce((m, g) => m.set(g.queueId, (m.get(g.queueId) ?? 0) + 1), new Map<number, number>()),
+  ].sort((a, b) => b[1] - a[1]);
+  const matches = mode === "all" ? loaded : loaded.filter((m) => m.queueId === mode);
   const canLoadMore = !!last && last.hasMore && !last.refreshing && !loadingMore && pages.length * PAGE <= MAX_OFFSET;
 
   return (
@@ -108,13 +117,31 @@ export function MatchHistory({
           </span>
         )}
       </div>
+      {modes.length > 1 && (
+        <div className="mode-tabs" role="tablist" aria-label="Game mode">
+          <button type="button" role="tab" aria-selected={mode === "all"} onClick={() => setMode("all")}>
+            All <span className="muted">{loaded.length}</span>
+          </button>
+          {modes.map(([q, n]) => (
+            <button type="button" role="tab" key={q} aria-selected={mode === q} onClick={() => setMode(q)}>
+              {queueName(q)} <span className="muted">{n}</span>
+            </button>
+          ))}
+        </div>
+      )}
       {first?.stale && (
         <div className="warning-box">
           Showing saved matches — couldn't update from Riot{staleSuffix(first.staleReason)}.
         </div>
       )}
       {error && <div className="error-box">{error}</div>}
-      {first && matches.length === 0 && (
+      {mode !== "all" && (
+        <p className="muted">
+          {matches.length} {queueName(mode)} {matches.length === 1 ? "game" : "games"} among the {loaded.length} loaded
+          {canLoadMore ? " — load more to look further back." : "."}
+        </p>
+      )}
+      {first && loaded.length === 0 && (
         <p className="muted">{first.refreshing ? "Loading matches from Riot…" : "No matches found for this player."}</p>
       )}
 

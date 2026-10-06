@@ -1659,3 +1659,24 @@ tr.dim {
   color: var(--accent);
   font-size: 0.85rem;
 }
+
+.mode-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 6px;
+}
+
+.mode-tabs button {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.mode-tabs button[aria-selected="true"] {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
