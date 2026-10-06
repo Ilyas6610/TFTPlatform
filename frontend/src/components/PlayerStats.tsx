@@ -11,7 +11,6 @@ import {
 } from "../api/client";
 import { GameIcon } from "../assets/tft";
 import { CompName } from "./CompName";
-import { PlayerAdvice } from "./PlayerAdvice";
 import { timeAgo } from "./MatchHistory";
 import { SetBackfill } from "./SetBackfill";
 import { Names, PlayerName, avg, pct, placementTone, queueName } from "./stats";
@@ -230,16 +229,6 @@ export function PlayerStats({
           </>
         )}
       </div>
-
-      {s.boards > 0 && (
-        <PlayerAdvice
-          puuid={puuid}
-          scope={scope}
-          refreshKey={`${refreshKey}-${reloads}`}
-          names={names}
-          unitIcon={unitIcon}
-        />
-      )}
 
       {s.boards > 0 && (
         <div className="panel">
