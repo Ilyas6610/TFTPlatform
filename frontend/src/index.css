@@ -2009,3 +2009,8 @@ details.patch[open] > summary::before {
   margin-top: 8px;
   color: var(--placement-bad);
 }
+
+.leaderboard-note {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+}

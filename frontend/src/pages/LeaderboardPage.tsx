@@ -8,6 +8,8 @@ const PLATFORMS = ["na1", "euw1", "eun1", "kr", "jp1", "br1", "la1", "la2", "oc1
 // interval so names fill in as they're found.
 const RESOLVE_POLL_MS = 3000;
 
+const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
+
 export default function LeaderboardPage() {
   const { platform = "na1" } = useParams();
   const navigate = useNavigate();
@@ -87,6 +89,10 @@ export default function LeaderboardPage() {
 
       {!loading && !error && board && (
         <div className="panel">
+          <p className="muted leaderboard-note">
+            Games and top 4 rate cover the whole ranked season (Riot). Win rate (1st place) and average placement come from the
+            ranked games stored here (the number after the dot is how many), so they firm up as more games are collected.
+          </p>
           <table>
             <thead>
               <tr>
@@ -94,7 +100,10 @@ export default function LeaderboardPage() {
                 <th>Player</th>
                 <th>Tier</th>
                 <th>LP</th>
-                <th>W / L</th>
+                <th title="Ranked games this season (Riot)">Games</th>
+                <th title="Share of ranked games finished in the top 4 this season (Riot)">Top 4</th>
+                <th title="Share of stored ranked games won (1st place); the number after the dot is how many games we have">Win rate</th>
+                <th title="Average placement over the ranked games we have stored">Avg</th>
               </tr>
             </thead>
             <tbody>
@@ -116,9 +125,19 @@ export default function LeaderboardPage() {
                     {e.rank ? ` ${e.rank}` : ""}
                   </td>
                   <td>{e.leaguePoints}</td>
-                  <td>
-                    {e.wins} / {e.losses}
+                  <td>{e.games}</td>
+                  <td>{e.top4Rate == null ? "–" : pct(e.top4Rate)}</td>
+                  <td title={e.stored ? `${e.stored.games} stored ranked games` : undefined}>
+                    {e.stored ? (
+                      <>
+                        {pct(e.stored.winRate)}
+                        <span className="muted"> · {e.stored.games}</span>
+                      </>
+                    ) : (
+                      <span className="muted">–</span>
+                    )}
                   </td>
+                  <td>{e.stored ? e.stored.avgPlacement.toFixed(2) : <span className="muted">–</span>}</td>
                 </tr>
               ))}
             </tbody>
