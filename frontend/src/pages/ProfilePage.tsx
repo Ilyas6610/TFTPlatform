@@ -90,10 +90,15 @@ export default function ProfilePage() {
   };
   // Games were added to the history (newest synced or an older page fetched):
   // stats are computed from stored games, so reload them.
-  const onGamesAdded = () => setStatsVersion((v) => v + 1);
+  const onGamesAdded = () => {
+    setStatsVersion((v) => v + 1);
+    setUpdateNote(null); // "Already up to date" is stale once games arrive
+  };
 
-  // Re-read the profile (name, icon, level) and sync the newest games now;
-  // stats and LP reload as the games arrive.
+  // Sync the newest games and rank now. The profile is re-requested too, but
+  // the server keeps its saved copy for an hour, so a changed name, icon or
+  // level only shows up once that has aged. Stats and LP reload as the
+  // games arrive.
   function handleUpdate() {
     if (!region || !name || !tag) return;
     setUpdating(true);
@@ -105,7 +110,7 @@ export default function ProfilePage() {
   }
   const onRefreshResult = (p: PlayerMatches | null) => {
     setUpdating(false);
-    if (!p) setUpdateNote("couldn't update the profile");
+    if (!p) setUpdateNote("Couldn't update the profile.");
     else if (p.refreshTooSoon) setUpdateNote("Already up to date.");
   };
 
