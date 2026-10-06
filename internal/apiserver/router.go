@@ -39,6 +39,7 @@ type Server struct {
 	stats       resultCache   // explorer, explorer options, precomputed meta tables
 	sets        resultCache   // set data, patch notes, planner codes
 	live        liveFetches
+	backfill    backfills
 	plannerFail failureMemo
 }
 
@@ -64,6 +65,13 @@ func NewRouter(s *Server) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/players/{region}/{name}/{tag}", s.handlePlayerProfile)
 	mux.HandleFunc("GET /api/v1/players/{puuid}/matches", s.handlePlayerMatches)
+	mux.HandleFunc("GET /api/v1/players/{puuid}/stats", s.handlePlayerStats)
+	mux.HandleFunc("GET /api/v1/players/{puuid}/ranks", s.handlePlayerRankHistory)
+	// GET /api/v1/players/{puuid}/advice (handlePlayerAdvice) stays
+	// unregistered while the profile's advice panel is disabled: it scans
+	// everyone's boards per scope, too much to expose unused.
+	mux.HandleFunc("GET /api/v1/players/{puuid}/backfill", s.handlePlayerBackfill)
+	mux.HandleFunc("POST /api/v1/players/{puuid}/backfill", s.handlePlayerBackfill)
 	mux.HandleFunc("GET /api/v1/matches/{matchId}", s.handleMatchDetail)
 	mux.HandleFunc("GET /api/v1/leaderboard/{platform}", s.handleLeaderboard)
 	mux.HandleFunc("GET /api/v1/meta/units", s.handleMetaUnits)

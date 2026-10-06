@@ -172,3 +172,51 @@ func TestPlayerMatches_ConcurrentViewsShareOneSync(t *testing.T) {
 		t.Errorf("expected 3 match requests from a single sync, got %d", got)
 	}
 }
+
+// A history longer than the newest-page sync: the first page is synced as
+// before, and asking for the next page fetches that page of Riot's ids and
+// its matches in the background.
+func TestPlayerMatches_OlderPageFetchedFromRiot(t *testing.T) {
+	s, riot := newTestServer(t)
+	var ids []string
+	for i := 23; i >= 1; i-- { // newest first, like Riot
+		id := fmt.Sprintf("NA1_%d", i)
+		ids = append(ids, id)
+		riot.matches[id] = matchJSON(id, int64(i)*1000, "me")
+	}
+	riot.matchIDs["me"] = ids
+
+	getMatches(t, s, meMatches)
+	waitForJob(t, s, matchSyncKey("me"))
+	_, first := getMatches(t, s, meMatches+"&offset=0&limit=20")
+	if len(first.Matches) != 20 || !first.HasMore {
+		t.Fatalf("first page: %d matches, hasMore %v; want 20 and more", len(first.Matches), first.HasMore)
+	}
+
+	older := meMatches + "&offset=20&limit=20"
+	_, resp := getMatches(t, s, older)
+	if len(resp.Matches) != 0 || !resp.Refreshing || !resp.HasMore {
+		t.Fatalf("older page before fetch: %+v, want empty and refreshing", resp)
+	}
+	waitForJob(t, s, olderMatchesKey("me", 20))
+	_, resp = getMatches(t, s, older)
+	if len(resp.Matches) != 3 || resp.Matches[0].MatchID != "NA1_3" || resp.Refreshing || resp.HasMore {
+		t.Errorf("older page after fetch: %+v, want NA1_3..NA1_1 and the end of history", resp)
+	}
+
+	// Polling the finished short page doesn't re-ask Riot.
+	calls := riot.matchCalls.Load()
+	getMatches(t, s, older)
+	if riot.matchCalls.Load() != calls {
+		t.Error("a finished older page was fetched again")
+	}
+}
+
+func TestPlayerMatches_RejectsBadOffset(t *testing.T) {
+	s := &Server{}
+	for _, q := range []string{"offset=-1", "offset=x", "offset=501"} {
+		if code, _ := getMatches(t, s, "/api/v1/players/me/matches?"+q); code != http.StatusBadRequest {
+			t.Errorf("%s: got %d, want 400", q, code)
+		}
+	}
+}

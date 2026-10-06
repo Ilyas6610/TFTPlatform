@@ -112,6 +112,9 @@ func syncSetDataPeriodically(ctx context.Context, st *store.Store, interval time
 			if _, err := setdata.SyncTextOverrides(ctx, setdata.TacticsToolsSource(), st, result.SetNumber); err != nil {
 				log.Printf("set text overrides sync: %v", err)
 			}
+			if _, err := setdata.SyncPatchCalendar(ctx, st, result.SetNumber, setdata.FetchNotesDate); err != nil {
+				log.Printf("patch calendar sync: %v", err)
+			}
 		}
 		select {
 		case <-ctx.Done():

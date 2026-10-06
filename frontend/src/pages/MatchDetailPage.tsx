@@ -1,7 +1,23 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ApiError, MatchDetail, getMatch } from "../api/client";
+import { ApiError, MatchDetail, MatchParticipant, getMatch } from "../api/client";
 import { GameIcon } from "../assets/tft";
+
+const DOUBLE_UP = 1160;
+
+/**
+ * Double Up teams, best first. Riot ranks a team's two players
+ * consecutively (1-2, 3-4, ...); Set 17 payloads also name the team
+ * (partner_group_id), Set 18's don't.
+ */
+function doubleUpTeams(participants: MatchParticipant[]): MatchParticipant[][] {
+  const teams = new Map<string, MatchParticipant[]>();
+  for (const p of participants) {
+    const key = p.partner_group_id != null ? `g${p.partner_group_id}` : `p${Math.ceil(p.placement / 2)}`;
+    teams.set(key, [...(teams.get(key) ?? []), p]);
+  }
+  return [...teams.values()].sort((a, b) => a[0].placement - b[0].placement);
+}
 
 export default function MatchDetailPage() {
   const { matchId } = useParams();
@@ -37,49 +53,66 @@ export default function MatchDetailPage() {
         </p>
       </div>
 
-      {participants.map((p) => (
-        <div className="panel" key={p.puuid}>
-          <h3 className="participant-header">
-            <span className={`placement placement-${p.placement}`}>#{p.placement}</span>
-            {p.riotIdGameName ? (
-              <Link to={`/players/${platform}/${encodeURIComponent(p.riotIdGameName)}/${encodeURIComponent(p.riotIdTagline ?? "")}`}>
-                {p.riotIdGameName}
-                <span className="muted">#{p.riotIdTagline}</span>
-              </Link>
-            ) : (
-              <span className="muted">Unknown player</span>
-            )}
-            <span className="muted participant-level">Level {p.level}</span>
-          </h3>
-          <div className="trait-row">
-            {p.traits
-              .filter((t) => t.tier_current > 0)
-              .sort((a, b) => b.style - a.style || b.num_units - a.num_units)
-              .map((t) => (
-                <span className={`trait-badge trait-style-${t.style}`} key={t.name}>
-                  <GameIcon kind="traits" id={t.name} size={20} />
-                  {t.num_units}
-                </span>
-              ))}
-            {p.augments?.map((a) => (
-              <GameIcon kind="augments" id={a} size={28} key={a} className="augment-icon" />
-            ))}
-          </div>
-          <div className="unit-grid">
-            {p.units.map((u, i) => (
-              <div className="unit-card" key={i}>
-                <span className="unit-stars">{"★".repeat(u.tier)}</span>
-                <GameIcon kind="champions" id={u.character_id} size={48} />
-                <span className="unit-items">
-                  {u.itemNames.map((item, j) => (
-                    <GameIcon kind="items" id={item} size={16} key={j} />
-                  ))}
-                </span>
+      {match.info.queue_id === DOUBLE_UP
+        ? doubleUpTeams(participants).map((team, i) => (
+            <div className={`du-team du-team-${i < 2 ? "top" : "bottom"}`} key={team[0].puuid}>
+              <div className="du-team-head">
+                <span className={`placement placement-${i * 2 + 1}`}>#{i + 1}</span> Team
               </div>
-            ))}
+              {team.map((p) => (
+                <Participant key={p.puuid} p={p} platform={platform} />
+              ))}
+            </div>
+          ))
+        : participants.map((p) => <Participant key={p.puuid} p={p} platform={platform} />)}
+    </div>
+  );
+}
+
+function Participant({ p, platform }: { p: MatchParticipant; platform: string }) {
+  return (
+    <div className="panel">
+      <h3 className="participant-header">
+        <span className={`placement placement-${p.placement}`}>#{p.placement}</span>
+        {p.riotIdGameName ? (
+          <Link
+            to={`/players/${platform}/${encodeURIComponent(p.riotIdGameName)}/${encodeURIComponent(p.riotIdTagline ?? "")}`}
+          >
+            {p.riotIdGameName}
+            <span className="muted">#{p.riotIdTagline}</span>
+          </Link>
+        ) : (
+          <span className="muted">Unknown player</span>
+        )}
+        <span className="muted participant-level">Level {p.level}</span>
+      </h3>
+      <div className="trait-row">
+        {p.traits
+          .filter((t) => t.tier_current > 0)
+          .sort((a, b) => b.style - a.style || b.num_units - a.num_units)
+          .map((t) => (
+            <span className={`trait-badge trait-style-${t.style}`} key={t.name}>
+              <GameIcon kind="traits" id={t.name} size={20} />
+              {t.num_units}
+            </span>
+          ))}
+        {p.augments?.map((a) => (
+          <GameIcon kind="augments" id={a} size={28} key={a} className="augment-icon" />
+        ))}
+      </div>
+      <div className="unit-grid">
+        {p.units.map((u, i) => (
+          <div className="unit-card" key={i}>
+            <span className="unit-stars">{"★".repeat(u.tier)}</span>
+            <GameIcon kind="champions" id={u.character_id} size={48} />
+            <span className="unit-items">
+              {u.itemNames.map((item, j) => (
+                <GameIcon kind="items" id={item} size={16} key={j} />
+              ))}
+            </span>
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }

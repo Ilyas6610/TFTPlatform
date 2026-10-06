@@ -29,8 +29,10 @@ type CrawlResult struct {
 	// before returning), used to update ingest_puuid_queue.last_match_id_seen.
 	MostRecentMatchID string
 	// IDsFetched is set once Riot returned the match id list, which also
-	// confirms the PUUID exists.
+	// confirms the PUUID exists; IDs is how many it returned (fewer than
+	// asked means the history ends there).
 	IDsFetched bool
+	IDs        int
 }
 
 // CrawlPUUID fetches up to maxIDs recent match IDs for puuid, dedupes
@@ -40,9 +42,14 @@ type CrawlResult struct {
 // ErrRateLimited or once maxRequests is spent; ErrKeyExpired propagates as a
 // real error since that needs operator attention (key rotation).
 func CrawlPUUID(ctx context.Context, riot *riotapi.Client, st *store.Store, routing riotapi.RoutingRegion, puuid string, maxIDs, maxRequests int) (CrawlResult, error) {
+	return crawlPage(ctx, riot, st, routing, puuid, 0, maxIDs, maxRequests)
+}
+
+// crawlPage is CrawlPUUID for the page of ids after the start most recent.
+func crawlPage(ctx context.Context, riot *riotapi.Client, st *store.Store, routing riotapi.RoutingRegion, puuid string, start, maxIDs, maxRequests int) (CrawlResult, error) {
 	var result CrawlResult
 
-	ids, err := riot.GetTFTMatchIDsByPUUID(ctx, routing, puuid, maxIDs)
+	ids, err := riot.GetTFTMatchIDsPage(ctx, routing, puuid, start, maxIDs)
 	result.RequestsMade++
 	if err != nil {
 		if _, ok := err.(*riotapi.ErrRateLimited); ok {
@@ -52,6 +59,7 @@ func CrawlPUUID(ctx context.Context, riot *riotapi.Client, st *store.Store, rout
 		return result, fmt.Errorf("fetch match ids for %s: %w", puuid, err)
 	}
 	result.IDsFetched = true
+	result.IDs = len(ids)
 	if len(ids) > 0 {
 		result.MostRecentMatchID = ids[0]
 	}

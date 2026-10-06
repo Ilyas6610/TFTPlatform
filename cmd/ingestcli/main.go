@@ -354,4 +354,12 @@ func runSyncSetData(ctx context.Context, cfg config.Config, args []string) {
 	} else {
 		fmt.Printf("sync-setdata: %s text overrides for set %d: %d descriptions\n", ov.Name, lastSet, n)
 	}
+
+	// When each patch went live (from Riot's patch notes), for per-patch
+	// player stats.
+	if n, err := setdata.SyncPatchCalendar(ctx, st, lastSet, setdata.FetchNotesDate); err != nil {
+		log.Printf("sync-setdata: patch calendar: %v", err)
+	} else {
+		fmt.Printf("sync-setdata: patch calendar for set %d: %d patches added\n", lastSet, n)
+	}
 }

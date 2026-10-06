@@ -67,6 +67,22 @@ func (s *Store) WriteLeagueSnapshot(ctx context.Context, platform string, entrie
 				priority = GREATEST(ingest_puuid_queue.priority, EXCLUDED.priority)
 		`, e.PUUID, platform, e.RoutingRegion, e.Priority)
 	}
+	// The ladder doubles as rank history for apex players: one statement
+	// records every entry written above (fetched_at = now()) whose standing
+	// changed since the player's last snapshot (per-game LP).
+	batch.Queue(`
+		INSERT INTO rank_snapshots (puuid, queue_type, tier, rank, league_points, wins, losses)
+		SELECT le.puuid, 'RANKED_TFT', le.tier, le.rank, le.league_points, le.wins, le.losses
+		FROM league_entries le
+		LEFT JOIN LATERAL (
+			SELECT tier, rank, league_points, wins, losses FROM rank_snapshots rs
+			WHERE rs.puuid = le.puuid AND rs.queue_type = 'RANKED_TFT'
+			ORDER BY rs.fetched_at DESC LIMIT 1
+		) last ON true
+		WHERE le.platform_region = $1 AND le.queue_type = 'RANKED_TFT' AND le.fetched_at = now()
+			AND (last.tier, last.rank, last.league_points, last.wins, last.losses)
+				IS DISTINCT FROM (le.tier, le.rank, le.league_points, le.wins, le.losses)
+	`, platform)
 	if complete {
 		batch.Queue(`DELETE FROM league_entries WHERE platform_region = $1 AND fetched_at < now()`, platform)
 	}
@@ -128,6 +144,48 @@ func (s *Store) GetLeaderboard(ctx context.Context, platform string, limit int) 
 			return nil, err
 		}
 		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// RankedBoardStats summarises one player's stored ranked games of the newest
+// set that has any. Riot's league entry only has top 4 finishes and the
+// rest, so the 1st place rate and average placement can only come from the
+// games we've stored; Games says how many that is.
+type RankedBoardStats struct {
+	Games        int
+	Wins         int
+	Top4         int
+	AvgPlacement float64
+}
+
+// RankedBoardStats returns stats for each of puuids that has stored ranked
+// games (queue 1100, the newest set with ranked games); others are absent.
+func (s *Store) RankedBoardStats(ctx context.Context, puuids []string) (map[string]RankedBoardStats, error) {
+	out := map[string]RankedBoardStats{}
+	if len(puuids) == 0 {
+		return out, nil
+	}
+	rows, err := s.Pool.Query(ctx, `
+		SELECT mp.puuid, count(*), count(*) FILTER (WHERE mp.placement = 1),
+		       count(*) FILTER (WHERE mp.placement <= 4), avg(mp.placement)::float8
+		FROM match_participants mp
+		JOIN matches m ON m.match_id = mp.match_id
+		WHERE mp.puuid = ANY($1) AND m.queue_id = 1100
+		  AND m.tft_set_number = (SELECT max(tft_set_number) FROM matches WHERE queue_id = 1100)
+		GROUP BY mp.puuid
+	`, puuids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p string
+		var st RankedBoardStats
+		if err := rows.Scan(&p, &st.Games, &st.Wins, &st.Top4, &st.AvgPlacement); err != nil {
+			return nil, err
+		}
+		out[p] = st
 	}
 	return out, rows.Err()
 }

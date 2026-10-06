@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -66,7 +67,16 @@ func (f *fakeRiot) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				<-f.matchGate
 				f.mu.Lock()
 			}
-			json.NewEncoder(w).Encode(f.matchIDs[strings.TrimSuffix(puuid, "/ids")])
+			// Honor start/count like Riot, so paging can be tested.
+			ids := f.matchIDs[strings.TrimSuffix(puuid, "/ids")]
+			start, _ := strconv.Atoi(r.URL.Query().Get("start"))
+			count, err := strconv.Atoi(r.URL.Query().Get("count"))
+			if err != nil {
+				count = len(ids)
+			}
+			ids = ids[min(start, len(ids)):]
+			ids = ids[:min(count, len(ids))]
+			json.NewEncoder(w).Encode(ids)
 			return
 		}
 		if m, ok := f.matches[rest]; ok {
@@ -313,5 +323,42 @@ func TestLeaderboard_UnresolvableNamesCoolDownBeforeRetry(t *testing.T) {
 	waitForResolution(t, s, "na1")
 	if !resp.Resolving || riot.accountCalls.Load() != calls+1 {
 		t.Errorf("expected a retry of p2 after cooldown (resolving=%v, lookups=%d)", resp.Resolving, riot.accountCalls.Load()-calls)
+	}
+}
+
+func TestLeaderboard_CarriesTop4RateAndStoredStats(t *testing.T) {
+	s, riot := newTestServer(t)
+	riot.challengers = []riotapi.LeagueEntry{
+		{PUUID: "p1", LeaguePoints: 1500, Wins: 30, Losses: 10},
+		{PUUID: "p2", LeaguePoints: 1400},
+	}
+	getLeaderboard(t, s, "/api/v1/leaderboard/na1") // seeds the snapshot
+	waitForResolution(t, s, "na1")
+
+	parts := map[string]store.MatchParticipant{}
+	for puuid, placement := range map[string]int{"p1": 1, "p2": 6} {
+		parts[puuid] = store.MatchParticipant{PUUID: puuid, Placement: placement, Level: 8,
+			Units: []byte(`[]`), Traits: []byte(`[]`), RawParticipant: []byte(`{}`)}
+	}
+	if err := s.Store.InsertMatchWithParticipants(context.Background(), store.Match{
+		MatchID: "NA1_1", RoutingRegion: "americas", GameDatetime: time.Now(), GameVersion: "x",
+		TFTSetNumber: 18, QueueID: 1100, TFTGameType: "standard", RawPayload: []byte(`{}`),
+	}, parts); err != nil {
+		t.Fatal(err)
+	}
+
+	_, resp := getLeaderboard(t, s, "/api/v1/leaderboard/na1")
+	p1, p2 := resp.Entries[0], resp.Entries[1]
+	if p1.Games != 40 || p1.Top4Rate == nil || *p1.Top4Rate != 0.75 {
+		t.Errorf("p1 season stats: games %d top4 %v", p1.Games, p1.Top4Rate)
+	}
+	if p1.Stored == nil || p1.Stored.Games != 1 || p1.Stored.WinRate != 1 || p1.Stored.Top4Rate != 1 || p1.Stored.AvgPlacement != 1 {
+		t.Errorf("p1 stored: %+v", p1.Stored)
+	}
+	if p2.Games != 0 || p2.Top4Rate != nil {
+		t.Errorf("p2 has no season games: %d %v", p2.Games, p2.Top4Rate)
+	}
+	if p2.Stored == nil || p2.Stored.Top4Rate != 0 || p2.Stored.AvgPlacement != 6 {
+		t.Errorf("p2 stored: %+v", p2.Stored)
 	}
 }

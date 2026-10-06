@@ -354,6 +354,31 @@ td a:hover {
   color: var(--accent);
 }
 
+/* Double Up: a team's two boards framed together. */
+.du-team {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--placement-good);
+  border-radius: 8px;
+  padding: 10px 10px 0;
+  margin-bottom: 16px;
+}
+
+.du-team-bottom {
+  border-left-color: var(--placement-bad);
+}
+
+.du-team-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 10px 4px;
+  font-weight: 600;
+}
+
+.du-team .panel {
+  margin-bottom: 10px;
+}
+
 .participant-level {
   font-weight: 400;
   margin-left: auto;
@@ -1505,6 +1530,459 @@ details.patch[open] > summary::before {
   font-size: 0.9rem;
 }
 
+/* Player profile */
+
+.history-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.history-head h3 {
+  margin: 0;
+}
+
+.player-scope {
+  display: flex;
+  gap: 8px;
+}
+
+.player-stats .stat-tiles {
+  margin-top: 12px;
+}
+
+.player-stats .stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.player-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px 24px;
+  align-items: start;
+}
+
+.player-charts .placement-bars {
+  height: 110px;
+}
+
+.form-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.form-strip .placement {
+  min-width: 1.7em;
+  text-align: center;
+  padding: 2px 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  cursor: pointer;
+}
+
+table.compact td,
+table.compact th {
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+
+tr.dim {
+  opacity: 0.55;
+}
+
+.player-breakdowns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px 24px;
+  align-items: start;
+}
+
+.breakdown-list table {
+  width: 100%;
+}
+
+.breakdown-list .game-label {
+  font-size: 0.9rem;
+}
+
+.player-comps {
+  display: grid;
+  gap: 10px;
+}
+
+.player-comp {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.history-list {
+  display: grid;
+}
+
+.history-row {
+  display: grid;
+  grid-template-columns: 170px minmax(120px, 220px) 1fr;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 8px 6px;
+  border-top: 1px solid var(--border);
+  border-left: 3px solid transparent;
+  cursor: pointer;
+}
+
+.history-row:hover {
+  background: var(--bg);
+}
+
+.history-row.placement-row-top {
+  border-left-color: var(--placement-good);
+}
+
+.history-row.placement-row-bottom {
+  border-left-color: var(--placement-bad);
+}
+
+.history-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.85rem;
+}
+
+.history-meta .placement {
+  font-size: 1.15rem;
+}
+
+.history-partner {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-partner a {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.history-partner a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+table.partners th {
+  font-weight: normal;
+  font-size: 0.8rem;
+}
+
+table.partners td:first-child {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-traits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.history-units {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.history-unit {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.history-unit .unit-items {
+  min-height: 12px;
+}
+
+.unit-stars.star-2 {
+  color: #b9c4cf;
+}
+
+.unit-stars.star-3 {
+  color: var(--accent);
+}
+
+.load-more {
+  margin-top: 12px;
+}
+
+@media (max-width: 700px) {
+  .history-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.unit-stars.star-1 {
+  color: #a07850;
+}
+
+.breakdown-list .show-more {
+  width: auto;
+  margin-top: 4px;
+  padding: 2px 0;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+
+.mode-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 6px;
+}
+
+.mode-tabs button {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.mode-tabs button[aria-selected="true"] {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.patch-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 10px 6px 6px;
+  border-top: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.lp-badge {
+  margin-left: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.profile-header {
+  flex-wrap: wrap;
+}
+
+.rank-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.rank-badge {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 0.85rem;
+}
+
+.rank-badge.tier-challenger { border-left-color: #f4c874; }
+.rank-badge.tier-grandmaster { border-left-color: #e5534b; }
+.rank-badge.tier-master { border-left-color: #b46fd6; }
+.rank-badge.tier-diamond { border-left-color: #6f8fe8; }
+.rank-badge.tier-emerald { border-left-color: #2fae7a; }
+.rank-badge.tier-platinum { border-left-color: #4fb3b0; }
+.rank-badge.tier-gold { border-left-color: #d6a84a; }
+.rank-badge.tier-silver { border-left-color: #9aa4af; }
+.rank-badge.tier-bronze { border-left-color: #a87452; }
+.rank-badge.tier-iron { border-left-color: #6e6a66; }
+
+.lp-chart {
+  position: relative;
+  margin-top: 8px;
+}
+
+.lp-chart > svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.lp-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.lp-axis {
+  fill: var(--text-dim);
+  font-size: 11px;
+}
+
+.lp-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.lp-dot {
+  fill: var(--accent);
+  stroke: var(--panel);
+  stroke-width: 2;
+}
+
+.lp-dot-active {
+  stroke-width: 2;
+}
+
+.lp-crosshair {
+  stroke: var(--text-dim);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.lp-tooltip {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.lp-table summary {
+  cursor: pointer;
+  font-size: 0.8rem;
+  margin-top: 4px;
+}
+
+.lp-estimated {
+  stroke-dasharray: 5 4;
+  opacity: 0.75;
+}
+
+.lp-dot-estimated {
+  fill: var(--panel);
+  stroke: var(--accent);
+}
+
+.lp-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 0.8rem;
+}
+
+.lp-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lp-note {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+}
+
+.backfill {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: -4px 0 8px;
+  font-size: 0.85rem;
+}
+
+.backfill .show-more {
+  width: auto;
+  padding: 2px 0;
+  background: none;
+  border: none;
+  color: var(--accent);
+}
+
+.backfill progress {
+  flex: 1 1 160px;
+  max-width: 320px;
+  accent-color: var(--accent);
+}
+
+/* Player advice */
+.advice-lists {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 24px;
+}
+
+@media (max-width: 700px) {
+  .advice-lists {
+    grid-template-columns: 1fr;
+  }
+}
+
+.advice-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.advice-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.advice-list li > .game-label {
+  min-width: 120px;
+}
+
+/* Builds take a full row: two item sets side by side. */
+.advice-builds {
+  grid-column: 1 / -1;
+}
+
+.advice-items {
+  display: inline-flex;
+  gap: 2px;
+  vertical-align: middle;
+}
+
+.sessions-summary {
+  margin: 0 0 4px;
+  font-size: 0.85rem;
+}
+
+.sessions-split td {
+  border-top: 2px solid var(--border);
+}
+
 /* Board planner */
 .planner-controls {
   display: flex;
@@ -2008,4 +2486,41 @@ details.patch[open] > summary::before {
 .item-tip-note {
   margin-top: 8px;
   color: var(--placement-bad);
+}
+
+.leaderboard-note {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+}
+
+.few-games {
+  opacity: 0.55;
+}
+
+/* The tier under the name replaces the Tier column on phones. */
+.tier-inline {
+  display: none;
+  font-size: 0.78rem;
+}
+
+@media (max-width: 600px) {
+  .leaderboard-table .col-tier,
+  .leaderboard-table .col-games,
+  .leaderboard-table .stored-n {
+    display: none;
+  }
+  .leaderboard-table .tier-inline {
+    display: block;
+  }
+  .leaderboard-table th,
+  .leaderboard-table td {
+    padding-left: 4px;
+    padding-right: 4px;
+    font-size: 0.85rem;
+  }
+  /* Long Riot IDs wrap instead of widening the table. */
+  .leaderboard-table td:nth-child(2) {
+    max-width: 120px;
+    overflow-wrap: anywhere;
+  }
 }

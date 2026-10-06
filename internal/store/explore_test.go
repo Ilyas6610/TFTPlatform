@@ -273,3 +273,24 @@ func TestExplore_DuplicateItemsNeedEveryCopy(t *testing.T) {
 		t.Errorf("one Archangel's: got %d boards, want 2", single.Summary.Boards)
 	}
 }
+
+func TestRankedBoardStats(t *testing.T) {
+	st := exploreFixture(t)
+	seedExplore(t, st, "M3", 1100, []board{{5, 8, nil, nil}})
+	got, err := st.RankedBoardStats(context.Background(), []string{"M1-p0", "M1-p2", "M2-p0", "nobody"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("only players with ranked games appear, got %v", got)
+	}
+	if g := got["M1-p0"]; g.Games != 1 || g.Wins != 1 || g.Top4 != 1 || g.AvgPlacement != 1 {
+		t.Errorf("M1-p0 = %+v", g)
+	}
+	if g := got["M1-p2"]; g.Games != 1 || g.Wins != 0 || g.Top4 != 0 || g.AvgPlacement != 5 {
+		t.Errorf("M1-p2 = %+v", g)
+	}
+	if e, err := st.RankedBoardStats(context.Background(), nil); err != nil || len(e) != 0 {
+		t.Errorf("empty input: %v %v", e, err)
+	}
+}
