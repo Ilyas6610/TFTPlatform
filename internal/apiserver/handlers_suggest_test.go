@@ -140,3 +140,49 @@ func TestExploreSuggest_BuildsFromComponents(t *testing.T) {
 		t.Errorf("items only: %+v", byItems.Candidates)
 	}
 }
+
+// Emblems map to traits by name through the stored set data: with only a
+// Brawler Emblem, boards playing Brawler come back as final boards.
+func TestExploreSuggest_EmblemMatchesTraitBoards(t *testing.T) {
+	st := storetest.New(t)
+	ctx := context.Background()
+	s := &Server{Store: st}
+
+	data, _ := json.Marshal(setdata.SetData{
+		SetNumber: 18, Version: "16.1.1",
+		Traits: []setdata.Trait{{APIName: "DA_18_Brawler", Name: "Brawler"}},
+		Items:  []setdata.Item{{APIName: "DA_18_EmblemBrawler", Name: "Brawler Emblem", Kind: "emblem"}},
+	})
+	if _, err := st.InsertSetDataSnapshot(ctx, store.SetDataSnapshot{SetNumber: 18, Version: "16.1.1", Patch: "16.1", Data: data}); err != nil {
+		t.Fatal(err)
+	}
+	// Six level 9 boards of one Brawler comp: enough for a comp.
+	units, _ := json.Marshal([]map[string]any{
+		{"character_id": "A", "tier": 2, "itemNames": []string{}}, {"character_id": "B", "tier": 2, "itemNames": []string{}},
+	})
+	traits, _ := json.Marshal([]map[string]any{{"name": "DA_18_Brawler", "num_units": 2, "tier_current": 1}})
+	parts := map[string]store.MatchParticipant{}
+	for i := 0; i < 6; i++ {
+		p := fmt.Sprintf("p%d", i)
+		if err := st.UpsertAccountPUUIDOnly(ctx, p, "americas"); err != nil {
+			t.Fatal(err)
+		}
+		parts[p] = store.MatchParticipant{PUUID: p, Placement: i + 1, Level: 9, Units: units, Traits: traits, RawParticipant: []byte(`{}`)}
+	}
+	if err := st.InsertMatchWithParticipants(ctx, store.Match{
+		MatchID: "NA1_1", RoutingRegion: "americas", GameDatetime: time.Now(), GameVersion: "x",
+		TFTSetNumber: 18, QueueID: 1100, TFTGameType: "standard", RawPayload: []byte(`{}`),
+	}, parts); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	NewRouter(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/explore/suggest?set=18&queue=1100&have_item=DA_18_EmblemBrawler", nil))
+	var res suggest.Result
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Comps) != 1 || len(res.Comps[0].Emblems) != 1 || res.Comps[0].Emblems[0].Trait != "DA_18_Brawler" {
+		t.Fatalf("comps = %+v, want the Brawler board with the emblem for Brawler", res.Comps)
+	}
+}

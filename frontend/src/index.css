@@ -1396,8 +1396,37 @@ details.patch[open] > summary::before {
 
 /* One line, not squeezed word by word beside the items; the row wraps
    instead when the screen is narrow. */
-.build-stats {
+.advisor-stats {
   white-space: nowrap;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.carriers {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.carrier {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.craft-from {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 260px;
+  font-size: 0.85rem;
+}
+
+.craft-part {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .build-item {
@@ -1952,4 +1981,509 @@ table.partners td:first-child {
 
 .sessions-split td {
   border-top: 2px solid var(--border);
+}
+
+/* Board planner */
+.planner-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.planner-summary {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.planner-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 800px) {
+  .planner-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.planner-boardpanel {
+  overflow-x: auto;
+}
+
+/* The board is 7 pointy-top hexes by 4 rows, odd rows shifted half a hex right,
+   as in the game. Hexes sit on a 15-column grid (each spans two columns) and
+   rows overlap by a quarter of a hex's height. Sizes come from the wrapper's
+   width (container query units): hex width w = 2/15 of it, height 1.1547 w,
+   row pitch 0.75 of that height. */
+.planner-board-wrap {
+  container-type: inline-size;
+}
+
+.planner-board {
+  display: grid;
+  grid-template-columns: repeat(15, 1fr);
+  grid-template-rows: repeat(4, calc(100cqw * 0.1155));
+  padding-bottom: calc(100cqw * 0.0385);
+  --hex: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+}
+
+.planner-slot {
+  position: relative;
+  align-self: start;
+  height: calc(100cqw * 0.154);
+  --edge: #3a3f4e;
+  /* Slots overlap their neighbours' corners; only the (hex-shaped) button
+     should catch the pointer. */
+  pointer-events: none;
+}
+
+.planner-slot.cost-1 { --edge: #9aa4af; }
+.planner-slot.cost-2 { --edge: #1bc660; }
+.planner-slot.cost-3 { --edge: #1b8ae0; }
+.planner-slot.cost-4 { --edge: #c440da; }
+.planner-slot.cost-5 { --edge: #ffb93b; }
+
+.planner-slot.selected {
+  z-index: 2;
+  filter: drop-shadow(0 0 6px var(--accent));
+}
+
+/* The button's clipped shape is also what takes clicks, so neighbouring
+   hexes' overlapping corners don't steal them. */
+.planner-cell {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  clip-path: var(--hex);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.planner-cell.filled {
+  cursor: grab;
+}
+
+.hex-frame,
+.hex-art {
+  position: absolute;
+  clip-path: var(--hex);
+}
+
+.hex-frame {
+  inset: 2px;
+  background: var(--border);
+  opacity: 0.55;
+}
+
+.planner-cell.filled .hex-frame {
+  background: var(--edge);
+  opacity: 1;
+}
+
+.hex-art {
+  inset: 5px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.planner-cell:hover:not(.filled) .hex-frame,
+.planner-cell:focus-visible .hex-frame {
+  background: var(--accent-dim);
+  opacity: 1;
+}
+
+/* The icon fills the whole hex. */
+.hex-art .planner-hex-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  object-fit: cover;
+  object-position: center;
+}
+
+.planner-stars {
+  position: absolute;
+  top: 6%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: clamp(0.55rem, 2cqw, 1rem);
+  line-height: 1;
+  color: #ffd75e;
+  text-shadow: 0 1px 2px #000, 0 0 3px #000;
+  pointer-events: none;
+}
+
+/* Items sit on the hex's lower edge, over the border like the game's. */
+.planner-cell-items {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2%;
+  display: flex;
+  justify-content: center;
+  gap: 1%;
+  pointer-events: none;
+}
+
+.planner-item {
+  width: 30%;
+  line-height: 0;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.planner-cell-items .game-icon {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  border: 1px solid #000;
+  border-radius: 3px;
+}
+
+.planner-hint {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+}
+
+.planner-side .panel h3 {
+  margin-bottom: 8px;
+}
+
+.planner-stars-pick {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.planner-stars-pick .active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.planner-items {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-bottom: 10px;
+}
+
+.planner-augments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.planner-augment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+}
+
+.planner-augment .remove {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1.1rem;
+}
+
+.planner-traits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.planner-traits li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.planner-traits li.inactive {
+  opacity: 0.5;
+}
+
+/* Planner: pick grids and augment slots */
+.planner-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.planner-augment {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.planner-augment-chosen {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+}
+
+/* Planner: compact unit icon grid with a hover card */
+.unit-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.unit-pick-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.unit-pick-cost {
+  flex: 0 0 24px;
+  padding-top: 8px;
+  font-size: 0.8rem;
+}
+
+.unit-pick-icons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.unit-pick-btn {
+  padding: 0;
+  line-height: 0;
+  background: none;
+  border: none;
+  border-radius: 6px;
+}
+
+.unit-pick-btn:hover:not(:disabled),
+.unit-pick-btn:focus-visible {
+  background: none;
+  outline: 2px solid var(--accent);
+}
+
+.unit-pick-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.unit-tip {
+  position: fixed;
+  z-index: 50;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--accent-dim);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  font-size: 0.88rem;
+  pointer-events: none;
+}
+
+.unit-tip.above {
+  transform: translateY(-100%);
+}
+
+.unit-tip-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.unit-tip-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin-top: 8px;
+}
+
+.unit-tip-ability {
+  margin-top: 8px;
+}
+
+.unit-tip-ability p {
+  margin: 2px 0 0;
+  color: var(--text-dim);
+}
+
+/* The augment pickers' lists extend past the panel, which would otherwise
+   clip them (.panel scrolls horizontally); stack above the panels below. */
+.planner-augments-panel {
+  overflow: visible;
+  position: relative;
+  z-index: 3;
+}
+
+/* Planner: item grid (components on both axes) */
+.item-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  max-height: 560px;
+  overflow: auto;
+}
+
+.item-pick-matrix {
+  display: grid;
+  gap: 2px;
+  justify-content: start;
+}
+
+.item-pick-matrix > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  min-width: 0;
+}
+
+/* Icons shrink with the cell so the grid fits a phone. */
+.item-pick-matrix .game-icon {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+}
+
+.item-pick-matrix .item-pick-btn,
+.item-pick-matrix .item-pick-head {
+  width: 100%;
+}
+
+.item-pick-head {
+  display: inline-flex;
+  padding: 2px;
+  border-bottom: 2px solid var(--accent-dim);
+  border-radius: 4px;
+  line-height: 0;
+}
+
+.item-pick-btn {
+  padding: 2px;
+  line-height: 0;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.item-pick-btn:hover:not(:disabled),
+.item-pick-btn:focus-visible {
+  background: none;
+  border-color: var(--accent);
+}
+
+.item-pick-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.item-pick-empty {
+  width: 100%;
+  aspect-ratio: 1;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  opacity: 0.4;
+}
+
+.item-pick-section h4 {
+  margin: 0 0 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.item-pick-icons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.item-tip-part {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Planner: in-game Team Planner code */
+.planner-code-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.planner-code-row input {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.planner-code-box {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+}
+
+/* Planner: trait menu on units that choose one (Lux) */
+.planner-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+/* Planner: traits a unit gains by evolving (Kha'Zix) */
+.planner-evolve {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 0 0 10px;
+  padding: 6px 10px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.planner-evolve label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.planner-evolve label.on {
+  color: var(--accent);
+}
+
+/* Items the unit can't take (an emblem for a trait it has) stay visible, dimmed, with the reason in the hover card. */
+.item-pick-btn.blocked {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.item-tip-note {
+  margin-top: 8px;
+  color: var(--placement-bad);
 }

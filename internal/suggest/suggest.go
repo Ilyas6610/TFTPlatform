@@ -22,6 +22,13 @@ type Input struct {
 	Units   []string // owned units
 	Items   []string // inventory; repeat an id for each copy
 	Recipes Recipes
+	// EmblemTraits maps each emblem item to the trait it grants, so an
+	// emblem can match boards that play its trait.
+	EmblemTraits map[string]string
+	// Enablers are items that are a reason to build a unit (emblems,
+	// artifacts): with only items given, a board unit with a real build
+	// using a held enabler gets that build instead of its usual one.
+	Enablers map[string]bool
 	// Builds are the exact 3-item builds seen on each unit in real boards.
 	Builds map[string][]store.MetaBuild
 	Comps  []comps.Comp
@@ -68,10 +75,14 @@ type PlanEntry struct {
 // ItemFit is what the inventory can make of the items a comp's board puts on
 // one of the player's units.
 type ItemFit struct {
-	Unit    string   `json:"unit"`
-	Items   []string `json:"items"`
-	Steps   []Step   `json:"steps"`
-	Missing []string `json:"missing"`
+	// Alt marks a build other than the board's usual one for this unit,
+	// chosen because it uses a held emblem or artifact; Enablers names them.
+	Alt      bool     `json:"alt,omitempty"`
+	Enablers []string `json:"enablers,omitempty"`
+	Unit     string   `json:"unit"`
+	Items    []string `json:"items"`
+	Steps    []Step   `json:"steps"`
+	Missing  []string `json:"missing"`
 }
 
 // CompMatch is a comp that fits the player's units.
@@ -80,6 +91,17 @@ type CompMatch struct {
 	Have []string   `json:"have"` // owned units on the comp's board
 	Need []string   `json:"need"` // board units not owned yet
 	Fits []ItemFit  `json:"fits"`
+	// Emblems (items-only boards) are held or makeable emblems whose trait
+	// the board plays, after its carries took their items.
+	Emblems []EmblemFit `json:"emblems"`
+}
+
+// EmblemFit is an emblem that adds to a trait a board plays: held whole
+// (From empty) or made from two held components.
+type EmblemFit struct {
+	Item  string   `json:"item"`
+	Trait string   `json:"trait"`
+	From  []string `json:"from,omitempty"`
 }
 
 type Result struct {
@@ -92,11 +114,19 @@ type Result struct {
 	// Units has every owned unit's alternatives, each judged against the
 	// whole inventory (so the same item may appear in several).
 	Units []UnitAdvice `json:"units"`
-	Comps []CompMatch  `json:"comps"`
+	// Comps fit the owned units; without units (items only) they are the
+	// final boards whose carries' items the inventory makes most of, with
+	// Have empty and Fits for every itemized unit.
+	Comps []CompMatch `json:"comps"`
 	// Candidates is set when no units were given: the units whose real
 	// builds this inventory fits best, one build each, closest to ready
 	// first.
 	Candidates []PlanEntry `json:"candidates"`
+	// Builds and Crafts are also set only without units (items-only
+	// advice): real builds by their items whoever carried them, and what
+	// the held components make right now. See items.go.
+	Builds []ItemBuild `json:"builds"`
+	Crafts []Craft     `json:"crafts"`
 }
 
 type inventory map[string]int
@@ -212,7 +242,7 @@ func better(a, b BuildOption) bool {
 // Advise computes the plan, per-unit alternatives and matching comps.
 func Advise(in Input) Result {
 	inv := newInventory(in.Items)
-	res := Result{Plan: []PlanEntry{}, Leftover: []string{}, Units: []UnitAdvice{}, Comps: []CompMatch{}, Candidates: []PlanEntry{}}
+	res := Result{Plan: []PlanEntry{}, Leftover: []string{}, Units: []UnitAdvice{}, Comps: []CompMatch{}, Candidates: []PlanEntry{}, Builds: []ItemBuild{}, Crafts: []Craft{}}
 
 	// Per-unit alternatives against the whole inventory.
 	owned := dedupe(in.Units)
@@ -283,9 +313,15 @@ func Advise(in Input) Result {
 
 	if len(owned) == 0 && len(in.Items) > 0 {
 		res.Candidates = candidates(in, inv)
+		res.Builds = itemBuilds(in, inv)
+		res.Crafts = crafts(in, inv)
 	}
 
-	res.Comps = matchComps(in, owned, inv)
+	if len(owned) == 0 && len(in.Items) > 0 {
+		res.Comps = itemComps(in, inv) // final boards for the items
+	} else {
+		res.Comps = matchComps(in, owned, inv)
+	}
 	return res
 }
 
@@ -303,7 +339,7 @@ func matchComps(in Input, owned []string, inv inventory) []CompMatch {
 
 	var out []CompMatch
 	for _, c := range in.Comps {
-		m := CompMatch{Comp: c, Have: []string{}, Need: []string{}, Fits: []ItemFit{}}
+		m := CompMatch{Comp: c, Have: []string{}, Need: []string{}, Fits: []ItemFit{}, Emblems: []EmblemFit{}}
 		for _, bu := range c.Board {
 			if !own[bu.ID] {
 				m.Need = append(m.Need, bu.ID)

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"tft-platform/internal/comps"
 	"tft-platform/internal/setdata"
@@ -57,7 +58,7 @@ func (s *Server) handleExploreSuggest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	recipes, err := s.recipes(ctx, f.Set)
+	itemData, err := s.setItemData(ctx, f.Set)
 	if err != nil {
 		writeDBError(w, r, err)
 		return
@@ -80,7 +81,9 @@ func (s *Server) handleExploreSuggest(w http.ResponseWriter, r *http.Request) {
 		builds[u.ID] = u.Builds
 	}
 	writeJSON(w, http.StatusOK, suggest.Advise(suggest.Input{
-		Units: units, Items: items, Recipes: recipes, Builds: builds, Comps: compList.Comps,
+		Units: units, Items: items, Recipes: itemData.recipes, EmblemTraits: itemData.emblemTraits,
+		Enablers: itemData.enablers,
+		Builds:   builds, Comps: compList.Comps,
 	}))
 }
 
@@ -110,29 +113,53 @@ func invalidIDError(name, v string) error {
 	return paramError("invalid " + name + " " + strconv.Quote(v))
 }
 
-// recipes returns the set's item recipes (completed item -> its two
-// components) from the newest stored set data; empty if none is stored yet,
-// in which case only whole items can be matched.
-func (s *Server) recipes(ctx context.Context, set int) (suggest.Recipes, error) {
-	v, err := s.meta.get(ctx, "recipes|"+strconv.Itoa(set), func(ctx context.Context) (any, error) {
+// setItems is what the advisor needs from the newest stored set data.
+type setItems struct {
+	recipes      suggest.Recipes   // completed item -> its two components
+	emblemTraits map[string]string // emblem item -> the trait it grants
+	enablers     map[string]bool   // emblems and artifacts
+}
+
+// setItemData returns the set's item recipes and emblem traits from the
+// newest stored set data; both empty if none is stored yet, in which case
+// only whole items can be matched and emblems match no board. An emblem's
+// trait is the trait named like it without " Emblem" ("Brawler Emblem" ->
+// Brawler), which holds for every Set 18 emblem.
+func (s *Server) setItemData(ctx context.Context, set int) (setItems, error) {
+	v, err := s.meta.get(ctx, "setitems|"+strconv.Itoa(set), func(ctx context.Context) (any, error) {
 		snaps, err := setdata.LoadSnapshots(ctx, s.Store, set)
 		if err != nil {
 			return nil, err
 		}
-		rec := suggest.Recipes{}
-		if len(snaps) > 0 {
-			for _, it := range snaps[len(snaps)-1].Items {
-				if len(it.Composition) == 2 {
-					rec[it.APIName] = [2]string{it.Composition[0], it.Composition[1]}
+		out := setItems{recipes: suggest.Recipes{}, emblemTraits: map[string]string{}, enablers: map[string]bool{}}
+		if len(snaps) == 0 {
+			return out, nil
+		}
+		newest := snaps[len(snaps)-1]
+		traitByName := map[string]string{}
+		for _, t := range newest.Traits {
+			traitByName[strings.ToLower(t.Name)] = t.APIName
+		}
+		for _, it := range newest.Items {
+			if len(it.Composition) == 2 {
+				out.recipes[it.APIName] = [2]string{it.Composition[0], it.Composition[1]}
+			}
+			if it.Kind == "emblem" || it.Kind == "artifact" {
+				out.enablers[it.APIName] = true
+			}
+			if it.Kind == "emblem" {
+				name := strings.TrimSuffix(strings.ToLower(it.Name), " emblem")
+				if trait, ok := traitByName[name]; ok {
+					out.emblemTraits[it.APIName] = trait
 				}
 			}
 		}
-		return rec, nil
+		return out, nil
 	})
 	if err != nil {
-		return nil, err
+		return setItems{}, err
 	}
-	return v.(suggest.Recipes), nil
+	return v.(setItems), nil
 }
 
 // metaComps computes the comps for scope f, shared (and cached) with the

@@ -5,6 +5,7 @@ import LeaderboardPage from "./pages/LeaderboardPage";
 import MetaStatsPage from "./pages/MetaStatsPage";
 import SetInfoPage from "./pages/SetInfoPage";
 import ExplorerPage from "./pages/ExplorerPage";
+import PlannerPage from "./pages/PlannerPage";
 import { CURRENT_TFT_SET } from "./config";
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
           <NavLink to="/leaderboard/na1">Leaderboard</NavLink>
           <NavLink to={`/meta/${CURRENT_TFT_SET}`}>Meta</NavLink>
           <NavLink to="/explore">Explorer</NavLink>
+          <NavLink to="/planner">Planner</NavLink>
           <NavLink to={`/set/${CURRENT_TFT_SET}/units`}>Set Info</NavLink>
         </nav>
       </header>
@@ -31,6 +33,7 @@ export default function App() {
           <Route path="/meta/:set" element={<MetaStatsPage />} />
           <Route path="/set/:set/:tab" element={<SetInfoPage />} />
           <Route path="/explore" element={<ExplorerPage />} />
+          <Route path="/planner" element={<PlannerPage />} />
         </Routes>
       </main>
       <footer className="app-footer muted">
