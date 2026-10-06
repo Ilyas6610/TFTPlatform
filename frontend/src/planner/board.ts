@@ -7,11 +7,12 @@
 // known) unknown units, items and augments are dropped by `sanitize`.
 
 import { SetAugment, SetData, SetItem, SetTrait, SetUnit } from "../api/client";
+import { AUGMENT_SLOTS, availableAt } from "./augmentStages";
 
 export const ROWS = 4;
 export const COLS = 7;
 export const MAX_ITEMS = 3;
-export const MAX_AUGMENTS = 3;
+export const AUGMENT_COUNT = AUGMENT_SLOTS.length;
 export const MAX_LEVEL = 10;
 export const DEFAULT_LEVEL = 8;
 export const MAX_TITLE = 40;
@@ -29,10 +30,11 @@ export interface Board {
   title: string;
   level: number;
   units: PlacedUnit[];
-  augments: string[];
+  /** One entry per augment slot (first, second, third), null when not chosen. */
+  augments: (string | null)[];
 }
 
-export const emptyBoard = (set: number): Board => ({ set, title: "", level: DEFAULT_LEVEL, units: [], augments: [] });
+export const emptyBoard = (set: number): Board => ({ set, title: "", level: DEFAULT_LEVEL, units: [], augments: Array(AUGMENT_COUNT).fill(null) });
 
 export const cellRow = (pos: number) => Math.floor(pos / COLS);
 export const cellCol = (pos: number) => pos % COLS;
@@ -49,7 +51,7 @@ const clampStar = (n: number): 1 | 2 | 3 => (n >= 3 ? 3 : n === 2 ? 2 : 1);
 
 /**
  * The board as URL parameters:
- *   set=18  t=<title>  lv=8  a=<augment> (repeated)
+ *   set=18  t=<title>  lv=8  a1= a2= a3= <augment> (first, second, third slot)
  *   u=<unitId>.<star>.<pos>[.<item>,<item>,<item>] (repeated)
  * Positions and ids use only characters that need no URL escaping.
  */
@@ -58,7 +60,7 @@ export function encodeBoard(b: Board): URLSearchParams {
   q.set("set", String(b.set));
   if (b.title) q.set("t", b.title);
   if (b.level !== DEFAULT_LEVEL) q.set("lv", String(b.level));
-  for (const a of b.augments) q.append("a", a);
+  b.augments.forEach((a, i) => a && q.set(`a${i + 1}`, a));
   for (const u of [...b.units].sort((x, y) => x.pos - y.pos))
     q.append("u", `${u.id}.${u.star}.${u.pos}${u.items.length ? "." + u.items.join(",") : ""}`);
   return q;
@@ -72,8 +74,18 @@ export function decodeBoard(q: URLSearchParams, defaultSet: number): Board {
   const lv = Number(q.get("lv"));
   if (Number.isInteger(lv) && lv >= 1 && lv <= MAX_LEVEL) b.level = lv;
 
+  // a1..a3 are the slots; plain repeated `a` (older links) fill the slots in order.
+  const chosen = new Set<string>();
+  const pick = (slot: number, a: string | null) => {
+    if (a && ID.test(a) && !chosen.has(a) && b.augments[slot] === null) {
+      b.augments[slot] = a;
+      chosen.add(a);
+    }
+  };
+  for (let i = 0; i < AUGMENT_COUNT; i++) pick(i, q.get(`a${i + 1}`));
   for (const a of q.getAll("a")) {
-    if (ID.test(a) && !b.augments.includes(a) && b.augments.length < MAX_AUGMENTS) b.augments.push(a);
+    const free = b.augments.indexOf(null);
+    if (free >= 0) pick(free, a);
   }
   const taken = new Set<number>();
   for (const raw of q.getAll("u")) {
@@ -101,7 +113,7 @@ export interface Dropped {
 export function sanitize(b: Board, data: SetData): { board: Board; dropped: Dropped } {
   const units = new Set(data.units.map((u) => u.apiName));
   const items = new Set(data.items.map((i) => i.apiName));
-  const augments = new Set(data.augments.map((a) => a.apiName));
+  const augmentById = new Map(data.augments.map((a) => [a.apiName, a]));
   const dropped: Dropped = { units: 0, items: 0, augments: 0 };
   const board: Board = {
     ...b,
@@ -114,10 +126,13 @@ export function sanitize(b: Board, data: SetData): { board: Board; dropped: Drop
       dropped.items += u.items.length - kept.length;
       return [{ ...u, items: kept }];
     }),
-    augments: b.augments.filter((a) => {
-      const ok = augments.has(a);
-      if (!ok) dropped.augments++;
-      return ok;
+    // Unknown augments go, and so do ones the slot's stage can't offer.
+    augments: b.augments.map((a, slot) => {
+      if (a === null) return null;
+      const aug = augmentById.get(a);
+      if (aug && availableAt(aug, slot)) return a;
+      dropped.augments++;
+      return null;
     }),
   };
   return { board, dropped };
@@ -168,13 +183,11 @@ export const removeItem = (b: Board, pos: number, index: number): Board => ({
   units: b.units.map((u) => (u.pos === pos ? { ...u, items: u.items.filter((_, i) => i !== index) } : u)),
 });
 
+/** Puts an augment in a slot (null empties it). An augment sits in one slot only. */
 export function setAugment(b: Board, slot: number, id: string | null): Board {
-  const list = [...b.augments];
-  if (id === null) list.splice(slot, 1);
-  else if (!list.includes(id)) {
-    if (slot < list.length) list[slot] = id;
-    else if (list.length < MAX_AUGMENTS) list.push(id);
-  }
+  if (slot < 0 || slot >= AUGMENT_COUNT) return b;
+  const list = b.augments.map((a) => (id !== null && a === id ? null : a));
+  list[slot] = id;
   return { ...b, augments: list };
 }
 

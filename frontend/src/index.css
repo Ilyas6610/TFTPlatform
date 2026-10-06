@@ -1650,3 +1650,104 @@ details.patch[open] > summary::before {
 .planner-traits li.inactive {
   opacity: 0.5;
 }
+
+/* Planner: pick tables and augment slots */
+.planner-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pick-table-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 8px;
+}
+
+.pick-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pick-filters button {
+  padding: 3px 10px;
+}
+
+.pick-filters .active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.pick-table-wrap {
+  max-height: 340px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.pick-grid {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.pick-grid th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
+  padding: 6px 8px;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+
+.pick-grid td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.pick-grid tr.clickable:hover td {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.pick-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.pick-traits {
+  font-size: 0.9rem;
+}
+
+.pick-recipe {
+  white-space: nowrap;
+}
+
+.pick-recipe .game-icon {
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.planner-augment {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.planner-augment-chosen {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+}

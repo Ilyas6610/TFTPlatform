@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ApiError, SetData, getSetData } from "../api/client";
+import { ApiError, SetData, SetItem, getSetData } from "../api/client";
 import { GameIcon } from "../assets/tft";
 import { Picker, PickerOption } from "../components/Picker";
+import { ItemTable, UnitTable } from "../components/PickTables";
 import { Names, TIER_STYLE, buildNames } from "../components/stats";
 import { CURRENT_TFT_SET } from "../config";
+import { AUGMENT_SLOTS, availableAt } from "../planner/augmentStages";
 import {
   Board,
   COLS,
-  MAX_AUGMENTS,
   MAX_ITEMS,
   MAX_LEVEL,
   MAX_TITLE,
@@ -71,35 +72,18 @@ export default function PlannerPage() {
   const selectedUnit = selected === null ? undefined : unitAt(selected);
   const unitInfo = (id: string) => data?.units.find((u) => u.apiName === id);
 
-  const unitOptions = useMemo<PickerOption[]>(
-    () =>
-      [...(data?.units ?? [])]
-        .sort((a, b) => a.cost - b.cost || a.name.localeCompare(b.name))
-        .map((u) => ({ id: u.apiName, boards: 0, label: `${u.name} · ${u.cost}g` })),
-    [data],
-  );
-  const itemOptions = useMemo<PickerOption[]>(
-    () =>
-      data
-        ? holdableItems(data).map((i) => ({
-            id: i.apiName,
-            boards: 0,
-            label: `${i.name}${i.kind === "component" ? " (component)" : i.kind === "completed" ? "" : ` (${i.kind})`}`,
-          }))
-        : [],
-    [data],
-  );
-  const augmentOptions = useMemo<PickerOption[]>(
-    () =>
-      data
-        ? augmentsByTier(data).map((a) => ({
+  const allItems = useMemo(() => (data ? holdableItems(data) : []), [data]);
+  // Augments each slot can offer: tier order, not already chosen elsewhere.
+  const augmentOptions = (slot: number): PickerOption[] =>
+    data
+      ? augmentsByTier(data)
+          .filter((a) => availableAt(a, slot) && !board.augments.includes(a.apiName))
+          .map((a) => ({
             id: a.apiName,
             boards: 0,
             label: tierName(a.tier) ? `${a.name} (${tierName(a.tier)})` : a.name,
           }))
-        : [],
-    [data],
-  );
+      : [];
 
   function clickCell(pos: number) {
     const here = unitAt(pos);
@@ -151,17 +135,10 @@ export default function PlannerPage() {
               ))}
             </select>
           </label>
-          <Picker
-            placeholder="Add unit…"
-            kind="champions"
-            options={board.units.length < ROWS * COLS ? unitOptions : []}
-            names={names}
-            onPick={(id) => update(addUnit(board, id))}
-          />
           <button type="button" onClick={share}>
             {copied ? "Link copied" : "Copy share link"}
           </button>
-          {(board.units.length > 0 || board.augments.length > 0 || board.title) && (
+          {(board.units.length > 0 || board.augments.some(Boolean) || board.title) && (
             <button
               type="button"
               onClick={() => {
@@ -189,6 +166,7 @@ export default function PlannerPage() {
       </div>
 
       <div className="planner-layout">
+        <div className="planner-main">
         <div className="panel planner-boardpanel">
           <div className="planner-board" role="grid" aria-label="Board">
             {Array.from({ length: ROWS * COLS }, (_, pos) => {
@@ -252,6 +230,21 @@ export default function PlannerPage() {
           </p>
         </div>
 
+        <div className="panel planner-units">
+          <h3>Units</h3>
+          {data ? (
+            <UnitTable
+              units={data.units}
+              names={names}
+              disabled={board.units.length >= ROWS * COLS}
+              onPick={(id) => update(addUnit(board, id))}
+            />
+          ) : (
+            <p className="muted">Loading units…</p>
+          )}
+        </div>
+        </div>
+
         <div className="planner-side">
           <div className="panel">
             {selectedUnit ? (
@@ -261,7 +254,7 @@ export default function PlannerPage() {
                 pos={selectedUnit.pos}
                 names={names}
                 data={data}
-                itemOptions={itemOptions}
+                items={allItems}
                 update={(b) => update(b)}
                 onRemoved={() => setSelected(null)}
               />
@@ -273,42 +266,48 @@ export default function PlannerPage() {
           <div className="panel">
             <h3>Augments</h3>
             <div className="planner-augments">
-              {board.augments.map((id, slot) => {
-                const aug = data?.augments.find((a) => a.apiName === id);
+              {AUGMENT_SLOTS.map((slot, i) => {
+                const id = board.augments[i];
+                const aug = id ? data?.augments.find((a) => a.apiName === id) : undefined;
                 return (
-                  <div className="planner-augment" key={id}>
-                    <GameIcon
-                      kind="augments"
-                      id={id}
-                      size={32}
-                      fallbackSrc={names.icon(id)}
-                      fallbackName={names.name(id)}
-                    />
-                    <span title={aug?.desc}>
-                      <strong>{names.name(id)}</strong>
-                      {aug && tierName(aug.tier) && <span className="muted"> · {tierName(aug.tier)}</span>}
-                    </span>
-                    <button
-                      type="button"
-                      className="remove"
-                      title="Remove"
-                      onClick={() => update(setAugment(board, slot, null))}
-                    >
-                      ×
-                    </button>
+                  <div className="planner-augment" key={slot.stage}>
+                    <div className="planner-augment-label">
+                      <strong>{slot.label}</strong> <span className="muted">· stage {slot.stage}</span>
+                    </div>
+                    {id ? (
+                      <div className="planner-augment-chosen">
+                        <GameIcon
+                          kind="augments"
+                          id={id}
+                          size={32}
+                          fallbackSrc={names.icon(id)}
+                          fallbackName={names.name(id)}
+                        />
+                        <span title={aug?.desc}>
+                          <strong>{names.name(id)}</strong>
+                          {aug && tierName(aug.tier) && <span className="muted"> · {tierName(aug.tier)}</span>}
+                        </span>
+                        <button
+                          type="button"
+                          className="remove"
+                          title="Remove"
+                          onClick={() => update(setAugment(board, i, null))}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ) : (
+                      <Picker
+                        placeholder={`Pick for ${slot.stage}…`}
+                        kind="augments"
+                        options={augmentOptions(i)}
+                        names={names}
+                        onPick={(a) => update(setAugment(board, i, a))}
+                      />
+                    )}
                   </div>
                 );
               })}
-              {board.augments.length < MAX_AUGMENTS && (
-                <Picker
-                  placeholder="Add augment…"
-                  kind="augments"
-                  options={augmentOptions}
-                  names={names}
-                  exclude={board.augments}
-                  onPick={(a) => update(setAugment(board, board.augments.length, a))}
-                />
-              )}
             </div>
           </div>
 
@@ -348,7 +347,7 @@ function UnitEditor({
   pos,
   names,
   data,
-  itemOptions,
+  items,
   update,
   onRemoved,
 }: {
@@ -356,7 +355,7 @@ function UnitEditor({
   pos: number;
   names: Names;
   data: SetData | null;
-  itemOptions: PickerOption[];
+  items: SetItem[];
   update: (b: Board) => void;
   onRemoved: () => void;
 }) {
@@ -397,16 +396,13 @@ function UnitEditor({
             {names.name(it)} ×
           </button>
         ))}
-        {unit.items.length < MAX_ITEMS && (
-          <Picker
-            placeholder="Add item…"
-            kind="items"
-            options={itemOptions}
-            names={names}
-            onPick={(it) => update(addItem(board, pos, it))}
-          />
-        )}
       </div>
+      <ItemTable
+        items={items}
+        names={names}
+        disabled={unit.items.length >= MAX_ITEMS}
+        onPick={(it) => update(addItem(board, pos, it))}
+      />
       <button
         type="button"
         onClick={() => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SetData } from "../api/client";
+import { SLOT_EXCEPTIONS, availableAt } from "./augmentStages";
 import {
   COLS,
   ROWS,
@@ -31,7 +32,10 @@ const data = {
     { apiName: "I_EmblemSage", name: "Sage Emblem", kind: "emblem" },
     { apiName: "I_EmblemBlade", name: "Blade Emblem", kind: "emblem" },
   ],
-  augments: [{ apiName: "A_One", name: "One", tier: 1 }],
+  augments: [
+    { apiName: "A_One", name: "One", tier: 1 },
+    { apiName: "A_Two", name: "Two", tier: 3 },
+  ],
 } as unknown as SetData;
 
 describe("URL round trip", () => {
@@ -41,7 +45,7 @@ describe("URL round trip", () => {
     b = addUnit(b, "U_A", 3);
     b = addItem(addItem(b, 3, "I_IE"), 3, "I_EmblemSage");
     b = addUnit(b, "U_B", 20);
-    b = setAugment(b, 0, "A_One");
+    b = setAugment(b, 1, "A_One");
     const back = decodeBoard(new URLSearchParams(encodeBoard(b).toString()), 18);
     expect(back).toEqual({ ...b, units: [...b.units].sort((x, y) => x.pos - y.pos) });
   });
@@ -56,7 +60,7 @@ describe("decoding untrusted input", () => {
 
   it("drops malformed units and bounds everything", () => {
     const b = dec(
-      "set=18&u=U_A.2.5&u=U_B.9.6.I1,I2,I3,I4,I5&u=bad id.1.1&u=U_C.1.28&u=U_C.1.-1&u=U_C.x.1&u=U_A.1.5&u=U_C..2&lv=99&a=A1&a=A1&a=A2&a=A3&a=A4",
+      "set=18&u=U_A.2.5&u=U_B.9.6.I1,I2,I3,I4,I5&u=bad id.1.1&u=U_C.1.28&u=U_C.1.-1&u=U_C.x.1&u=U_A.1.5&u=U_C..2&lv=99&a=A1&a=A1&a=A2&a=A3&a=A4&a3=A9&a2=A9",
     );
     expect(b.units.map((u) => [u.id, u.star, u.pos])).toEqual([
       ["U_A", 2, 5],
@@ -66,7 +70,8 @@ describe("decoding untrusted input", () => {
     ]); // "bad id" is rejected, and the second unit at pos 5 is ignored
     expect(b.units[1].items).toHaveLength(3);
     expect(b.level).toBe(8);
-    expect(b.augments).toEqual(["A1", "A2", "A3"]);
+    // a2 and a3 take their own slots (A9 once); plain `a` values fill what is left in order.
+    expect(b.augments).toEqual(["A1", "A9", "A2"]);
   });
 
   it("cleans the title and rejects odd sets", () => {
@@ -84,11 +89,11 @@ describe("decoding untrusted input", () => {
 
 describe("sanitize", () => {
   it("drops what the set data doesn't know", () => {
-    const b = decodeBoard(new URLSearchParams("u=U_A.1.0.I_IE,I_nope&u=U_gone.1.1&a=A_One&a=A_gone"), 18);
+    const b = decodeBoard(new URLSearchParams("u=U_A.1.0.I_IE,I_nope&u=U_gone.1.1&a1=A_One&a3=A_gone"), 18);
     const { board, dropped } = sanitize(b, data);
     expect(board.units.map((u) => u.id)).toEqual(["U_A"]);
     expect(board.units[0].items).toEqual(["I_IE"]);
-    expect(board.augments).toEqual(["A_One"]);
+    expect(board.augments).toEqual(["A_One", null, null]);
     expect(dropped).toEqual({ units: 1, items: 1, augments: 1 });
   });
 });
@@ -112,13 +117,20 @@ describe("edits", () => {
     expect(b.units.find((u) => u.id === "U_B")!.pos).toBe(5);
   });
 
-  it("holds at most three items and three augments", () => {
+  it("holds at most three items", () => {
     let b = addUnit(emptyBoard(18), "U_A", 0);
     for (let i = 0; i < 5; i++) b = addItem(b, 0, "I_IE");
     expect(b.units[0].items).toHaveLength(3);
-    for (const a of ["1", "2", "3", "4"]) b = setAugment(b, b.augments.length, a);
-    expect(b.augments).toEqual(["1", "2", "3"]);
-    expect(setAugment(b, 0, null).augments).toEqual(["2", "3"]);
+  });
+
+  it("puts each augment in one slot, and slots can be filled in any order", () => {
+    let b = setAugment(emptyBoard(18), 2, "A_One");
+    b = setAugment(b, 0, "A_Two");
+    expect(b.augments).toEqual(["A_Two", null, "A_One"]);
+    b = setAugment(b, 1, "A_One"); // moving it empties the old slot
+    expect(b.augments).toEqual(["A_Two", "A_One", null]);
+    expect(setAugment(b, 5, "A_One")).toBe(b);
+    expect(setAugment(b, 0, null).augments).toEqual([null, "A_One", null]);
   });
 });
 
@@ -158,5 +170,26 @@ describe("traits and cost", () => {
     let b = addUnit(addUnit(emptyBoard(18), "U_A", 0), "U_C", 1);
     b = { ...b, units: b.units.map((u) => (u.id === "U_A" ? { ...u, star: 3 } : { ...u, star: 2 })) };
     expect(boardCost(b, data)).toBe(1 * 9 + 5 * 3);
+  });
+});
+
+describe("augment stages", () => {
+  it("every tier is offered in every slot by default", () => {
+    for (const tier of [0, 1, 2, 3]) for (const slot of [0, 1, 2]) expect(availableAt({ apiName: "X", tier }, slot)).toBe(true);
+    expect(availableAt({ apiName: "X", tier: 1 }, 3)).toBe(false); // no fourth slot
+  });
+
+  it("an augment tied to some stages is dropped from the others when a link is loaded", () => {
+    SLOT_EXCEPTIONS["A_Two"] = [2];
+    try {
+      const b = decodeBoard(new URLSearchParams("a1=A_Two&a3=A_One"), 18);
+      const { board, dropped } = sanitize(b, data);
+      expect(board.augments).toEqual([null, null, "A_One"]);
+      expect(dropped.augments).toBe(1);
+      const ok = sanitize(decodeBoard(new URLSearchParams("a3=A_Two"), 18), data);
+      expect(ok.board.augments).toEqual([null, null, "A_Two"]);
+    } finally {
+      delete SLOT_EXCEPTIONS["A_Two"];
+    }
   });
 });
