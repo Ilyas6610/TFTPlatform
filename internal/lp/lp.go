@@ -51,10 +51,28 @@ type Change struct {
 	Games int `json:"games"`
 }
 
+// clockSlack is how far a snapshot's fetch time may be from when Riot's
+// record actually stood (our clock against Riot's game times, Riot's
+// ladder caching, games that just ended). Games ending within it of a
+// snapshot may or may not be counted in it; game counts decide.
+const clockSlack = time.Hour
+
+// seasonDrop is how many fewer games a later snapshot may count and still
+// be a stale copy (the apex ladder lags the by-puuid lookup) rather than a
+// new season's reset record.
+const seasonDrop = 5
+
 // Attribute maps match ids to LP changes. snaps may mix queues; games are a
 // player's stored games (any queue). Games outside snapshot coverage, or in
 // spans where the stored games don't add up to the record's game count
 // (some not stored), get no entry.
+//
+// Snapshots are ordered by games played (wins + losses), not fetch time:
+// a ladder snapshot can be older than a by-puuid one fetched seconds
+// before it. Each snapshot is then placed in the player's stored ranked
+// games by its game count, anchored to the games that ended before it was
+// fetched (within clockSlack), so a span covers exactly as many stored
+// games as Riot's record grew by.
 func Attribute(snaps []store.RankSnapshot, games []store.TimedGame) map[string]Change {
 	out := map[string]Change{}
 	byQueue := map[string][]store.RankSnapshot{}
@@ -62,39 +80,134 @@ func Attribute(snaps []store.RankSnapshot, games []store.TimedGame) map[string]C
 		byQueue[s.QueueType] = append(byQueue[s.QueueType], s)
 	}
 	for queue, qs := range byQueue {
-		sort.SliceStable(qs, func(i, j int) bool { return qs[i].FetchedAt.Before(qs[j].FetchedAt) })
 		var ranked []store.TimedGame
 		for _, g := range games {
 			if QueueType(g.QueueID) == queue {
 				ranked = append(ranked, g)
 			}
 		}
-		for i := 1; i < len(qs); i++ {
-			before, after := qs[i-1], qs[i]
-			played := after.Games() - before.Games()
-			if played <= 0 {
-				continue // no games between (or a reset): nothing to attribute
-			}
-			between := gamesIn(ranked, before.FetchedAt, after.FetchedAt)
-			if len(between) != played {
-				continue // a game isn't stored (or not yet counted): unknown
-			}
-			newest := between[len(between)-1]
-			out[newest.MatchID] = Change{Delta: Value(after) - Value(before), Games: played}
+		sort.SliceStable(ranked, func(i, j int) bool { return ranked[i].End().Before(ranked[j].End()) })
+		for _, season := range seasons(qs) {
+			attributeSeason(season, ranked, out)
 		}
 	}
 	return out
 }
 
-// gamesIn returns games that ended in (from, to].
-func gamesIn(games []store.TimedGame, from, to time.Time) []store.TimedGame {
-	var out []store.TimedGame
-	for _, g := range games {
-		if g.GameDatetime.After(from) && !g.GameDatetime.After(to) {
-			out = append(out, g)
+// seasons splits one queue's snapshots where the game count resets (a new
+// season), each ordered by games played, then fetch time.
+func seasons(qs []store.RankSnapshot) [][]store.RankSnapshot {
+	sort.SliceStable(qs, func(i, j int) bool { return qs[i].FetchedAt.Before(qs[j].FetchedAt) })
+	var out [][]store.RankSnapshot
+	var cur []store.RankSnapshot
+	most := 0
+	for _, s := range qs {
+		if len(cur) > 0 && s.Games() < most-seasonDrop {
+			out, cur, most = append(out, cur), nil, 0
 		}
+		cur = append(cur, s)
+		most = max(most, s.Games())
+	}
+	if len(cur) > 0 {
+		out = append(out, cur)
+	}
+	for _, season := range out {
+		sort.SliceStable(season, func(i, j int) bool {
+			if season[i].Games() != season[j].Games() {
+				return season[i].Games() < season[j].Games()
+			}
+			return season[i].FetchedAt.Before(season[j].FetchedAt)
+		})
 	}
 	return out
+}
+
+// attributeSeason places a season's snapshots (ordered by games played) in
+// ranked (stored games of the queue, by end time) and records each span's
+// change on its newest game.
+//
+// A snapshot counting c games sits at position P = c + K: after the first
+// P stored games, for one offset K shared along a run of snapshots. The
+// time evidence bounds each position to the games that ended within
+// clockSlack of the fetch; a run extends while some K satisfies every
+// snapshot in it. A snapshot that fits no K with the run (a game in
+// between isn't stored) starts a new run, and the span into it is unknown.
+func attributeSeason(season []store.RankSnapshot, ranked []store.TimedGame, out map[string]Change) {
+	n := len(season)
+	if n < 2 {
+		return
+	}
+	// Riot's record can't count a game before it happened: a snapshot
+	// counting more games stood no earlier than one counting fewer, so
+	// fetch times are made monotonic from the newest back.
+	at := make([]time.Time, n)
+	at[n-1] = season[n-1].FetchedAt
+	for i := n - 2; i >= 0; i-- {
+		at[i] = season[i].FetchedAt
+		if at[i+1].Before(at[i]) {
+			at[i] = at[i+1]
+		}
+	}
+	endedBy := func(t time.Time) int {
+		return sort.Search(len(ranked), func(i int) bool { return ranked[i].End().After(t) })
+	}
+	// Per snapshot: the exact position by time, and the K range it allows.
+	exact := make([]int, n)
+	lo, hi := make([]int, n), make([]int, n)
+	for i, s := range season {
+		exact[i] = endedBy(at[i])
+		lo[i] = endedBy(at[i].Add(-clockSlack)) - s.Games()
+		hi[i] = min(endedBy(at[i].Add(clockSlack)), len(ranked)) - s.Games()
+	}
+
+	for start := 0; start < n; {
+		kLo, kHi := lo[start], hi[start]
+		end := start + 1
+		for ; end < n; end++ {
+			nLo, nHi := max(kLo, lo[end]), min(kHi, hi[end])
+			if nLo > nHi {
+				break
+			}
+			kLo, kHi = nLo, nHi
+		}
+		if k, ok := bestOffset(season[start:end], exact[start:end], kLo, kHi); ok {
+			for i := start + 1; i < end; i++ {
+				from, to := season[i-1].Games()+k, season[i].Games()+k
+				if to <= from || from < 0 || to > len(ranked) {
+					continue
+				}
+				out[ranked[to-1].MatchID] = Change{Delta: Value(season[i]) - Value(season[i-1]), Games: to - from}
+			}
+		}
+		start = end
+	}
+}
+
+// bestOffset picks the K in [kLo, kHi] that puts most snapshots exactly
+// where their fetch time says, then the closest overall. A tie is
+// ambiguous: no K.
+func bestOffset(run []store.RankSnapshot, exact []int, kLo, kHi int) (int, bool) {
+	if len(run) < 2 {
+		return 0, false
+	}
+	best, bestHits, bestDev, tie := 0, -1, 0, false
+	for k := kLo; k <= kHi; k++ {
+		hits, dev := 0, 0
+		for i, s := range run {
+			d := s.Games() + k - exact[i]
+			if d == 0 {
+				hits++
+			}
+			dev += max(d, -d)
+		}
+		switch {
+		case hits > bestHits || (hits == bestHits && dev < bestDev):
+			best, bestHits, bestDev, tie = k, hits, dev, false
+		case hits == bestHits && dev == bestDev:
+			tie = true
+		}
+	}
+	return best, bestHits >= 0 && !tie
 }
 
 // typicalLP is a rough LP change per placement in Ranked (index 0 = 1st).
@@ -118,7 +231,7 @@ type EstimatedPoint struct {
 func EstimateBefore(first store.RankSnapshot, games []store.TimedGame, set int) []EstimatedPoint {
 	var before []store.TimedGame
 	for _, g := range games {
-		if g.QueueID == 1100 && g.SetNumber == set && g.GameDatetime.Before(first.FetchedAt) {
+		if g.QueueID == 1100 && g.SetNumber == set && g.End().Before(first.FetchedAt) {
 			before = append(before, g)
 		}
 	}

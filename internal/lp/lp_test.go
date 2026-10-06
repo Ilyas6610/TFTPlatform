@@ -80,3 +80,57 @@ func TestEstimateBefore(t *testing.T) {
 		t.Fatalf("got %+v", got)
 	}
 }
+
+// A real sequence: the apex ladder's snapshot (687, 373 games) was fetched
+// seconds after a by-puuid one that already counted a game more (654, 374
+// games), and the server's clock was behind, so snapshots "fetched" before
+// a game started already counted it. Game counts still line up.
+func TestAttribute_StaleLadderAndClockSkew(t *testing.T) {
+	at := func(hm string) time.Time {
+		v, _ := time.Parse("15:04", hm)
+		return time.Date(2026, 10, 6, v.Hour(), v.Minute(), 0, 0, time.UTC)
+	}
+	s := func(lp, wins, losses int, fetched string) store.RankSnapshot {
+		return store.RankSnapshot{QueueType: "RANKED_TFT", Tier: "CHALLENGER", Rank: "I", LeaguePoints: lp, Wins: wins, Losses: losses, FetchedAt: at(fetched)}
+	}
+	snaps := []store.RankSnapshot{
+		s(667, 197, 174, "04:31"),
+		s(654, 199, 175, "06:28"),
+		s(687, 199, 174, "06:29"), // stale ladder copy
+		s(640, 200, 176, "09:32"),
+	}
+	g := func(id, start string, mins int) store.TimedGame {
+		return store.TimedGame{MatchID: id, QueueID: 1100, GameDatetime: at(start), GameLength: time.Duration(mins) * time.Minute}
+	}
+	games := []store.TimedGame{
+		g("before", "03:01", 36),
+		g("g1", "05:25", 40), g("g2", "05:59", 35), g("g3", "06:38", 39), g("g4", "07:18", 40), g("g5", "07:57", 36),
+	}
+	got := Attribute(snaps, games)
+	want := map[string]Change{
+		"g2": {Delta: 20, Games: 2},  // 667 -> 687 over g1, g2
+		"g3": {Delta: -33, Games: 1}, // 687 -> 654
+		"g5": {Delta: -14, Games: 2}, // 654 -> 640 over g4, g5
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+	for id, w := range want {
+		if got[id] != w {
+			t.Errorf("%s = %+v, want %+v", id, got[id], w)
+		}
+	}
+}
+
+func TestAttribute_NewSeason(t *testing.T) {
+	snaps := []store.RankSnapshot{
+		snap("RANKED_TFT", "MASTER", "I", 300, 100, 100, 0),
+		snap("RANKED_TFT", "IRON", "IV", 0, 0, 0, 24*time.Hour), // reset
+		snap("RANKED_TFT", "IRON", "IV", 40, 1, 0, 26*time.Hour),
+	}
+	games := []store.TimedGame{game("old", 1100, -time.Hour), game("new", 1100, 25*time.Hour)}
+	got := Attribute(snaps, games)
+	if len(got) != 1 || got["new"] != (Change{Delta: 40, Games: 1}) {
+		t.Errorf("got %+v, want only the new season's game at +40", got)
+	}
+}

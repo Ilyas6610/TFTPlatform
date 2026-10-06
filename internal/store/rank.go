@@ -70,13 +70,19 @@ type TimedGame struct {
 	SetNumber    int
 	GameVersion  string
 	Placement    int
+	GameLength   time.Duration
 }
+
+// End is when the game ended (Riot's game_datetime is its start); a game
+// counts toward the player's rank from then.
+func (g TimedGame) End() time.Time { return g.GameDatetime.Add(g.GameLength) }
 
 // PlayerGamesSince returns a player's stored games played after since,
 // oldest first.
 func (s *Store) PlayerGamesSince(ctx context.Context, puuid string, since time.Time) ([]TimedGame, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT mp.match_id, m.game_datetime, m.queue_id, m.tft_set_number, coalesce(m.game_version, ''), mp.placement
+		SELECT mp.match_id, m.game_datetime, m.queue_id, m.tft_set_number, coalesce(m.game_version, ''), mp.placement,
+			coalesce(m.game_length, 0)
 		FROM match_participants mp JOIN matches m USING (match_id)
 		WHERE mp.puuid = $1 AND m.game_datetime > $2
 		ORDER BY m.game_datetime, mp.match_id`, puuid, since)
@@ -87,9 +93,11 @@ func (s *Store) PlayerGamesSince(ctx context.Context, puuid string, since time.T
 	out := []TimedGame{}
 	for rows.Next() {
 		var g TimedGame
-		if err := rows.Scan(&g.MatchID, &g.GameDatetime, &g.QueueID, &g.SetNumber, &g.GameVersion, &g.Placement); err != nil {
+		var length float64
+		if err := rows.Scan(&g.MatchID, &g.GameDatetime, &g.QueueID, &g.SetNumber, &g.GameVersion, &g.Placement, &length); err != nil {
 			return nil, err
 		}
+		g.GameLength = time.Duration(length * float64(time.Second))
 		out = append(out, g)
 	}
 	return out, rows.Err()
