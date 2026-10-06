@@ -20,6 +20,7 @@ import {
   augmentsByTier,
   boardCost,
   cleanTitle,
+  clickCell,
   computeTraits,
   decodeBoard,
   emptyBoard,
@@ -106,14 +107,12 @@ export default function PlannerPage() {
           }))
       : [];
 
-  function clickCell(pos: number) {
-    const here = unitAt(pos);
-    if (selected !== null && selected !== pos && unitAt(selected)) {
-      // Move (or swap) the selected unit here; the selection follows it.
-      update((b) => moveUnit(b, selected, pos));
-      setSelected(pos);
-    } else {
-      setSelected(here && selected !== pos ? pos : null);
+  function onCellClick(pos: number) {
+    const r = clickCell(board, selected, pos);
+    setSelected(r.selected);
+    if (r.move) {
+      const { from, to } = r.move;
+      update((b) => moveUnit(b, from, to));
     }
   }
 
@@ -213,7 +212,7 @@ export default function PlannerPage() {
                       setSelected(pos);
                     }
                   }}
-                  onClick={() => clickCell(pos)}
+                  onClick={() => onCellClick(pos)}
                 >
                   {u && (
                     <>
@@ -247,7 +246,7 @@ export default function PlannerPage() {
             })}
           </div>
           <p className="muted planner-hint">
-            Drag a unit, or select it and click another cell, to move or swap. Front line is at the top.
+            Click a unit to select it, then an empty cell to move it. Drag a unit onto another to swap. Front line is at the top.
           </p>
         </div>
 

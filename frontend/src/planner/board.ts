@@ -166,6 +166,27 @@ export function moveUnit(b: Board, from: number, to: number): Board {
   };
 }
 
+/** What a click on a board cell does, given the cell that is currently selected. */
+export interface CellClick {
+  /** The selection after the click. */
+  selected: number | null;
+  /** Set when the selected unit should move to an empty cell. */
+  move?: { from: number; to: number };
+}
+
+/**
+ * Clicking a unit selects it (clicking the selected one again deselects it), so
+ * other units stay choosable while one is selected. Clicking an empty cell
+ * moves the selected unit there. Swapping two units is a drag, never a click.
+ */
+export function clickCell(b: Board, selected: number | null, pos: number): CellClick {
+  const occupied = b.units.some((u) => u.pos === pos);
+  if (occupied) return { selected: selected === pos ? null : pos };
+  const hasSelection = selected !== null && b.units.some((u) => u.pos === selected);
+  if (hasSelection) return { selected: pos, move: { from: selected as number, to: pos } };
+  return { selected: null };
+}
+
 export const setStar = (b: Board, pos: number, star: 1 | 2 | 3): Board => ({
   ...b,
   units: b.units.map((u) => (u.pos === pos ? { ...u, star } : u)),

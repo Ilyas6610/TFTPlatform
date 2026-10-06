@@ -7,6 +7,7 @@ import {
   addItem,
   addUnit,
   boardCost,
+  clickCell,
   computeTraits,
   decodeBoard,
   emptyBoard,
@@ -222,5 +223,27 @@ describe("augment stages", () => {
     expect(bad.board.augments).toEqual([null, null, null]);
     expect(bad.dropped.augments).toBe(1);
     expect(entry.stages).toEqual([1, 0, 0]);
+  });
+});
+
+describe("clickCell", () => {
+  const board = addUnit(addUnit(emptyBoard(18), "U_A", 3), "U_B", 10);
+
+  it("clicking a unit selects it, and clicking another unit switches the selection", () => {
+    expect(clickCell(board, null, 3)).toEqual({ selected: 3 });
+    expect(clickCell(board, 3, 10)).toEqual({ selected: 10 }); // no swap, no move
+  });
+
+  it("clicking the selected unit again deselects it", () => {
+    expect(clickCell(board, 3, 3)).toEqual({ selected: null });
+  });
+
+  it("clicking an empty cell moves the selected unit there and keeps it selected", () => {
+    expect(clickCell(board, 3, 20)).toEqual({ selected: 20, move: { from: 3, to: 20 } });
+  });
+
+  it("clicking an empty cell with nothing selected does nothing", () => {
+    expect(clickCell(board, null, 20)).toEqual({ selected: null });
+    expect(clickCell(board, 99, 20)).toEqual({ selected: null }); // a stale selection
   });
 });
