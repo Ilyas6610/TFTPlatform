@@ -19,6 +19,22 @@ type LeaderboardEntryResponse struct {
 	Wins         int     `json:"wins"`
 	Losses       int     `json:"losses"`
 	FetchedAt    string  `json:"fetchedAt"`
+	// Games and Top4Rate come from Riot's league entry: in TFT its wins are
+	// top 4 finishes and losses the rest, so this covers every ranked game of
+	// the season. Zero games = null.
+	Games    int      `json:"games"`
+	Top4Rate *float64 `json:"top4Rate"`
+	// Stored covers only the ranked games we have stored (1st place rate and
+	// average placement aren't in Riot's league data); nil when there are
+	// none. Compare Stored.Games with Games to judge how representative it is.
+	Stored *StoredStatsResponse `json:"stored"`
+}
+
+type StoredStatsResponse struct {
+	Games        int     `json:"games"`
+	WinRate      float64 `json:"winRate"`
+	Top4Rate     float64 `json:"top4Rate"`
+	AvgPlacement float64 `json:"avgPlacement"`
 }
 
 type LeaderboardResponse struct {
@@ -91,8 +107,31 @@ func (s *Server) handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 	}
 	resp.Resolving = s.startNameResolution(platform, unresolved)
 
+	puuids := make([]string, len(entries))
+	for i, e := range entries {
+		puuids[i] = e.PUUID
+	}
+	stored, err := s.Store.RankedBoardStats(ctx, puuids)
+	if err != nil {
+		writeDBError(w, r, err)
+		return
+	}
+
 	for _, e := range entries {
+		var top4Rate *float64
+		if g := e.Wins + e.Losses; g > 0 {
+			v := float64(e.Wins) / float64(g)
+			top4Rate = &v
+		}
+		var st *StoredStatsResponse
+		if x, ok := stored[e.PUUID]; ok && x.Games > 0 {
+			n := float64(x.Games)
+			st = &StoredStatsResponse{Games: x.Games, WinRate: float64(x.Wins) / n, Top4Rate: float64(x.Top4) / n, AvgPlacement: x.AvgPlacement}
+		}
 		resp.Entries = append(resp.Entries, LeaderboardEntryResponse{
+			Games:        e.Wins + e.Losses,
+			Top4Rate:     top4Rate,
+			Stored:       st,
 			PUUID:        e.PUUID,
 			GameName:     e.GameName,
 			TagLine:      e.TagLine,

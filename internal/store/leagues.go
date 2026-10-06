@@ -132,6 +132,48 @@ func (s *Store) GetLeaderboard(ctx context.Context, platform string, limit int) 
 	return out, rows.Err()
 }
 
+// RankedBoardStats summarises one player's stored ranked games of the newest
+// set that has any. Riot's league entry only has top 4 finishes and the
+// rest, so the 1st place rate and average placement can only come from the
+// games we've stored; Games says how many that is.
+type RankedBoardStats struct {
+	Games        int
+	Wins         int
+	Top4         int
+	AvgPlacement float64
+}
+
+// RankedBoardStats returns stats for each of puuids that has stored ranked
+// games (queue 1100, the newest set with ranked games); others are absent.
+func (s *Store) RankedBoardStats(ctx context.Context, puuids []string) (map[string]RankedBoardStats, error) {
+	out := map[string]RankedBoardStats{}
+	if len(puuids) == 0 {
+		return out, nil
+	}
+	rows, err := s.Pool.Query(ctx, `
+		SELECT mp.puuid, count(*), count(*) FILTER (WHERE mp.placement = 1),
+		       count(*) FILTER (WHERE mp.placement <= 4), avg(mp.placement)::float8
+		FROM match_participants mp
+		JOIN matches m ON m.match_id = mp.match_id
+		WHERE mp.puuid = ANY($1) AND m.queue_id = 1100
+		  AND m.tft_set_number = (SELECT max(tft_set_number) FROM matches WHERE queue_id = 1100)
+		GROUP BY mp.puuid
+	`, puuids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p string
+		var st RankedBoardStats
+		if err := rows.Scan(&p, &st.Games, &st.Wins, &st.Top4, &st.AvgPlacement); err != nil {
+			return nil, err
+		}
+		out[p] = st
+	}
+	return out, rows.Err()
+}
+
 const leaderboardOrder = `
 	CASE le.tier WHEN 'CHALLENGER' THEN 0 WHEN 'GRANDMASTER' THEN 1 WHEN 'MASTER' THEN 2 ELSE 3 END,
 	le.league_points DESC`
