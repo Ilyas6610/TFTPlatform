@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { ApiError, SetData, SetItem, getSetData } from "../api/client";
 import { GameIcon } from "../assets/tft";
 import { Picker, PickerOption } from "../components/Picker";
-import { ItemTable, UnitGrid } from "../components/PickTables";
+import { ItemGrid, UnitGrid } from "../components/PickTables";
 import { Names, TIER_STYLE, buildNames } from "../components/stats";
 import { CURRENT_TFT_SET } from "../config";
 import { AUGMENT_SLOTS, augmentTier, availableAt } from "../planner/augmentStages";
@@ -82,6 +82,7 @@ export default function PlannerPage() {
   const unitInfo = (id: string) => data?.units.find((u) => u.apiName === id);
 
   const allItems = useMemo(() => (data ? holdableItems(data) : []), [data]);
+  const components = useMemo(() => (data?.items ?? []).filter((i) => i.kind === "component"), [data]);
   // Augments each slot can offer: tier order, not already chosen elsewhere.
   const augmentOptions = (slot: number): PickerOption[] =>
     data
@@ -264,6 +265,7 @@ export default function PlannerPage() {
                 names={names}
                 data={data}
                 items={allItems}
+                components={components}
                 update={update}
                 onRemoved={() => setSelected(null)}
               />
@@ -357,6 +359,7 @@ function UnitEditor({
   names,
   data,
   items,
+  components,
   update,
   onRemoved,
 }: {
@@ -365,6 +368,7 @@ function UnitEditor({
   names: Names;
   data: SetData | null;
   items: SetItem[];
+  components: SetItem[];
   update: (edit: (b: Board) => Board) => void;
   onRemoved: () => void;
 }) {
@@ -406,8 +410,9 @@ function UnitEditor({
           </button>
         ))}
       </div>
-      <ItemTable
+      <ItemGrid
         items={items}
+        components={components}
         names={names}
         disabled={unit.items.length >= MAX_ITEMS}
         onPick={(it) => update((b) => addItem(b, pos, it))}

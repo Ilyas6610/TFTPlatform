@@ -1,10 +1,12 @@
-import { useMemo, useState } from "react";
+import { ReactNode, useMemo, useState } from "react";
 import { SetItem, SetUnit } from "../api/client";
 import { GameIcon } from "../assets/tft";
 import { Names } from "./stats";
 
-// Pickers for the board planner: a compact grid of unit icons (details on
-// hover) and a table of items. Click to choose.
+// Pickers for the board planner: a compact grid of unit icons, and the item
+// grid (components along both axes, the item each pair makes in the cell,
+// everything that can't be built in sections below). Both show details in a
+// card on hover or keyboard focus; click to choose.
 
 const STAT_LABELS: [string, string][] = [
   ["hp", "HP"],
@@ -19,17 +21,50 @@ const STAT_LABELS: [string, string][] = [
 
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/0+$/, ""));
 
-/** Ability text without the "[[Label]]" markers for values the game computes. */
+/** Game text without the "[[Label]]" markers for values the game computes. */
 const plain = (s: string) => s.replace(/\[\[([^\]]*)\]\]/g, "$1").replace(/\s+/g, " ").trim();
 
-interface Hover {
-  unit: SetUnit;
+const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+
+// ---- Hover card ------------------------------------------------------------
+
+const TIP_WIDTH = 300;
+const TIP_HEIGHT_GUESS = 230;
+
+interface Tip {
   x: number;
   y: number;
   above: boolean;
+  node: ReactNode;
 }
 
-const TIP_WIDTH = 300;
+/** Shows `node` in a card next to the element, flipping above it near the screen bottom. */
+function useHoverTip() {
+  const [tip, setTip] = useState<Tip | null>(null);
+  const show = (el: HTMLElement, node: ReactNode) => {
+    const r = el.getBoundingClientRect();
+    const above = r.bottom + TIP_HEIGHT_GUESS > window.innerHeight && r.top > TIP_HEIGHT_GUESS;
+    setTip({
+      x: Math.max(8, Math.min(r.left + r.width / 2 - TIP_WIDTH / 2, window.innerWidth - TIP_WIDTH - 8)),
+      y: above ? r.top - 8 : r.bottom + 8,
+      above,
+      node,
+    });
+  };
+  const hide = () => setTip(null);
+  const view = tip && (
+    <div
+      className={`unit-tip${tip.above ? " above" : ""}`}
+      style={{ left: tip.x, top: tip.y, width: TIP_WIDTH }}
+      role="tooltip"
+    >
+      {tip.node}
+    </div>
+  );
+  return { show, hide, view };
+}
+
+// ---- Units ------------------------------------------------------------------
 
 export function UnitGrid({
   units,
@@ -43,26 +78,15 @@ export function UnitGrid({
   /** Board full: icons stay visible but can't be picked. */
   disabled?: boolean;
 }) {
-  const [hover, setHover] = useState<Hover | null>(null);
+  const { show, hide, view } = useHoverTip();
   const byCost = useMemo(() => {
     const m = new Map<number, SetUnit[]>();
     for (const u of [...units].sort((a, b) => a.name.localeCompare(b.name))) m.set(u.cost, [...(m.get(u.cost) ?? []), u]);
     return [...m.entries()].sort((a, b) => a[0] - b[0]);
   }, [units]);
 
-  function show(u: SetUnit, el: HTMLElement) {
-    const r = el.getBoundingClientRect();
-    const above = r.bottom + 230 > window.innerHeight && r.top > 230;
-    setHover({
-      unit: u,
-      x: Math.max(8, Math.min(r.left + r.width / 2 - TIP_WIDTH / 2, window.innerWidth - TIP_WIDTH - 8)),
-      y: above ? r.top - 8 : r.bottom + 8,
-      above,
-    });
-  }
-
   return (
-    <div className="unit-pick" onMouseLeave={() => setHover(null)}>
+    <div className="unit-pick" onMouseLeave={hide}>
       {byCost.map(([cost, list]) => (
         <div className="unit-pick-row" key={cost}>
           <span className="unit-pick-cost muted">{cost}g</span>
@@ -75,9 +99,9 @@ export function UnitGrid({
                 aria-label={`Add ${u.name}`}
                 disabled={disabled}
                 onClick={() => onPick(u.apiName)}
-                onMouseEnter={(e) => show(u, e.currentTarget)}
-                onFocus={(e) => show(u, e.currentTarget)}
-                onBlur={() => setHover(null)}
+                onMouseEnter={(e) => show(e.currentTarget, <UnitCard unit={u} names={names} />)}
+                onFocus={(e) => show(e.currentTarget, <UnitCard unit={u} names={names} />)}
+                onBlur={hide}
               >
                 <GameIcon
                   kind="champions"
@@ -92,23 +116,25 @@ export function UnitGrid({
           </div>
         </div>
       ))}
-      {hover && <UnitTip hover={hover} names={names} />}
+      {view}
     </div>
   );
 }
 
-function UnitTip({ hover, names }: { hover: Hover; names: Names }) {
-  const { unit: u } = hover;
+function UnitCard({ unit: u, names }: { unit: SetUnit; names: Names }) {
   const stats = STAT_LABELS.filter(([k]) => u.stats[k] !== undefined);
   const desc = plain(u.ability.desc);
   return (
-    <div
-      className={`unit-tip${hover.above ? " above" : ""}`}
-      style={{ left: hover.x, top: hover.y, width: TIP_WIDTH }}
-      role="tooltip"
-    >
+    <>
       <div className="unit-tip-head">
-        <GameIcon kind="champions" id={u.apiName} size={36} fallbackSrc={u.icon} fallbackName={u.name} className={`cost-${u.cost}`} />
+        <GameIcon
+          kind="champions"
+          id={u.apiName}
+          size={36}
+          fallbackSrc={u.icon}
+          fallbackName={u.name}
+          className={`cost-${u.cost}`}
+        />
         <div>
           <strong>{names.name(u.apiName)}</strong> <span className="muted">· {u.cost}g</span>
           <div className="muted">{u.traits.join(" · ")}</div>
@@ -126,128 +152,160 @@ function UnitTip({ hover, names }: { hover: Hover; names: Names }) {
       {u.ability.name && (
         <div className="unit-tip-ability">
           <strong>{u.ability.name}</strong>
-          {desc && <p>{desc.length > 260 ? desc.slice(0, 257) + "…" : desc}</p>}
+          {desc && <p>{clip(desc, 260)}</p>}
         </div>
       )}
-    </div>
+    </>
   );
 }
 
-const KIND_LABELS: [string, string][] = [
-  ["completed", "Completed"],
-  ["emblem", "Emblems"],
-  ["artifact", "Artifacts"],
-  ["radiant", "Radiant"],
+// ---- Items ------------------------------------------------------------------
+
+const KIND_NAMES: Record<string, string> = {
+  completed: "Completed item",
+  emblem: "Emblem",
+  artifact: "Artifact",
+  radiant: "Radiant item",
+  component: "Component",
+};
+
+/** Items that aren't built from two components, by section. */
+const OTHER_SECTIONS: [string, (i: SetItem) => boolean][] = [
+  ["Artifacts", (i) => i.kind === "artifact"],
+  ["Radiant items", (i) => i.kind === "radiant"],
+  ["Emblems (not built from components)", (i) => i.kind === "emblem"],
 ];
 
-export function ItemTable({
+/**
+ * Components along both axes; the cell where two meet holds the item they
+ * make (one for each order, as in the in-game chart). Items with no
+ * component recipe — artifacts, radiants, emblems from other sources — sit in
+ * their own sections below.
+ */
+export function ItemGrid({
   items,
+  components,
   names,
   onPick,
   disabled,
 }: {
+  /** Everything a unit can hold. */
   items: SetItem[];
+  components: SetItem[];
   names: Names;
   onPick: (id: string) => void;
   /** The unit already holds three items. */
   disabled?: boolean;
 }) {
-  const kinds = useMemo(() => KIND_LABELS.filter(([k]) => items.some((i) => i.kind === k)), [items]);
-  const [kind, setKind] = useState(kinds[0]?.[0] ?? "completed");
-  const [query, setQuery] = useState("");
-  const rows = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    // Searching looks across every kind; otherwise the chosen kind's items.
-    return items
-      .filter((i) => (q ? matches(q, i.name) : i.kind === kind))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [items, kind, query]);
+  const { show, hide, view } = useHoverTip();
+  const { axis, made, others } = useMemo(() => {
+    const axis = [...components].sort((a, b) => a.name.localeCompare(b.name));
+    const ids = new Set(axis.map((c) => c.apiName));
+    const made = new Map<string, SetItem>(); // "a|b" -> item, both orders
+    const built = new Set<string>();
+    for (const i of items) {
+      const [a, b] = i.composition ?? [];
+      if (i.composition?.length === 2 && ids.has(a) && ids.has(b)) {
+        made.set(`${a}|${b}`, i);
+        made.set(`${b}|${a}`, i);
+        built.add(i.apiName);
+      }
+    }
+    const rest = items.filter((i) => !built.has(i.apiName));
+    const others = OTHER_SECTIONS.map(([title, pred]) => ({
+      title,
+      list: rest.filter(pred).sort((a, b) => a.name.localeCompare(b.name)),
+    })).filter((s) => s.list.length > 0);
+    return { axis, made, others };
+  }, [items, components]);
+
+  const btn = (i: SetItem, size: number) => (
+    <button
+      type="button"
+      key={i.apiName}
+      className="item-pick-btn"
+      aria-label={`Add ${i.name}`}
+      disabled={disabled}
+      onClick={() => onPick(i.apiName)}
+      onMouseEnter={(e) => show(e.currentTarget, <ItemCard item={i} names={names} />)}
+      onFocus={(e) => show(e.currentTarget, <ItemCard item={i} names={names} />)}
+      onBlur={hide}
+    >
+      <GameIcon kind="items" id={i.apiName} size={size} fallbackSrc={i.icon} fallbackName={i.name} />
+    </button>
+  );
+  const head = (c: SetItem) => (
+    <span
+      className="item-pick-head"
+      tabIndex={0}
+      aria-label={c.name}
+      onMouseEnter={(e) => show(e.currentTarget, <ItemCard item={c} names={names} />)}
+      onFocus={(e) => show(e.currentTarget, <ItemCard item={c} names={names} />)}
+      onBlur={hide}
+    >
+      <GameIcon kind="items" id={c.apiName} size={26} fallbackSrc={c.icon} fallbackName={c.name} />
+    </span>
+  );
 
   return (
-    <div className="pick-table">
-      <div className="pick-table-controls">
-        <input
-          value={query}
-          placeholder="Search items…"
-          aria-label="Search items"
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <div className="pick-filters" role="group" aria-label="Item kind">
-          {kinds.map(([k, label]) => (
-            <FilterButton key={k} active={!query && kind === k} onClick={() => (setQuery(""), setKind(k))}>
-              {label}
-            </FilterButton>
+    <div className="item-pick" onMouseLeave={hide}>
+      {axis.length > 0 && (
+        <div className="item-pick-matrix" style={{ gridTemplateColumns: `repeat(${axis.length + 1}, minmax(0, 1fr))`, maxWidth: (axis.length + 1) * 40 }} role="grid">
+          <span />
+          {axis.map((c) => (
+            <span key={c.apiName}>{head(c)}</span>
+          ))}
+          {axis.map((row) => (
+            <ItemRow key={row.apiName}>
+              <span>{head(row)}</span>
+              {axis.map((col) => {
+                const item = made.get(`${row.apiName}|${col.apiName}`);
+                return <span key={col.apiName}>{item ? btn(item, 28) : <span className="item-pick-empty" />}</span>;
+              })}
+            </ItemRow>
           ))}
         </div>
-      </div>
-      <div className="pick-table-wrap">
-        <table className="pick-grid">
-          <thead>
-            <tr>
-              <th>Item</th>
-              <th>Made from</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((i) => (
-              <tr
-                key={i.apiName}
-                className={disabled ? undefined : "clickable"}
-                title={disabled ? "This unit holds 3 items" : `${i.name}: ${i.desc}`}
-                onClick={() => !disabled && onPick(i.apiName)}
-              >
-                <td>
-                  <span className="pick-name">
-                    <GameIcon kind="items" id={i.apiName} size={24} fallbackSrc={i.icon} fallbackName={i.name} />
-                    <span>{i.name}</span>
-                  </span>
-                </td>
-                <td className="pick-recipe">
-                  {i.composition && i.composition.length > 0 ? (
-                    i.composition.map((c, j) => (
-                      <GameIcon
-                        key={j}
-                        kind="items"
-                        id={c}
-                        size={20}
-                        fallbackSrc={names.icon(c)}
-                        fallbackName={names.name(c)}
-                      />
-                    ))
-                  ) : (
-                    <span className="muted">{i.kind === "component" ? "component" : "—"}</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={2} className="muted">
-                  No items match.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      )}
+      {others.map((s) => (
+        <div className="item-pick-section" key={s.title}>
+          <h4 className="muted">{s.title}</h4>
+          <div className="item-pick-icons">{s.list.map((i) => btn(i, 28))}</div>
+        </div>
+      ))}
+      {view}
     </div>
   );
 }
 
-function FilterButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
+/** Groups a row's cells without adding a box of its own (the matrix is one CSS grid). */
+const ItemRow = ({ children }: { children: ReactNode }) => <>{children}</>;
+
+function ItemCard({ item: i, names }: { item: SetItem; names: Names }) {
+  const desc = plain(i.desc ?? "");
   return (
-    <button type="button" className={active ? "active" : undefined} aria-pressed={active} onClick={onClick}>
-      {children}
-    </button>
+    <>
+      <div className="unit-tip-head">
+        <GameIcon kind="items" id={i.apiName} size={36} fallbackSrc={i.icon} fallbackName={i.name} />
+        <div>
+          <strong>{i.name}</strong>
+          <div className="muted">{KIND_NAMES[i.kind] ?? i.kind}</div>
+        </div>
+      </div>
+      {i.composition && i.composition.length > 0 && (
+        <div className="unit-tip-stats">
+          {i.composition.map((c, j) => (
+            <span key={j} className="item-tip-part">
+              <GameIcon kind="items" id={c} size={18} fallbackSrc={names.icon(c)} fallbackName={names.name(c)} />
+              {names.name(c)}
+            </span>
+          ))}
+        </div>
+      )}
+      {desc && (
+        <div className="unit-tip-ability">
+          <p>{clip(desc, 300)}</p>
+        </div>
+      )}
+    </>
   );
 }
-
-const matches = (q: string, ...fields: string[]) => fields.some((f) => f.toLowerCase().includes(q));
