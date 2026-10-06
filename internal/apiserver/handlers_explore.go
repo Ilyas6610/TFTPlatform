@@ -38,7 +38,7 @@ func (s *Server) handleExplore(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_filter", err.Error())
 		return
 	}
-	res, err := s.stats.get(r.Context(), exploreCacheKey(f), func(ctx context.Context) (any, error) {
+	res, err := cached(r.Context(), s, &s.stats, exploreCacheKey(f), func(ctx context.Context) (*store.ExploreResult, error) {
 		return s.Store.Explore(ctx, f, exploreLimit)
 	})
 	if err != nil {
@@ -65,7 +65,7 @@ func (s *Server) handleExploreOptions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_set", fmt.Sprintf("set must be a number from 1 to %d", maxSetNumber))
 		return
 	}
-	opts, err := s.stats.get(r.Context(), "options|"+strconv.Itoa(set), func(ctx context.Context) (any, error) {
+	opts, err := cached(r.Context(), s, &s.stats, "options|"+strconv.Itoa(set), func(ctx context.Context) (*store.ExploreOptions, error) {
 		return s.Store.ExploreOptions(ctx, set)
 	})
 	if err != nil {
@@ -200,7 +200,7 @@ func (s *Server) handleMetaBuilds(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_filter", err.Error())
 		return
 	}
-	res, err := s.meta.get(r.Context(), metaCacheKey("builds", f), func(ctx context.Context) (any, error) {
+	res, err := cached(r.Context(), s, &s.meta, metaCacheKey("builds", f), func(ctx context.Context) (*store.MetaResult, error) {
 		return s.Store.MetaBuilds(ctx, f, metaMinBuildGames, metaBuildsPerUnit, metaItemsPerUnit)
 	})
 	if err != nil {

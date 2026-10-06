@@ -36,6 +36,11 @@ type Config struct {
 	// StatsCacheTTL is how long the API server reuses stats computed from
 	// match data (meta, explorer) before querying Postgres again.
 	StatsCacheTTL time.Duration
+
+	// RedisURL (redis:// or rediss://) makes the API server keep those stats
+	// in a cache shared by all its replicas; empty keeps each replica's
+	// results in its own memory.
+	RedisURL string
 }
 
 func Load() (Config, error) {
@@ -48,6 +53,7 @@ func Load() (Config, error) {
 		HTTPAddr:                getEnv("HTTP_ADDR", ":8080"),
 		SetDataSyncInterval:     getEnvDuration("SETDATA_SYNC_INTERVAL", 6*time.Hour),
 		StatsCacheTTL:           getEnvDuration("STATS_CACHE_TTL", 10*time.Minute),
+		RedisURL:                getEnv("REDIS_URL", ""),
 	}
 
 	if cfg.StatsCacheTTL <= 0 {

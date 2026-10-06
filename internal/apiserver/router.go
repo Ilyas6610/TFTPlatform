@@ -28,14 +28,21 @@ type Server struct {
 	// again; 0 means DefaultStatsCacheTTL. New matches arrive in crawl
 	// batches, so a slightly old figure costs little and saves heavy scans.
 	StatsCacheTTL time.Duration
+	// Shared, when set, holds those stats for every API replica (Redis); nil
+	// keeps each replica's results in its own memory. See shared_cache.go.
+	Shared SharedCache
 
 	cacheInit   sync.Once
-	meta        resultCache // meta builds and comps, advisor inputs
-	stats       resultCache // explorer, explorer options, precomputed meta tables
-	sets        resultCache // set data, patch notes, planner codes
+	sharedDown  sharedBreaker
+	statsTTL    time.Duration // StatsCacheTTL after defaulting
+	meta        resultCache   // meta builds and comps, advisor inputs
+	stats       resultCache   // explorer, explorer options, precomputed meta tables
+	sets        resultCache   // set data, patch notes, planner codes
 	live        liveFetches
 	plannerFail failureMemo
 }
+
+func (s *Server) statsTTLValue() time.Duration { return s.statsTTL }
 
 // DefaultStatsCacheTTL is the default for Server.StatsCacheTTL.
 const DefaultStatsCacheTTL = 10 * time.Minute
@@ -47,7 +54,12 @@ func NewRouter(s *Server) http.Handler {
 		if ttl <= 0 {
 			ttl = DefaultStatsCacheTTL
 		}
-		s.meta.ttl, s.stats.ttl = ttl, ttl
+		s.statsTTL = ttl
+		local := ttl
+		if s.Shared != nil && local > localSharedTTL {
+			local = localSharedTTL // the shared entry's TTL governs freshness
+		}
+		s.meta.ttl, s.stats.ttl = local, local
 	})
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/players/{region}/{name}/{tag}", s.handlePlayerProfile)

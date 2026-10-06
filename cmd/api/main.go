@@ -11,6 +11,7 @@ import (
 
 	"tft-platform/internal/apiserver"
 	"tft-platform/internal/config"
+	"tft-platform/internal/rediscache"
 	"tft-platform/internal/riotapi"
 	"tft-platform/internal/setdata"
 	"tft-platform/internal/store"
@@ -44,6 +45,20 @@ func main() {
 	riotClient := riotapi.NewClient(keySource, limiter)
 
 	server := &apiserver.Server{Riot: riotClient, Store: st, StatsCacheTTL: cfg.StatsCacheTTL}
+	if cfg.RedisURL != "" {
+		shared, err := rediscache.New(cfg.RedisURL)
+		if err != nil {
+			log.Fatalf("%v", err)
+		}
+		defer shared.Close()
+		// Redis being down is not fatal: stats are then computed per
+		// replica, and the client reconnects by itself.
+		if err := shared.Ping(ctx); err != nil {
+			log.Printf("shared cache: redis not reachable yet: %v", err)
+		}
+		server.Shared = shared
+		log.Printf("stats cache: shared via redis, ttl %s", cfg.StatsCacheTTL)
+	}
 	handler := apiserver.NewRouter(server)
 
 	// Timeouts keep slow or idle clients from holding connections open.
