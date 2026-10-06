@@ -97,6 +97,11 @@ type Result struct {
 	// builds this inventory fits best, one build each, closest to ready
 	// first.
 	Candidates []PlanEntry `json:"candidates"`
+	// Builds and Crafts are also set only without units (items-only
+	// advice): real builds by their items whoever carried them, and what
+	// the held components make right now. See items.go.
+	Builds []ItemBuild `json:"builds"`
+	Crafts []Craft     `json:"crafts"`
 }
 
 type inventory map[string]int
@@ -212,7 +217,7 @@ func better(a, b BuildOption) bool {
 // Advise computes the plan, per-unit alternatives and matching comps.
 func Advise(in Input) Result {
 	inv := newInventory(in.Items)
-	res := Result{Plan: []PlanEntry{}, Leftover: []string{}, Units: []UnitAdvice{}, Comps: []CompMatch{}, Candidates: []PlanEntry{}}
+	res := Result{Plan: []PlanEntry{}, Leftover: []string{}, Units: []UnitAdvice{}, Comps: []CompMatch{}, Candidates: []PlanEntry{}, Builds: []ItemBuild{}, Crafts: []Craft{}}
 
 	// Per-unit alternatives against the whole inventory.
 	owned := dedupe(in.Units)
@@ -283,6 +288,8 @@ func Advise(in Input) Result {
 
 	if len(owned) == 0 && len(in.Items) > 0 {
 		res.Candidates = candidates(in, inv)
+		res.Builds = itemBuilds(in, inv)
+		res.Crafts = crafts(in, inv)
 	}
 
 	res.Comps = matchComps(in, owned, inv)

@@ -3,11 +3,13 @@ import { useSearchParams } from "react-router-dom";
 import {
   ApiError,
   ExploreOptions,
+  PlacementStats,
   SetData,
   SuggestBuild,
   SuggestComp,
   SuggestResult,
   SuggestStep,
+  SuggestUnitUse,
   getExploreSuggest,
 } from "../api/client";
 import { GameIcon } from "../assets/tft";
@@ -144,8 +146,9 @@ export function BuildAdvisor({
     <div className="panel advisor">
       <h2>What can I build?</h2>
       <p className="muted">
-        Add the units you have and what is in your inventory: items (whole or still components), emblems and
-        artifacts. Units alone show their best builds; items alone show which units they fit.
+        Add the units you have and what is in your inventory: items (whole or still components), emblems and artifacts.
+        Units alone show their best builds; items alone show the builds they lead to, what your components make and
+        which units they fit.
       </p>
 
       <div className="advisor-pickers">
@@ -210,7 +213,11 @@ export function BuildAdvisor({
               <Comps comps={result.comps} names={names} ownedUnits={units} />
             </>
           ) : (
-            <Candidates result={result} names={names} />
+            <>
+              <ItemBuilds result={result} names={names} />
+              <Crafts result={result} names={names} />
+              <Candidates result={result} names={names} />
+            </>
           )}
         </div>
       )}
@@ -276,13 +283,19 @@ function BuildStatus({ build, aim }: { build: SuggestBuild; aim?: boolean }) {
   return <span className="muted">missing {build.missing.length}</span>;
 }
 
-function BuildStats({ build }: { build: SuggestBuild }) {
+function BuildStats({
+  build,
+  title = "Boards that ran exactly this build on this unit",
+}: {
+  build: PlacementStats;
+  title?: string;
+}) {
   return (
-    <span className="build-stats">
+    <span className="advisor-stats">
       <span className={placementTone(build)} title="Average placement">
         {avg(build.avgPlacement)}
       </span>{" "}
-      <span className="muted" title="Boards that ran exactly this build on this unit">
+      <span className="muted" title={title}>
         · {build.boards} boards · top 4 {pct(build.top4Rate)}
       </span>
     </span>
@@ -335,6 +348,114 @@ function Plan({ result, names, hasItems }: { result: SuggestResult; names: Names
         <span className="build-item held">held</span> you have it · <span className="build-item combine">combine</span>{" "}
         make it from the two small icons · <span className="build-item missing">missing</span> not possible yet
       </p>
+    </div>
+  );
+}
+
+/** Small carrier icons with their board counts. */
+function Carriers({ units, names }: { units: SuggestUnitUse[]; names: Names }) {
+  if (units.length === 0) return null;
+  return (
+    <span className="carriers muted">
+      on{" "}
+      {units.map((u) => (
+        <span
+          key={u.id}
+          className="carrier"
+          title={`${names.name(u.id)}: ${u.boards} boards, ${avg(u.avgPlacement)} avg`}
+        >
+          <GameIcon
+            kind="champions"
+            id={u.id}
+            size={20}
+            fallbackSrc={names.icon(u.id)}
+            fallbackName={names.name(u.id)}
+          />
+          {u.boards}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** Items only: real builds closest to what you hold, whoever carried them. */
+function ItemBuilds({ result, names }: { result: SuggestResult; names: Names }) {
+  return (
+    <div className="advisor-section">
+      <h3>Builds for your items</h3>
+      {result.builds.length === 0 ? (
+        <p className="muted">No build seen in this queue and level range uses these items.</p>
+      ) : (
+        <div className="plan-list">
+          {result.builds.map((b) => (
+            <div className="plan-row" key={b.items.join(",")}>
+              <BuildItems build={b} names={names} />
+              <BuildStatus build={b} />
+              <BuildStats build={b} title="Boards that ran exactly this build, any unit" />
+              <Carriers units={b.units} names={names} />
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="muted legend">
+        <span className="build-item held">held</span> you have it · <span className="build-item combine">combine</span>{" "}
+        make it from the two small icons · <span className="build-item missing">missing</span> not possible yet
+      </p>
+    </div>
+  );
+}
+
+/** Items only: each completed item held or makeable now, and how builds with it did. */
+function Crafts({ result, names }: { result: SuggestResult; names: Names }) {
+  if (result.crafts.length === 0) return null;
+  return (
+    <div className="advisor-section">
+      <h3>What your components make</h3>
+      <div className="plan-list">
+        {result.crafts.map((c) => (
+          <div className="plan-row" key={c.item}>
+            <span className="game-label">
+              <GameIcon
+                kind="items"
+                id={c.item}
+                size={26}
+                fallbackSrc={names.icon(c.item)}
+                fallbackName={names.name(c.item)}
+              />
+              <strong>{names.name(c.item)}</strong>
+            </span>
+            <span className="muted craft-from">
+              {c.from ? (
+                <>
+                  {c.from.map((f, i) => (
+                    <span key={i} className="craft-part">
+                      {i > 0 && "+ "}
+                      <GameIcon
+                        kind="items"
+                        id={f}
+                        size={18}
+                        fallbackSrc={names.icon(f)}
+                        fallbackName={names.name(f)}
+                      />
+                      {names.name(f)}
+                    </span>
+                  ))}
+                </>
+              ) : (
+                "held"
+              )}
+            </span>
+            {c.boards > 0 ? (
+              <>
+                <BuildStats build={c} title="Boards whose full build included this item" />
+                <Carriers units={c.units} names={names} />
+              </>
+            ) : (
+              <span className="muted">not in any build seen here</span>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

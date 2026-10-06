@@ -393,8 +393,28 @@ export interface SuggestResult {
   leftover: string[];
   units: { id: string; options: SuggestBuild[] }[];
   comps: SuggestComp[];
-  // Only without units: the units the items fit best.
+  // Only without units: the units the items fit best, real builds by their
+  // items (whoever carried them), and what the held components make now.
   candidates: { unit: string; build: SuggestBuild }[];
+  builds: SuggestItemBuild[];
+  crafts: SuggestCraft[];
+}
+
+/** A unit that carried a build or item, and how it did. */
+export interface SuggestUnitUse extends PlacementStats {
+  id: string;
+}
+
+/** A real build judged by its items: stats combine every unit that carried it. */
+export interface SuggestItemBuild extends SuggestBuild {
+  units: SuggestUnitUse[]; // main carriers
+}
+
+/** A completed item held whole (no from) or makeable from two held components. */
+export interface SuggestCraft extends PlacementStats {
+  item: string;
+  from?: string[];
+  units: SuggestUnitUse[];
 }
 
 /** query: set and optional queue/level, plus have_unit and have_item (repeat per copy). */

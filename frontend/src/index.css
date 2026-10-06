@@ -1371,8 +1371,37 @@ details.patch[open] > summary::before {
 
 /* One line, not squeezed word by word beside the items; the row wraps
    instead when the screen is narrow. */
-.build-stats {
+.advisor-stats {
   white-space: nowrap;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.carriers {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.carrier {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.craft-from {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 260px;
+  font-size: 0.85rem;
+}
+
+.craft-part {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .build-item {
