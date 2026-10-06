@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { RankPoint } from "../api/client";
 
-const H = 220;
+const H = 84;
 
 const TIERS = ["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD", "DIAMOND"];
 const DIVISIONS = ["IV", "III", "II", "I"];
@@ -14,13 +14,12 @@ export function rankText(p: { tier: string; rank: string; leaguePoints: number }
   return `${title(p.tier)}${APEX.has(p.tier) ? "" : ` ${p.rank}`} ${p.leaguePoints} LP`;
 }
 
-/** The division boundary a linear LP value sits on (multiples of 100 below Master). */
-function boundaryLabel(value: number): string | null {
-  if (value === 2800) return "Master";
-  if (value > 2800 || value % 100 !== 0) return null;
-  const tier = TIERS[Math.floor(value / 400)];
-  const div = DIVISIONS[(value % 400) / 100];
-  return tier ? `${title(tier)} ${div}` : null;
+/** A short axis label for a linear LP value: "620 LP" (apex) or "Dia I 40". */
+function valueLabel(value: number): string {
+  if (value >= 2800) return `${value - 2800} LP`;
+  const tier = TIERS[Math.floor(value / 400)] ?? "IRON";
+  const div = DIVISIONS[Math.floor((value % 400) / 100)];
+  return `${title(tier).slice(0, 3)} ${div} ${value % 100}`;
 }
 
 const fmtDate = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -45,7 +44,7 @@ export function LPChart({ points }: { points: RankPoint[] }) {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const PAD = { top: 12, right: 16, bottom: 26, left: W < 500 ? 64 : 92 };
+  const PAD = { top: 6, right: 8, bottom: 16, left: 64 };
   const [hover, setHover] = useState<number | null>(null);
 
   const geo = useMemo(() => {
@@ -56,8 +55,8 @@ export function LPChart({ points }: { points: RankPoint[] }) {
     let lo = Math.min(...values);
     let hi = Math.max(...values);
     const span = Math.max(hi - lo, 60);
-    lo = Math.floor((lo - span * 0.15) / 10) * 10;
-    hi = Math.ceil((hi + span * 0.15) / 10) * 10;
+    lo -= span * 0.12;
+    hi += span * 0.12;
     const x = (t: number) => PAD.left + ((t - t0) / (t1 - t0)) * (W - PAD.left - PAD.right);
     const y = (v: number) => PAD.top + (1 - (v - lo) / (hi - lo)) * (H - PAD.top - PAD.bottom);
 
@@ -66,19 +65,8 @@ export function LPChart({ points }: { points: RankPoint[] }) {
     for (let i = 1; i < points.length; i++) d += `H${x(times[i])}V${y(values[i])}`;
     d += `H${x(t1)}`;
 
-    // Gridlines: division boundaries in range, else a few round LP values.
-    let grid: { v: number; label: string }[] = [];
-    for (let v = Math.ceil(lo / 100) * 100; v <= hi; v += 100) {
-      const label = boundaryLabel(v);
-      if (label) grid.push({ v, label });
-    }
-    if (grid.length < 2) {
-      const step = Math.max(10, Math.ceil((hi - lo) / 4 / 10) * 10);
-      grid = [];
-      for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) {
-        grid.push({ v, label: v >= 2800 ? `${v - 2800} LP` : (boundaryLabel(v) ?? `${v % 100} LP`) });
-      }
-    }
+    // Two reference lines: their lowest and highest recorded standing.
+    const grid = [...new Set([Math.min(...values), Math.max(...values)])].map((v) => ({ v, label: valueLabel(v) }));
     return { times, t0, t1, x, y, d, grid };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [points, W]);
@@ -93,13 +81,21 @@ export function LPChart({ points }: { points: RankPoint[] }) {
     setHover(i);
   }
 
+  const first = points[0];
+  const last = points[points.length - 1];
+  const total = last.value - first.value;
+  const games = last.wins + last.losses - (first.wins + first.losses);
   const h = hover === null ? null : points[hover];
   const prev = hover !== null && hover > 0 ? points[hover - 1] : null;
   const hx = h ? geo.x(geo.times[hover!]) : 0;
 
   return (
     <div className="lp-chart" ref={box}>
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="LP over time">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        role="img"
+        aria-label={`LP over time: ${rankText(points[0])} on ${fmtDate(new Date(points[0].fetchedAt))} to ${rankText(points[points.length - 1])} now`}
+      >
         {geo.grid.map((g) => (
           <g key={g.v}>
             <line className="lp-grid" x1={PAD.left} x2={W - PAD.right} y1={geo.y(g.v)} y2={geo.y(g.v)} />
@@ -108,21 +104,21 @@ export function LPChart({ points }: { points: RankPoint[] }) {
             </text>
           </g>
         ))}
-        <text className="lp-axis" x={PAD.left} y={H - 6}>
+        <text className="lp-axis" x={PAD.left} y={H - 3}>
           {fmtDate(new Date(geo.t0))}
         </text>
-        <text className="lp-axis" x={W - PAD.right} y={H - 6} textAnchor="end">
+        <text className="lp-axis" x={W - PAD.right} y={H - 3} textAnchor="end">
           now
         </text>
         <path className="lp-line" d={geo.d} />
         {points.length <= 40 &&
           points.map((p, i) => (
-            <circle key={i} className="lp-dot" cx={geo.x(geo.times[i])} cy={geo.y(p.value)} r={3} />
+            <circle key={i} className="lp-dot" cx={geo.x(geo.times[i])} cy={geo.y(p.value)} r={2.5} />
           ))}
         {h && (
           <>
             <line className="lp-crosshair" x1={hx} x2={hx} y1={PAD.top} y2={H - PAD.bottom} />
-            <circle className="lp-dot lp-dot-active" cx={hx} cy={geo.y(h.value)} r={5} />
+            <circle className="lp-dot lp-dot-active" cx={hx} cy={geo.y(h.value)} r={4} />
           </>
         )}
         <rect
@@ -135,33 +131,31 @@ export function LPChart({ points }: { points: RankPoint[] }) {
           onMouseLeave={() => setHover(null)}
         />
       </svg>
-      {h && (
-        <div className="lp-tooltip" style={{ left: `${Math.min(80, Math.max(20, (hx / W) * 100))}%` }}>
-          <strong>{rankText(h)}</strong>
-          <span className="muted">{fmtDateTime(new Date(h.fetchedAt))}</span>
-          {prev && (
-            <span className={h.value >= prev.value ? "good" : "bad"}>
-              {h.value >= prev.value ? "+" : ""}
-              {h.value - prev.value} LP over {h.wins + h.losses - (prev.wins + prev.losses)}{" "}
-              {h.wins + h.losses - (prev.wins + prev.losses) === 1 ? "game" : "games"}
-            </span>
-          )}
-        </div>
-      )}
-      <details className="lp-table">
-        <summary className="muted">Show as table</summary>
-        <table className="compact">
-          <tbody>
-            {[...points].reverse().map((p, i) => (
-              <tr key={i}>
-                <td className="muted">{fmtDateTime(new Date(p.fetchedAt))}</td>
-                <td>{rankText(p)}</td>
-                <td className="num muted">{p.wins + p.losses} games</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </details>
+      <p className="lp-caption muted">
+        {h ? (
+          <>
+            {fmtDateTime(new Date(h.fetchedAt))} · <strong>{rankText(h)}</strong>
+            {prev && (
+              <span className={h.value >= prev.value ? "good" : "bad"}>
+                {" "}
+                · {h.value >= prev.value ? "+" : ""}
+                {h.value - prev.value} LP over {h.wins + h.losses - (prev.wins + prev.losses)}{" "}
+                {h.wins + h.losses - (prev.wins + prev.losses) === 1 ? "game" : "games"}
+              </span>
+            )}
+          </>
+        ) : (
+          <>
+            Since {fmtDate(new Date(points[0].fetchedAt))}:{" "}
+            <span className={total >= 0 ? "good" : "bad"}>
+              {total >= 0 ? "+" : ""}
+              {total} LP
+            </span>{" "}
+            over {games} {games === 1 ? "game" : "games"} ({rankText(points[0])} → {rankText(points[points.length - 1])}
+            )
+          </>
+        )}
+      </p>
     </div>
   );
 }
