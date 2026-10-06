@@ -152,7 +152,10 @@ export function sanitize(b: Board, data: SetData): { board: Board; dropped: Drop
       return null;
     }),
   };
-  return { board: normalizeForms(board, buildFormIndex(data.units)), dropped };
+  const formed = normalizeForms(board, buildFormIndex(data.units));
+  const clean = dropRedundantEmblems(formed, data);
+  dropped.items += clean.dropped;
+  return { board: clean.board, dropped };
 }
 
 // ---- Edits (pure: each returns a new board) --------------------------------
@@ -348,6 +351,92 @@ export const removeItem = (b: Board, pos: number, index: number): Board => ({
 });
 
 /** Puts an augment in a slot (null empties it). An augment sits in one slot only. */
+// ---- Item rules ---------------------------------------------------------------
+
+/** The trait an emblem grants (its name minus " Emblem"), or null for any other item. */
+export function emblemTrait(item: SetItem | undefined): string | null {
+  return item?.kind === "emblem" ? item.name.replace(/ Emblem$/, "") : null;
+}
+
+/**
+ * Traits a placed unit already has: its own, any it gained by evolving, and
+ * those of the emblems it holds (index `except` skipped, for re-checking one).
+ */
+function heldTraitNames(u: PlacedUnit, data: SetData, except = -1): Set<string> {
+  const unit = data.units.find((x) => x.apiName === u.id);
+  const traitName = new Map(data.traits.map((t) => [t.apiName, t.name]));
+  const have = new Set<string>(unit?.traits ?? []);
+  for (const t of u.extra) if (traitName.has(t)) have.add(traitName.get(t)!);
+  u.items.forEach((id, i) => {
+    const t = i === except ? null : emblemTrait(data.items.find((x) => x.apiName === id));
+    if (t) have.add(t);
+  });
+  return have;
+}
+
+export type CanHold = { ok: true } | { ok: false; reason: string };
+
+/**
+ * Whether the unit at `pos` can take the item: it needs a free slot, and an
+ * emblem can't go on a unit that already has that trait (its own, an evolved
+ * one, or from another emblem it holds), as in the game.
+ */
+export function canHoldItem(b: Board, pos: number, itemId: string, data: SetData): CanHold {
+  const u = b.units.find((x) => x.pos === pos);
+  if (!u) return { ok: false, reason: "No unit there" };
+  if (u.items.length >= MAX_ITEMS) return { ok: false, reason: "This unit holds 3 items" };
+  const trait = emblemTrait(data.items.find((x) => x.apiName === itemId));
+  if (trait && heldTraitNames(u, data).has(trait)) {
+    const name = data.units.find((x) => x.apiName === u.id)?.name ?? "This unit";
+    return { ok: false, reason: `${name} already has ${trait}` };
+  }
+  return { ok: true };
+}
+
+/** addItem that follows canHoldItem; an item that can't be held leaves the board as it was. */
+export function addItemChecked(b: Board, pos: number, itemId: string, data: SetData): Board {
+  return canHoldItem(b, pos, itemId, data).ok ? addItem(b, pos, itemId) : b;
+}
+
+/**
+ * Drops emblems whose trait the unit has by other means: it had the trait
+ * already, or gained it after the emblem was put on (a Lux's trait menu, an
+ * evolved trait). Earlier items win, so of two same-trait emblems the first stays.
+ */
+export function dropRedundantEmblems(b: Board, data: SetData): { board: Board; dropped: number } {
+  let dropped = 0;
+  const units = b.units.map((u) => {
+    const kept: string[] = [];
+    for (const id of u.items) {
+      const t = emblemTrait(data.items.find((x) => x.apiName === id));
+      if (t && heldTraitNames({ ...u, items: kept }, data).has(t)) {
+        dropped++;
+        continue;
+      }
+      kept.push(id);
+    }
+    return kept.length === u.items.length ? u : { ...u, items: kept };
+  });
+  return { board: dropped ? { ...b, units } : b, dropped };
+}
+
+/** Extra team size from items that say so ("Your team gains +1 maximum team size": the Tactician's items). */
+export function teamSizeBonus(b: Board, data: SetData): { bonus: number; sources: string[] } {
+  let bonus = 0;
+  const sources: string[] = [];
+  for (const u of b.units) {
+    for (const id of u.items) {
+      const item = data.items.find((x) => x.apiName === id);
+      const n = Number(/\+(\d+) maximum team size/i.exec(item?.desc ?? "")?.[1] ?? 0);
+      if (n > 0 && item) {
+        bonus += n;
+        sources.push(item.name);
+      }
+    }
+  }
+  return { bonus, sources };
+}
+
 export function setAugment(b: Board, slot: number, id: string | null): Board {
   if (slot < 0 || slot >= AUGMENT_COUNT) return b;
   const list = b.augments.map((a) => (id !== null && a === id ? null : a));

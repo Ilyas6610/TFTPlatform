@@ -17,7 +17,10 @@ import {
   MAX_LEVEL,
   MAX_TITLE,
   ROWS,
-  addItem,
+  addItemChecked,
+  canHoldItem,
+  dropRedundantEmblems,
+  teamSizeBonus,
   addUnit,
   augmentsByTier,
   buildFormIndex,
@@ -91,7 +94,9 @@ export default function PlannerPage() {
         const current = decodeBoard(prev, CURRENT_TFT_SET);
         const edited = edit(data ? sanitize(current, data).board : current);
         // All copies of a unit with forms (Lux) share one trait.
-        return encodeBoard(data ? normalizeForms(edited, buildFormIndex(data.units)) : edited);
+        if (!data) return encodeBoard(edited);
+        // An emblem whose trait the unit now has some other way (a Lux's trait, an evolved one) goes.
+        return encodeBoard(dropRedundantEmblems(normalizeForms(edited, buildFormIndex(data.units)), data).board);
       },
       { replace: true },
     );
@@ -139,7 +144,9 @@ export default function PlannerPage() {
     if (!navigator.clipboard) window.prompt("Copy this link:", url);
   }
 
-  const over = board.units.length > board.level;
+  const size = data ? teamSizeBonus(board, data) : { bonus: 0, sources: [] as string[] };
+  const maxUnits = board.level + size.bonus;
+  const over = board.units.length > maxUnits;
 
   return (
     <div className="planner">
@@ -185,8 +192,13 @@ export default function PlannerPage() {
         </div>
         <div className="planner-summary muted">
           <span className={over ? "bad" : undefined}>
-            Units {board.units.length}/{board.level}
+            Units {board.units.length}/{maxUnits}
           </span>
+          {size.bonus > 0 && (
+            <span title={size.sources.join(", ")}>
+              +{size.bonus} team size ({[...new Set(size.sources)].join(", ")})
+            </span>
+          )}
           <span>Cost {cost}g</span>
         </div>
         {error && <div className="error-box">{error}</div>}
@@ -264,14 +276,25 @@ export default function PlannerPage() {
                         {u.items.length > 0 && (
                           <span className="planner-cell-items">
                             {u.items.map((it, i) => (
-                              <GameIcon
+                              // Left-click selects the unit, right-click takes the item off.
+                              <span
                                 key={i}
-                                kind="items"
-                                id={it}
-                                size={24}
-                                fallbackSrc={names.icon(it)}
-                                fallbackName={names.name(it)}
-                              />
+                                className="planner-item"
+                                title={`${names.name(it)} (right-click to remove)`}
+                                onClick={() => onCellClick(pos)}
+                                onContextMenu={(e) => {
+                                  e.preventDefault();
+                                  update((b) => removeItem(b, pos, i));
+                                }}
+                              >
+                                <GameIcon
+                                  kind="items"
+                                  id={it}
+                                  size={24}
+                                  fallbackSrc={names.icon(it)}
+                                  fallbackName={names.name(it)}
+                                />
+                              </span>
                             ))}
                           </span>
                         )}
@@ -283,7 +306,7 @@ export default function PlannerPage() {
             </div>
           </div>
           <p className="muted planner-hint">
-            Click a unit to select it, then an empty cell to move it. Drag a unit onto another to swap. Right-click a unit to remove it. Front line is at the top.
+            Click a unit to select it, then an empty cell to move it. Drag a unit onto another to swap. Right-click a unit, or one of its items, to remove it. Front line is at the top.
           </p>
         </div>
 
@@ -517,7 +540,12 @@ function UnitEditor({
         components={components}
         names={names}
         disabled={unit.items.length >= MAX_ITEMS}
-        onPick={(it) => update((b) => addItem(b, pos, it))}
+        onPick={(it) => update((b) => (data ? addItemChecked(b, pos, it, data) : b))}
+        blocked={(i) => {
+          if (!data || unit.items.length >= MAX_ITEMS) return null;
+          const r = canHoldItem(board, pos, i.apiName, data);
+          return r.ok ? null : r.reason;
+        }}
       />
       <button
         type="button"

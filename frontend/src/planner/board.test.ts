@@ -7,6 +7,11 @@ import {
   addItem,
   addUnit,
   boardCost,
+  addItemChecked,
+  canHoldItem,
+  dropRedundantEmblems,
+  removeItem,
+  teamSizeBonus,
   buildTraitChoices,
   toggleExtraTrait,
   normalizeForms,
@@ -37,6 +42,8 @@ const data = {
     { apiName: "I_IE", name: "Infinity Edge", kind: "completed" },
     { apiName: "I_EmblemSage", name: "Sage Emblem", kind: "emblem" },
     { apiName: "I_EmblemBlade", name: "Blade Emblem", kind: "emblem" },
+    { apiName: "I_Crown", name: "Tactician's Crown", kind: "completed", desc: "Your team gains +1 maximum team size. 10% chance to drop gold." },
+    { apiName: "I_Cape", name: "Tactician's Cape", kind: "completed", desc: "Your team gains +1 maximum team size." },
   ],
   augments: [
     { apiName: "A_One", name: "One", tier: 1 },
@@ -412,5 +419,72 @@ describe("traits gained by evolving (Kha'Zix)", () => {
     expect(board.units[1].extra).toEqual([]); // X can't evolve
     expect(board.units[2].extra).toEqual([]);
     expect(dropped.traits).toBe(2 + 1 + 4); // Slayer + Nope, X's Exec, and the four unknown ones
+  });
+});
+
+describe("emblem rule", () => {
+  // U_A has Blade and Sage; U_B has Blade; U_C has Sage.
+  const board = addUnit(addUnit(addUnit(emptyBoard(18), "U_A", 0), "U_B", 1), "U_C", 2);
+
+  it("an emblem can't go on a unit that already has its trait", () => {
+    expect(canHoldItem(board, 0, "I_EmblemSage", data)).toEqual({ ok: false, reason: "A already has Sage" });
+    expect(canHoldItem(board, 0, "I_EmblemBlade", data).ok).toBe(false);
+    expect(canHoldItem(board, 1, "I_EmblemBlade", data)).toEqual({ ok: false, reason: "B already has Blade" });
+    expect(addItemChecked(board, 1, "I_EmblemBlade", data)).toBe(board);
+  });
+
+  it("an emblem for a trait the unit lacks is fine, and other items always are", () => {
+    expect(canHoldItem(board, 1, "I_EmblemSage", data).ok).toBe(true);
+    expect(canHoldItem(board, 0, "I_IE", data).ok).toBe(true);
+    expect(addItemChecked(board, 1, "I_EmblemSage", data).units[1].items).toEqual(["I_EmblemSage"]);
+  });
+
+  it("the same emblem can't be held twice", () => {
+    const once = addItemChecked(board, 1, "I_EmblemSage", data);
+    expect(canHoldItem(once, 1, "I_EmblemSage", data)).toEqual({ ok: false, reason: "B already has Sage" });
+    expect(addItemChecked(once, 1, "I_EmblemSage", data)).toBe(once);
+  });
+
+  it("needs a unit and a free slot", () => {
+    expect(canHoldItem(board, 9, "I_IE", data).ok).toBe(false);
+    let full = board;
+    for (let i = 0; i < 3; i++) full = addItem(full, 0, "I_IE");
+    expect(canHoldItem(full, 0, "I_EmblemSage", data)).toEqual({ ok: false, reason: "This unit holds 3 items" });
+  });
+
+  it("a trait gained later (an evolved trait) makes a held emblem redundant", () => {
+    const withEmblem = addItemChecked(board, 1, "I_EmblemSage", data); // B: Blade + Sage emblem
+    const gained = { ...withEmblem, units: withEmblem.units.map((u) => (u.pos === 1 ? { ...u, extra: ["T_Sage"] } : u)) };
+    const r = dropRedundantEmblems(gained, data);
+    expect(r.dropped).toBe(1);
+    expect(r.board.units[1].items).toEqual([]);
+    expect(dropRedundantEmblems(withEmblem, data).board).toBe(withEmblem); // nothing to drop
+  });
+
+  it("a loaded link loses emblems the unit can't carry, keeping the first of two same-trait emblems", () => {
+    const b = decodeBoard(new URLSearchParams("u=U_A.1.0.I_EmblemSage,I_IE&u=U_B.1.1.I_EmblemSage,I_EmblemSage,I_EmblemBlade"), 18);
+    const { board, dropped } = sanitize(b, data);
+    expect(board.units[0].items).toEqual(["I_IE"]); // A has Sage already
+    expect(board.units[1].items).toEqual(["I_EmblemSage"]); // B: first Sage stays, second goes; Blade is its own trait
+    expect(dropped.items).toBe(3);
+  });
+
+  it("removing an item takes out just that one", () => {
+    let b = addItem(addItem(addItem(addUnit(emptyBoard(18), "U_B", 3), 3, "I_IE"), 3, "I_Crown"), 3, "I_IE");
+    b = removeItem(b, 3, 1);
+    expect(b.units[0].items).toEqual(["I_IE", "I_IE"]);
+  });
+});
+
+describe("team size items", () => {
+  it("each item that adds team size raises the limit", () => {
+    let b = addUnit(addUnit(emptyBoard(18), "U_A", 0), "U_B", 1);
+    expect(teamSizeBonus(b, data)).toEqual({ bonus: 0, sources: [] });
+    b = addItem(b, 0, "I_Crown");
+    expect(teamSizeBonus(b, data)).toEqual({ bonus: 1, sources: ["Tactician's Crown"] });
+    b = addItem(b, 1, "I_Cape");
+    expect(teamSizeBonus(b, data)).toEqual({ bonus: 2, sources: ["Tactician's Crown", "Tactician's Cape"] });
+    b = removeItem(b, 0, 0);
+    expect(teamSizeBonus(b, data).bonus).toBe(1);
   });
 });

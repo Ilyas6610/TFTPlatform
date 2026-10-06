@@ -188,6 +188,7 @@ export function ItemGrid({
   names,
   onPick,
   disabled,
+  blocked,
 }: {
   /** Everything a unit can hold. */
   items: SetItem[];
@@ -196,6 +197,8 @@ export function ItemGrid({
   onPick: (id: string) => void;
   /** The unit already holds three items. */
   disabled?: boolean;
+  /** Why an item can't go on this unit (an emblem for a trait it has), or null. */
+  blocked?: (item: SetItem) => string | null;
 }) {
   const { show, hide, view } = useHoverTip();
   const { axis, made, others } = useMemo(() => {
@@ -219,21 +222,26 @@ export function ItemGrid({
     return { axis, made, others };
   }, [items, components]);
 
-  const btn = (i: SetItem, size: number) => (
-    <button
-      type="button"
-      key={i.apiName}
-      className="item-pick-btn"
-      aria-label={`Add ${i.name}`}
-      disabled={disabled}
-      onClick={() => onPick(i.apiName)}
-      onMouseEnter={(e) => show(e.currentTarget, <ItemCard item={i} names={names} />)}
-      onFocus={(e) => show(e.currentTarget, <ItemCard item={i} names={names} />)}
-      onBlur={hide}
-    >
-      <GameIcon kind="items" id={i.apiName} size={size} fallbackSrc={i.icon} fallbackName={i.name} />
-    </button>
-  );
+  const btn = (i: SetItem, size: number) => {
+    const why = blocked?.(i) ?? null;
+    const card = <ItemCard item={i} names={names} note={why} />;
+    return (
+      <button
+        type="button"
+        key={i.apiName}
+        className={`item-pick-btn${why ? " blocked" : ""}`}
+        aria-label={`Add ${i.name}`}
+        aria-disabled={why ? true : undefined}
+        disabled={disabled}
+        onClick={() => !why && onPick(i.apiName)}
+        onMouseEnter={(e) => show(e.currentTarget, card)}
+        onFocus={(e) => show(e.currentTarget, card)}
+        onBlur={hide}
+      >
+        <GameIcon kind="items" id={i.apiName} size={size} fallbackSrc={i.icon} fallbackName={i.name} />
+      </button>
+    );
+  };
   const head = (c: SetItem) => (
     <span
       className="item-pick-head"
@@ -280,7 +288,7 @@ export function ItemGrid({
 /** Groups a row's cells without adding a box of its own (the matrix is one CSS grid). */
 const ItemRow = ({ children }: { children: ReactNode }) => <>{children}</>;
 
-function ItemCard({ item: i, names }: { item: SetItem; names: Names }) {
+function ItemCard({ item: i, names, note }: { item: SetItem; names: Names; note?: string | null }) {
   const desc = plain(i.desc ?? "");
   return (
     <>
@@ -301,6 +309,7 @@ function ItemCard({ item: i, names }: { item: SetItem; names: Names }) {
           ))}
         </div>
       )}
+      {note && <div className="item-tip-note">{note}</div>}
       {desc && (
         <div className="unit-tip-ability">
           <p>{clip(desc, 300)}</p>

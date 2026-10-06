@@ -1628,8 +1628,15 @@ details.patch[open] > summary::before {
   pointer-events: none;
 }
 
-.planner-cell-items .game-icon {
+.planner-item {
   width: 30%;
+  line-height: 0;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.planner-cell-items .game-icon {
+  width: 100%;
   height: auto;
   aspect-ratio: 1;
   border: 1px solid #000;
@@ -1961,4 +1968,15 @@ details.patch[open] > summary::before {
 
 .planner-evolve label.on {
   color: var(--accent);
+}
+
+/* Items the unit can't take (an emblem for a trait it has) stay visible, dimmed, with the reason in the hover card. */
+.item-pick-btn.blocked {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.item-tip-note {
+  margin-top: 8px;
+  color: var(--placement-bad);
 }
