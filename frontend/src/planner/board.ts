@@ -187,6 +187,50 @@ export function clickCell(b: Board, selected: number | null, pos: number): CellC
   return { selected: null };
 }
 
+// ---- Units with a chosen trait (Lux) ----------------------------------------
+
+/** One form of a unit: the apiName to field and the trait it was given. */
+export interface UnitForm {
+  id: string;
+  trait: string;
+}
+
+export interface FormIndex {
+  /** Base unit apiName -> its forms. */
+  forms: Map<string, UnitForm[]>;
+  /** Form apiName -> its base unit's apiName. */
+  baseOf: Map<string, string>;
+  /** Form apiName -> the trait it chose. */
+  chosen: Map<string, string>;
+}
+
+/**
+ * Some units come in one version per trait the player picks: Set 18's Lux is
+ * "Lux" plus "Lux (Coven)", "Lux (Fae)"... Set data lists each as its own
+ * unit; they are recognised by the name pattern "<base name> (<trait>)" where
+ * the base exists, and the trait is one the form really has. The planner shows
+ * only the base and offers the trait as a menu on it.
+ */
+export function buildFormIndex(units: SetUnit[]): FormIndex {
+  const byName = new Map(units.map((u) => [u.name, u]));
+  const idx: FormIndex = { forms: new Map(), baseOf: new Map(), chosen: new Map() };
+  for (const u of units) {
+    const m = /^(.+) \((.+)\)$/.exec(u.name);
+    const base = m && byName.get(m[1]);
+    if (!m || !base || base.apiName === u.apiName || !u.traits.includes(m[2])) continue;
+    idx.baseOf.set(u.apiName, base.apiName);
+    idx.chosen.set(u.apiName, m[2]);
+    idx.forms.set(base.apiName, [...(idx.forms.get(base.apiName) ?? []), { id: u.apiName, trait: m[2] }]);
+  }
+  for (const list of idx.forms.values()) list.sort((a, b) => a.trait.localeCompare(b.trait));
+  return idx;
+}
+
+/** Swaps the unit at `pos` for another form of the same unit (or its base); everything else stays. */
+export function setForm(b: Board, pos: number, id: string): Board {
+  return { ...b, units: b.units.map((u) => (u.pos === pos ? { ...u, id } : u)) };
+}
+
 export const setStar = (b: Board, pos: number, star: 1 | 2 | 3): Board => ({
   ...b,
   units: b.units.map((u) => (u.pos === pos ? { ...u, star } : u)),
@@ -230,22 +274,27 @@ export interface TraitCount {
 /**
  * Traits active on the board. Each distinct unit counts once however many
  * copies are fielded; an emblem adds its trait to the unit holding it, unless
- * the unit already has that trait.
+ * the unit already has that trait; a form unit's chosen trait (Lux) counts twice.
  */
 export function computeTraits(b: Board, data: SetData): TraitCount[] {
   const unitById = new Map<string, SetUnit>(data.units.map((u) => [u.apiName, u]));
   const traitByName = new Map<string, SetTrait>(data.traits.map((t) => [t.name, t]));
   const itemById = new Map<string, SetItem>(data.items.map((i) => [i.apiName, i]));
 
-  const members = new Map<string, Set<string>>(); // trait name -> distinct unit ids (+ emblem holders)
-  const add = (trait: string, unit: string) => {
-    if (!members.has(trait)) members.set(trait, new Set());
-    members.get(trait)!.add(unit);
+  const forms = buildFormIndex(data.units);
+  // trait name -> distinct unit ids (+ emblem holders) and what each counts for
+  const members = new Map<string, Map<string, number>>();
+  const add = (trait: string, unit: string, weight = 1) => {
+    if (!members.has(trait)) members.set(trait, new Map());
+    const m = members.get(trait)!;
+    m.set(unit, Math.max(m.get(unit) ?? 0, weight));
   };
   for (const placed of b.units) {
     const unit = unitById.get(placed.id);
     if (!unit) continue;
-    for (const t of unit.traits) add(t, placed.id);
+    // A form's chosen trait (Lux's) is counted twice.
+    const chosen = forms.chosen.get(placed.id);
+    for (const t of unit.traits) add(t, placed.id, t === chosen ? 2 : 1);
     for (const it of placed.items) {
       const item = itemById.get(it);
       if (item?.kind !== "emblem") continue;
@@ -257,19 +306,20 @@ export function computeTraits(b: Board, data: SetData): TraitCount[] {
   }
 
   const out: TraitCount[] = [];
-  for (const [name, units] of members) {
+  for (const [name, byUnit] of members) {
+    const total = [...byUnit.values()].reduce((a, w) => a + w, 0);
     const trait = traitByName.get(name);
     const points = (trait?.breakpoints ?? []).map((bp) => bp.minUnits).filter((n) => n > 0);
     let tier = -1;
     points.forEach((n, i) => {
-      if (units.size >= n) tier = i;
+      if (total >= n) tier = i;
     });
     out.push({
       name,
       apiName: trait?.apiName,
-      count: units.size,
+      count: total,
       tier,
-      next: points.find((n) => n > units.size),
+      next: points.find((n) => n > total),
       style: tier >= 0 ? (trait?.breakpoints.filter((bp) => bp.minUnits > 0)[tier]?.style ?? 1) : 0,
       trait,
     });

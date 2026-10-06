@@ -11,6 +11,7 @@ import { AUGMENT_SLOTS, augmentTier, availableAt } from "../planner/augmentStage
 import {
   Board,
   COLS,
+  FormIndex,
   MAX_ITEMS,
   MAX_LEVEL,
   MAX_TITLE,
@@ -18,6 +19,7 @@ import {
   addItem,
   addUnit,
   augmentsByTier,
+  buildFormIndex,
   boardCost,
   cleanTitle,
   clickCell,
@@ -31,6 +33,7 @@ import {
   removeUnit,
   sanitize,
   setAugment,
+  setForm,
   setStar,
 } from "../planner/board";
 
@@ -94,6 +97,9 @@ export default function PlannerPage() {
   const unitInfo = (id: string) => data?.units.find((u) => u.apiName === id);
 
   const allItems = useMemo(() => (data ? holdableItems(data) : []), [data]);
+  const formIndex = useMemo(() => buildFormIndex(data?.units ?? []), [data]);
+  // Units with a chosen trait show once (their base); the trait is a menu on the placed unit.
+  const pickableUnits = useMemo(() => (data?.units ?? []).filter((u) => !formIndex.baseOf.has(u.apiName)), [data, formIndex]);
   const components = useMemo(() => (data?.items ?? []).filter((i) => i.kind === "component"), [data]);
   // Augments each slot can offer: tier order, not already chosen elsewhere.
   const augmentOptions = (slot: number): PickerOption[] =>
@@ -254,6 +260,7 @@ export default function PlannerPage() {
           <TeamCodePanel
             board={board}
             codes={plannerCodes.codes}
+            baseOf={formIndex.baseOf}
             names={names}
             onLoad={(units) => update((b) => units.reduce<Board>((acc, id) => addUnit(acc, id), { ...b, units: [] }))}
           />
@@ -263,7 +270,7 @@ export default function PlannerPage() {
           <h3>Units</h3>
           {data ? (
             <UnitGrid
-              units={data.units}
+              units={pickableUnits}
               names={names}
               disabled={board.units.length >= ROWS * COLS}
               onPick={(id) => update((b) => addUnit(b, id))}
@@ -285,6 +292,7 @@ export default function PlannerPage() {
                 data={data}
                 items={allItems}
                 components={components}
+                formIndex={formIndex}
                 update={update}
                 onRemoved={() => setSelected(null)}
               />
@@ -379,6 +387,7 @@ function UnitEditor({
   data,
   items,
   components,
+  formIndex,
   update,
   onRemoved,
 }: {
@@ -388,12 +397,15 @@ function UnitEditor({
   data: SetData | null;
   items: SetItem[];
   components: SetItem[];
+  formIndex: FormIndex;
   update: (edit: (b: Board) => Board) => void;
   onRemoved: () => void;
 }) {
   const unit = board.units.find((u) => u.pos === pos);
   if (!unit) return null;
   const info = data?.units.find((u) => u.apiName === unit.id);
+  const baseId = formIndex.baseOf.get(unit.id) ?? unit.id;
+  const forms = formIndex.forms.get(baseId) ?? [];
   return (
     <div className="planner-editor">
       <h3 className="game-label">
@@ -415,6 +427,20 @@ function UnitEditor({
           </button>
         ))}
       </div>
+      {forms.length > 0 && (
+        <label className="planner-form">
+          <span className="muted">Trait</span>
+          <select value={unit.id} aria-label="Trait" onChange={(e) => update((b) => setForm(b, pos, e.target.value))}>
+            <option value={baseId}>None chosen</option>
+            {forms.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.trait}
+              </option>
+            ))}
+          </select>
+          <span className="muted">counts twice for its trait bonus</span>
+        </label>
+      )}
       <div className="planner-items">
         {unit.items.map((it, i) => (
           <button
@@ -453,11 +479,13 @@ function UnitEditor({
 function TeamCodePanel({
   board,
   codes,
+  baseOf,
   names,
   onLoad,
 }: {
   board: Board;
   codes: Record<string, number>;
+  baseOf: Map<string, string>;
   names: Names;
   onLoad: (units: string[]) => void;
 }) {
@@ -465,7 +493,7 @@ function TeamCodePanel({
   const [message, setMessage] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   // Front line first, so if there are more than 10 units the back line drops.
-  const ordered = [...board.units].sort((a, b) => a.pos - b.pos).map((u) => u.id);
+  const ordered = [...board.units].sort((a, b) => a.pos - b.pos).map((u) => baseOf.get(u.id) ?? u.id); // the planner only knows a unit's base
   const team = encodeTeamCode(ordered, codes, board.set);
 
   function copy() {

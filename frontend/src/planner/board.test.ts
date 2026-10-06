@@ -7,6 +7,8 @@ import {
   addItem,
   addUnit,
   boardCost,
+  buildFormIndex,
+  setForm,
   clickCell,
   computeTraits,
   decodeBoard,
@@ -245,5 +247,65 @@ describe("clickCell", () => {
   it("clicking an empty cell with nothing selected does nothing", () => {
     expect(clickCell(board, null, 20)).toEqual({ selected: null });
     expect(clickCell(board, 99, 20)).toEqual({ selected: null }); // a stale selection
+  });
+});
+
+describe("units with a chosen trait (Lux)", () => {
+  const unit = (apiName: string, name: string, traits: string[], cost = 5) => ({ apiName, name, cost, traits });
+  const luxData = {
+    units: [
+      unit("U_Lux", "Lux", ["Avatar"]),
+      unit("U_Lux_Blade", "Lux (Blade)", ["Blade", "Avatar"]),
+      unit("U_Lux_Moon", "Lux (Sage)", ["Sage", "Avatar"]),
+      unit("U_A", "A", ["Blade"], 1),
+      unit("U_B", "B", ["Blade"], 2),
+      unit("U_Odd", "Odd (Unknown)", ["Blade"]), // base "Odd" doesn't exist
+      unit("U_Odd2", "Odd2", ["Blade"]),
+      unit("U_Odd2_X", "Odd2 (Nope)", ["Blade"]), // "Nope" isn't one of its traits
+    ],
+    traits: [
+      { apiName: "T_Blade", name: "Blade", breakpoints: [{ minUnits: 2, style: 1 }, { minUnits: 4, style: 2 }] },
+      { apiName: "T_Sage", name: "Sage", breakpoints: [{ minUnits: 2, style: 1 }] },
+      { apiName: "T_Avatar", name: "Avatar", breakpoints: [{ minUnits: 1, style: 4 }] },
+    ],
+    items: [],
+    augments: [],
+  } as unknown as SetData;
+
+  it("recognises forms by name, base and trait", () => {
+    const idx = buildFormIndex(luxData.units);
+    expect(idx.forms.get("U_Lux")).toEqual([
+      { id: "U_Lux_Blade", trait: "Blade" },
+      { id: "U_Lux_Moon", trait: "Sage" },
+    ]);
+    expect(idx.baseOf.get("U_Lux_Moon")).toBe("U_Lux");
+    expect(idx.chosen.get("U_Lux_Blade")).toBe("Blade");
+    expect(idx.baseOf.has("U_Odd")).toBe(false);
+    expect(idx.baseOf.has("U_Odd2_X")).toBe(false);
+    expect(idx.forms.size).toBe(1);
+  });
+
+  it("changing the trait swaps the unit for that form and keeps its cell, stars and items", () => {
+    let b = addUnit(emptyBoard(18), "U_Lux", 9);
+    b = { ...b, units: [{ ...b.units[0], star: 2, items: ["I_X"] }] };
+    const back = setForm(setForm(b, 9, "U_Lux_Blade"), 9, "U_Lux");
+    expect(setForm(b, 9, "U_Lux_Blade").units).toEqual([{ id: "U_Lux_Blade", star: 2, pos: 9, items: ["I_X"] }]);
+    expect(back.units).toEqual(b.units);
+  });
+
+  it("the chosen trait counts twice, the base Lux adds none", () => {
+    const traits = (b: ReturnType<typeof emptyBoard>) => Object.fromEntries(computeTraits(b, luxData).map((t) => [t.name, t]));
+    let b = addUnit(addUnit(emptyBoard(18), "U_Lux_Blade", 0), "U_A", 1);
+    let t = traits(b);
+    expect(t.Blade.count).toBe(3); // Lux counts 2, A counts 1
+    expect(t.Blade.tier).toBe(0);
+    expect(t.Avatar.count).toBe(1);
+    b = setForm(b, 0, "U_Lux"); // no trait chosen
+    t = traits(b);
+    expect(t.Blade.count).toBe(1);
+    expect(t.Avatar.count).toBe(1);
+    b = addUnit(addUnit(setForm(b, 0, "U_Lux_Blade"), "U_B", 2), "U_Odd2", 3);
+    expect(traits(b).Blade.count).toBe(5); // 2 + A + B + Odd2
+    expect(traits(b).Blade.tier).toBe(1);
   });
 });

@@ -1878,3 +1878,12 @@ details.patch[open] > summary::before {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.85rem;
 }
+
+/* Planner: trait menu on units that choose one (Lux) */
+.planner-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
