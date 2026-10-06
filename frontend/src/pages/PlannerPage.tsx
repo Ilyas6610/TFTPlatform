@@ -234,6 +234,13 @@ export default function PlannerPage() {
                         }
                       }}
                       onClick={() => onCellClick(pos)}
+                      onContextMenu={(e) => {
+                        // Right-click removes the unit; on an empty hex the browser's own menu stays.
+                        if (!u) return;
+                        e.preventDefault();
+                        update((b) => removeUnit(b, pos));
+                        if (selected === pos) setSelected(null);
+                      }}
                     >
                       <span className="hex-frame" />
                       <span className="hex-art">
@@ -276,7 +283,7 @@ export default function PlannerPage() {
             </div>
           </div>
           <p className="muted planner-hint">
-            Click a unit to select it, then an empty cell to move it. Drag a unit onto another to swap. Front line is at the top.
+            Click a unit to select it, then an empty cell to move it. Drag a unit onto another to swap. Right-click a unit to remove it. Front line is at the top.
           </p>
         </div>
 
