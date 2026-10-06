@@ -48,7 +48,7 @@ func (s *Server) handlePlayerAdvice(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, advice.Build(&store.MetaResult{}, &store.MetaResult{}, 0, 0, advice.Defaults))
 		return
 	}
-	everyoneStats, err := s.Store.PlacementSummary(ctx, scope)
+	everyoneStats, err := s.scopeBaseline(ctx, scope)
 	if err != nil {
 		writeDBError(w, r, err)
 		return

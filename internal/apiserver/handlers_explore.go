@@ -54,7 +54,17 @@ func exploreCacheKey(f store.ExploreFilter) string {
 	queues := slices.Clone(f.Queues)
 	slices.Sort(queues)
 	f.Queues = slices.Compact(queues)
+	f.Baseline = nil // an input, not part of the search
 	return fmt.Sprintf("explore|%+v", f)
+}
+
+// scopeBaseline is everyone's stats in f's scope, cached like the other
+// match-derived stats: it's the same for every player and search in the
+// scope, but costs a scan of every board in it.
+func (s *Server) scopeBaseline(ctx context.Context, f store.ExploreFilter) (store.PlacementStats, error) {
+	return cached(ctx, s, &s.stats, metaCacheKey("baseline", f), func(ctx context.Context) (store.PlacementStats, error) {
+		return s.Store.ScopeBaseline(ctx, f)
+	})
 }
 
 // handleExploreOptions serves GET /api/v1/explore/options?set=18: the
