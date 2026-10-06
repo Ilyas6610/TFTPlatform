@@ -71,3 +71,19 @@ func TestOversizedResponseIsRejected(t *testing.T) {
 		t.Fatal("expected an error for a response over the size cap")
 	}
 }
+
+func TestMatchIDsPageSendsStart(t *testing.T) {
+	var query string
+	riot := riotapitest.NewClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query = r.URL.RawQuery
+		w.Write([]byte(`[]`))
+	}))
+	riot.GetTFTMatchIDsPage(context.Background(), riotapi.RoutingAmericas, "p", 40, 20)
+	if query != "count=20&start=40" {
+		t.Errorf("query = %q, want count=20&start=40", query)
+	}
+	riot.GetTFTMatchIDsByPUUID(context.Background(), riotapi.RoutingAmericas, "p", 20)
+	if query != "count=20" {
+		t.Errorf("newest page query = %q, want count=20 only", query)
+	}
+}

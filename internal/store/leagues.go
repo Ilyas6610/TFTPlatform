@@ -67,6 +67,22 @@ func (s *Store) WriteLeagueSnapshot(ctx context.Context, platform string, entrie
 				priority = GREATEST(ingest_puuid_queue.priority, EXCLUDED.priority)
 		`, e.PUUID, platform, e.RoutingRegion, e.Priority)
 	}
+	// The ladder doubles as rank history for apex players: one statement
+	// records every entry written above (fetched_at = now()) whose standing
+	// changed since the player's last snapshot (per-game LP).
+	batch.Queue(`
+		INSERT INTO rank_snapshots (puuid, queue_type, tier, rank, league_points, wins, losses)
+		SELECT le.puuid, 'RANKED_TFT', le.tier, le.rank, le.league_points, le.wins, le.losses
+		FROM league_entries le
+		LEFT JOIN LATERAL (
+			SELECT tier, rank, league_points, wins, losses FROM rank_snapshots rs
+			WHERE rs.puuid = le.puuid AND rs.queue_type = 'RANKED_TFT'
+			ORDER BY rs.fetched_at DESC LIMIT 1
+		) last ON true
+		WHERE le.platform_region = $1 AND le.queue_type = 'RANKED_TFT' AND le.fetched_at = now()
+			AND (last.tier, last.rank, last.league_points, last.wins, last.losses)
+				IS DISTINCT FROM (le.tier, le.rank, le.league_points, le.wins, le.losses)
+	`, platform)
 	if complete {
 		batch.Queue(`DELETE FROM league_entries WHERE platform_region = $1 AND fetched_at < now()`, platform)
 	}

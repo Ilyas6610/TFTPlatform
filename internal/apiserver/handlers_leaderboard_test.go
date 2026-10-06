@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -66,7 +67,16 @@ func (f *fakeRiot) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				<-f.matchGate
 				f.mu.Lock()
 			}
-			json.NewEncoder(w).Encode(f.matchIDs[strings.TrimSuffix(puuid, "/ids")])
+			// Honor start/count like Riot, so paging can be tested.
+			ids := f.matchIDs[strings.TrimSuffix(puuid, "/ids")]
+			start, _ := strconv.Atoi(r.URL.Query().Get("start"))
+			count, err := strconv.Atoi(r.URL.Query().Get("count"))
+			if err != nil {
+				count = len(ids)
+			}
+			ids = ids[min(start, len(ids)):]
+			ids = ids[:min(count, len(ids))]
+			json.NewEncoder(w).Encode(ids)
 			return
 		}
 		if m, ok := f.matches[rest]; ok {

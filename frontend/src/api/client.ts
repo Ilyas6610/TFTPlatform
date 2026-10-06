@@ -12,8 +12,8 @@ export class ApiError extends Error {
   }
 }
 
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(path);
+async function get<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, init);
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: "unknown", message: res.statusText }));
     throw new ApiError(res.status, body.error ?? "unknown", body.message ?? res.statusText);
@@ -37,29 +37,192 @@ export function getPlayerProfile(region: string, gameName: string, tagLine: stri
   );
 }
 
+export interface PlayerBoardUnit {
+  id: string;
+  star: number;
+  items: string[];
+}
+
+export interface PlayerActiveTrait {
+  id: string;
+  units: number;
+  tier: number;
+  style: number; // Riot's badge style: 1 bronze .. 4+ prismatic/unique
+}
+
 export interface PlayerMatchSummary {
   matchId: string;
   gameDatetime: string;
   tftSetNumber: number;
+  queueId: number;
   placement: number;
   level: number;
+  units: PlayerBoardUnit[];
+  traits: PlayerActiveTrait[]; // active only, highest style first
+  patch?: string; // "18.3", from the game's date for Set 18
+  // LP gained/lost, when rank snapshots bracket the game; games > 1 means
+  // the change covers that many games (shown on the newest of them).
+  lp?: { delta: number; games: number };
+  // Double Up only: the teammate and the team's placement (1-4).
+  partner?: PlayerRef;
+  team?: number;
+}
+
+/** A player by PUUID with the Riot ID we know (from Riot's match data when not resolved). */
+export interface PlayerRef {
+  puuid: string;
+  gameName?: string;
+  tagLine?: string;
+}
+
+/** A Double Up teammate and the team's results together. */
+export interface DoubleUpPartner extends PlayerRef {
+  games: number;
+  avgTeamPlacement: number; // 1-4
+  top2Rate: number;
+  winRate: number;
+  lastPlayed: string;
+}
+
+/** A rank snapshot with its place on one linear LP scale (100 per division, Master = 2800). */
+export interface RankPoint extends RankEntry {
+  value: number;
+}
+
+/** A whole-set history load (one at a time server-wide). */
+export interface BackfillStatus {
+  state: "idle" | "running" | "done" | "failed";
+  found: number; // the player's games this set, per Riot (capped at 500)
+  missing: number; // not stored when the load started
+  fetched: number;
+  since?: string;
+  error?: string;
+  finishedAt?: string;
+}
+
+export function getBackfill(puuid: string) {
+  return get<BackfillStatus>(`/api/v1/players/${encodeURIComponent(puuid)}/backfill`);
+}
+
+/** Starts loading the player's whole current set; a 409 ApiError (code "busy") if another load is running. */
+export function startBackfill(puuid: string, region: string) {
+  return get<BackfillStatus>(
+    `/api/v1/players/${encodeURIComponent(puuid)}/backfill?region=${encodeURIComponent(region)}`,
+    { method: "POST" },
+  );
+}
+
+/** An estimated Ranked standing right after an older game (before the first recorded rank). */
+export interface EstimatedLP {
+  matchId: string;
+  gameDatetime: string;
+  placement: number;
+  value: number; // same linear scale as RankPoint.value
+}
+
+export interface RankHistory {
+  history: Record<string, RankPoint[]>; // recorded rank changes per queue, oldest first
+  estimated: EstimatedLP[]; // Ranked only, oldest first; typical LP per placement
+}
+
+export function getRankHistory(puuid: string) {
+  return get<RankHistory>(`/api/v1/players/${encodeURIComponent(puuid)}/ranks`);
+}
+
+export interface RankEntry {
+  queueType: string; // RANKED_TFT, RANKED_TFT_DOUBLE_UP
+  tier: string;
+  rank: string;
+  leaguePoints: number;
+  wins: number;
+  losses: number;
+  fetchedAt: string;
 }
 
 // Passing region lets the server sync the player's history from Riot in the
-// background when it's out of date; `refreshing` is true while that runs —
-// re-fetch to pick up new matches.
+// background: the newest games when out of date (offset 0), or an older page
+// that isn't fully stored. `refreshing` is true while that runs — re-fetch
+// to pick up the games. `hasMore` means an older page may exist.
 export interface PlayerMatches {
   matches: PlayerMatchSummary[];
+  ranks?: RankEntry[]; // first page only: latest known rank per queue
+  hasMore: boolean;
   syncedAt: string | null;
   refreshing: boolean;
   stale: boolean;
   staleReason?: string;
 }
 
-export function getPlayerMatches(puuid: string, region: string, limit = 20) {
-  return get<PlayerMatches>(
-    `/api/v1/players/${encodeURIComponent(puuid)}/matches?limit=${limit}&region=${encodeURIComponent(region)}`,
-  );
+export function getPlayerMatches(puuid: string, region: string, limit = 20, offset = 0) {
+  const q = new URLSearchParams({ limit: String(limit), offset: String(offset), region });
+  return get<PlayerMatches>(`/api/v1/players/${encodeURIComponent(puuid)}/matches?${q}`);
+}
+
+export interface PlayerQueueStats extends PlacementStats {
+  queueId: number;
+}
+
+/** A player's results in one set/queue scope, from their stored games. */
+export interface PlayerStats {
+  sets: number[]; // sets with stored games, newest first
+  summary: PlacementStats & { placements: number[] };
+  baseline: PlacementStats; // everyone in the same scope
+  queues: PlayerQueueStats[];
+  units: ExploreRow[];
+  items: ExploreRow[];
+  traits: ExploreRow[];
+  comps: MetaComp[]; // the player's own comps (2+ games)
+  // By patch, newest first; lp is the known change over lpGames ranked games.
+  patches: (PlacementStats & { patch: string; lp: number; lpGames: number })[];
+  // Double Up teammates in the set, most games first (none when the queue scope leaves out Double Up).
+  partners: DoubleUpPartner[];
+  sessions: PlayerSessions;
+}
+
+/** Play sessions (games less than 30 minutes apart) in the set and queue scope. */
+export interface PlayerSessions {
+  sessions: number;
+  avgGames: number;
+  longest: number;
+  byPosition: (PlacementStats & { game: number })[]; // game 5 = 5th and later
+  // The next game in the same session after a top 4, a bottom 4, and two bottom 4s in a row.
+  afterTop4: PlacementStats;
+  afterBottom4: PlacementStats;
+  afterTwoBottom4: PlacementStats;
+}
+
+/** query: set and optional queue/level. */
+export function getPlayerStats(puuid: string, query: string) {
+  return get<PlayerStats>(`/api/v1/players/${encodeURIComponent(puuid)}/stats?${query}`);
+}
+
+/** A unit the player does notably worse or better with than expected (everyone's average shifted by their edge). */
+export interface AdviceUnit {
+  unit: string;
+  games: number;
+  avg: number;
+  metaAvg: number;
+  expected: number;
+}
+
+/** The player's usual build on a unit next to one everyone does clearly better with. */
+export interface AdviceBuild {
+  unit: string;
+  theirs: MetaBuild; // the player's games
+  theirsMeta: PlacementStats; // everyone's games with the player's build
+  better: MetaBuild; // everyone's games
+}
+
+export interface PlayerAdvice {
+  edge: number; // the player's average minus everyone's (negative = better)
+  weak: AdviceUnit[];
+  strong: AdviceUnit[];
+  builds: AdviceBuild[];
+}
+
+/** query: set and optional queue/level, as for stats. */
+export function getPlayerAdvice(puuid: string, query: string) {
+  return get<PlayerAdvice>(`/api/v1/players/${encodeURIComponent(puuid)}/advice?${query}`);
 }
 
 // Match detail is the raw Riot TFT match payload (see
@@ -72,6 +235,8 @@ export interface MatchParticipant {
   riotIdGameName?: string;
   riotIdTagline?: string;
   placement: number;
+  // Double Up team (Set 17 payloads); Set 18 dropped it, teams are then placement pairs.
+  partner_group_id?: number;
   level: number;
   last_round: number;
   total_damage_to_players: number;
@@ -89,6 +254,7 @@ export interface MatchDetail {
     game_version: string;
     tft_set_number: number;
     tft_game_type: string;
+    queue_id?: number;
     participants: MatchParticipant[];
   };
 }
