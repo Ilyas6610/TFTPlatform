@@ -1475,3 +1475,178 @@ details.patch[open] > summary::before {
   padding-left: 18px;
   font-size: 0.9rem;
 }
+
+/* Board planner */
+.planner-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.planner-summary {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.planner-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 800px) {
+  .planner-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.planner-boardpanel {
+  overflow-x: auto;
+}
+
+/* 7 columns; odd rows sit half a cell to the right, like the game's hex board. */
+.planner-board {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  padding-bottom: 4px;
+  /* Room for odd rows' half-cell shift: half a cell is (width - gaps) / 14. */
+  padding-right: calc(100% / 15 - 2.4px);
+}
+
+.planner-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  aspect-ratio: 1;
+  min-width: 0;
+  padding: 2px;
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--text);
+}
+
+/* Icons scale with the cell (the size prop is only the largest). */
+.planner-cell .game-icon {
+  width: 80%;
+  height: auto;
+  aspect-ratio: 1;
+}
+
+.planner-cell .planner-cell-items .game-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* Buttons get a global hover fill; cells keep theirs so the stars stay readable. */
+.planner-cell:hover,
+.planner-cell:focus-visible {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.planner-cell.odd {
+  transform: translateX(50%);
+}
+
+.planner-cell.filled {
+  border-style: solid;
+  cursor: grab;
+}
+
+.planner-cell.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.planner-stars {
+  position: absolute;
+  top: 1px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 0.65rem;
+  line-height: 1;
+  color: var(--accent);
+}
+
+.planner-cell-items {
+  display: flex;
+  gap: 1px;
+  min-height: 14px;
+}
+
+
+.planner-hint {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+}
+
+.planner-side .panel h3 {
+  margin-bottom: 8px;
+}
+
+.planner-stars-pick {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.planner-stars-pick .active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.planner-items {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-bottom: 10px;
+}
+
+.planner-augments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.planner-augment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+}
+
+.planner-augment .remove {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1.1rem;
+}
+
+.planner-traits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.planner-traits li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.planner-traits li.inactive {
+  opacity: 0.5;
+}
