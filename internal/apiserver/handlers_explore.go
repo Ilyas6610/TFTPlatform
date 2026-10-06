@@ -38,14 +38,15 @@ func (s *Server) handleExplore(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_filter", err.Error())
 		return
 	}
-	res, err := cached(r.Context(), s, &s.stats, exploreCacheKey(f), func(ctx context.Context) (*store.ExploreResult, error) {
+	// In this replica's memory only, in a cache of its own (see Server.explore).
+	v, err := s.explore.get(r.Context(), exploreCacheKey(f), func(ctx context.Context) (any, error) {
 		return s.Store.Explore(ctx, f, exploreLimit)
 	})
 	if err != nil {
 		writeDBError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, res)
+	writeJSON(w, http.StatusOK, v.(*store.ExploreResult))
 }
 
 // exploreCacheKey identifies an explorer search: its scope plus every

@@ -200,8 +200,8 @@ func TestExplore_ResultIsCachedPerSearch(t *testing.T) {
 func TestExplore_CacheLifetimeIsConfigurable(t *testing.T) {
 	s := &Server{Store: storetest.New(t), StatsCacheTTL: 100 * time.Millisecond}
 	h := NewRouter(s)
-	if s.stats.lifetime() != 100*time.Millisecond || s.meta.lifetime() != 100*time.Millisecond {
-		t.Fatalf("lifetimes %v %v", s.stats.lifetime(), s.meta.lifetime())
+	if s.stats.lifetime() != 100*time.Millisecond || s.meta.lifetime() != 100*time.Millisecond || s.explore.lifetime() != 100*time.Millisecond {
+		t.Fatalf("lifetimes %v %v %v", s.stats.lifetime(), s.meta.lifetime(), s.explore.lifetime())
 	}
 	seedBoards(t, s.Store, "NA1_1", [][]string{{"A"}})
 	if n := exploreBoards(t, h, "set=18&queue=1100&unit=A"); n != 1 {

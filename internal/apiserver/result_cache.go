@@ -1,6 +1,7 @@
 package apiserver
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log"
@@ -33,6 +34,9 @@ type resultCache struct {
 	slots   chan struct{}    // computations in flight
 	now     func() time.Time // tests only
 	ttl     time.Duration    // how long a result is reused; 0 = resultCacheTTL
+	// maxComputes caps computations in flight; 0 = resultCacheMaxComputes.
+	// Read once, when the first entry is made.
+	maxComputes int
 }
 
 func (c *resultCache) lifetime() time.Duration {
@@ -63,7 +67,7 @@ func (c *resultCache) get(ctx context.Context, key string, compute func(context.
 		c.mu.Lock()
 		if c.entries == nil {
 			c.entries = map[string]*resultCacheEntry{}
-			c.slots = make(chan struct{}, resultCacheMaxComputes)
+			c.slots = make(chan struct{}, cmp.Or(c.maxComputes, resultCacheMaxComputes))
 		}
 		e := c.entries[key]
 		if e != nil {

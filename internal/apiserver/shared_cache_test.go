@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -87,7 +88,6 @@ func TestSharedCache_ReplicasServeTheSameResult(t *testing.T) {
 	seedBoards(t, st, "NA1_1", [][]string{comp, comp, comp, comp, comp, comp})
 
 	paths := []string{
-		"/api/v1/explore?set=18&queue=1100&unit=A",
 		"/api/v1/explore/options?set=18",
 		"/api/v1/meta/builds?set=18&queue=1100",
 		"/api/v1/meta/comps?set=18&queue=1100",
@@ -100,6 +100,14 @@ func TestSharedCache_ReplicasServeTheSameResult(t *testing.T) {
 	for _, p := range paths {
 		if got := body(t, NewRouter(b), p); got != first[p] {
 			t.Errorf("%s: replica B served a different result:\n a: %s\n b: %s", p, first[p], got)
+		}
+	}
+	// Searches stay in this replica's memory: they're one-offs that would
+	// crowd out the entries worth sharing.
+	body(t, NewRouter(a), "/api/v1/explore?set=18&queue=1100&unit=A")
+	for k := range shared.vals {
+		if strings.HasPrefix(k, "explore|") {
+			t.Errorf("explorer search %q was written to the shared cache", k)
 		}
 	}
 	for k, ttl := range shared.ttls {
@@ -118,8 +126,8 @@ func TestSharedCache_FailureFallsBackToComputing(t *testing.T) {
 	shared.failed = errors.New("redis down")
 	s := &Server{Store: st, Shared: shared}
 	seedBoards(t, st, "NA1_1", [][]string{{"A"}})
-	if n := exploreBoards(t, NewRouter(s), "set=18&queue=1100&unit=A"); n != 1 {
-		t.Fatalf("got %d boards, want 1 despite the shared cache failing", n)
+	if b := body(t, NewRouter(s), "/api/v1/explore/options?set=18"); !strings.Contains(b, `"A"`) {
+		t.Fatalf("options %s should list unit A despite the shared cache failing", b)
 	}
 }
 
@@ -159,13 +167,13 @@ func TestSharedCache_BreakerSkipsAFailingCache(t *testing.T) {
 	s := &Server{Store: st, Shared: shared}
 	seedBoards(t, st, "NA1_1", [][]string{{"A"}})
 	h := NewRouter(s)
-	exploreBoards(t, h, "set=18&queue=1100&unit=A")
+	body(t, h, "/api/v1/explore/options?set=18")
 	if !s.sharedDown.open() {
 		t.Fatal("a failing shared cache should be skipped for a while")
 	}
 	// While open, nothing touches the shared cache.
 	shared.failed = nil
-	exploreBoards(t, h, "set=18&queue=1100&unit=B")
+	body(t, h, "/api/v1/explore/options?set=19")
 	if len(shared.vals) != 0 {
 		t.Errorf("shared cache used while skipped: %v", shared.vals)
 	}

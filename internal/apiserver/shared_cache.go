@@ -61,6 +61,11 @@ func logSharedErr(op string, err error) {
 // cached returns key's value from c (this replica's memory) or, on a miss,
 // from the shared cache, or computes it. The computed value is written to the
 // shared cache for ttl. T must survive a JSON round trip.
+//
+// Don't call cached on a cache from inside a computation that holds a slot of
+// the same cache: with every slot held by outer computations each waiting for
+// an inner one, they'd deadlock. Today no computation nests within its own
+// cache (Store.Explore computes its baseline itself).
 func cached[T any](ctx context.Context, s *Server, c *resultCache, key string, compute func(context.Context) (T, error)) (T, error) {
 	v, err := c.get(ctx, key, func(ctx context.Context) (any, error) {
 		if s.Shared == nil || s.sharedDown.open() {

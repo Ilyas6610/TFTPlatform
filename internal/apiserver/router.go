@@ -36,7 +36,8 @@ type Server struct {
 	sharedDown  sharedBreaker
 	statsTTL    time.Duration // StatsCacheTTL after defaulting
 	meta        resultCache   // meta builds and comps, advisor inputs
-	stats       resultCache   // explorer, explorer options, precomputed meta tables
+	stats       resultCache   // explorer options, scope baselines
+	explore     resultCache   // explorer searches: arbitrary keys, so apart from the cheap shared entries and kept in memory
 	sets        resultCache   // set data, patch notes, planner codes
 	live        liveFetches
 	backfill    backfills
@@ -44,6 +45,11 @@ type Server struct {
 }
 
 func (s *Server) statsTTLValue() time.Duration { return s.statsTTL }
+
+// exploreMaxComputes is how many different explorer searches one replica
+// runs at once on a cache miss: more than the shared default of 2 because
+// every distinct search misses, fewer than unbounded to protect Postgres.
+const exploreMaxComputes = 4
 
 // DefaultStatsCacheTTL is the default for Server.StatsCacheTTL.
 const DefaultStatsCacheTTL = 10 * time.Minute
@@ -61,6 +67,10 @@ func NewRouter(s *Server) http.Handler {
 			local = localSharedTTL // the shared entry's TTL governs freshness
 		}
 		s.meta.ttl, s.stats.ttl = local, local
+		// Searches never go to the shared cache (each distinct search is a
+		// one-off that would crowd out the entries worth sharing), so they
+		// keep the full lifetime locally.
+		s.explore.ttl, s.explore.maxComputes = ttl, exploreMaxComputes
 	})
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/players/{region}/{name}/{tag}", s.handlePlayerProfile)
