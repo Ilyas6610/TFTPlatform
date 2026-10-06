@@ -102,8 +102,12 @@ services:
       - /tmp:size=64m
       - /etc/nginx/conf.d:size=1m,uid=101,gid=101
     mem_limit: ${FRONTEND_MEM_LIMIT:-256m}
+    # Lets the non-root nginx listen on port 80 without any capability
+    # (Docker's default too; explicit so other runtimes behave the same).
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
     ports:
-      - "${HTTP_PORT:-80}:8080"
+      - "${HTTP_PORT:-80}:80"
     depends_on:
       api:
         condition: service_healthy

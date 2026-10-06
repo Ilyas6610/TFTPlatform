@@ -10,7 +10,10 @@ limit_req_zone $binary_remote_addr zone=riot:10m rate=2r/s;
 limit_conn_zone $binary_remote_addr zone=perip:10m;
 
 server {
-    listen 8080;
+    # Port 80 as a non-root user: Docker lets unprivileged processes bind
+    # low ports inside a container (net.ipv4.ip_unprivileged_port_start=0,
+    # also set explicitly in docker-compose.prod.yml).
+    listen 80;
     server_name _;
     root /usr/share/nginx/html;
     server_tokens off;

@@ -129,9 +129,7 @@ docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env up -d --
 
 The site is then on port 80 (`HTTP_PORT` changes it). Migrations run automatically before the API starts, and the API syncs set data on startup. Replace an expired Riot key by rewriting the key file; no restart needed.
 
-The containers are locked down: the app containers run as non-root users (nginx listens on 8080 inside its container) with no Linux capabilities, read-only filesystems and memory limits (`*_MEM_LIMIT` in `.env`). nginx sends security headers (CSP, `nosniff`, `X-Frame-Options`) and rate-limits `/api/` per client address: 10 requests/s with bursts of 40, and 2/s with bursts of 20 for the player and match routes, which can spend the Riot key's quota. Behind another proxy or load balancer, set `set_real_ip_from` in [frontend/nginx.conf.template](frontend/nginx.conf.template) so the limits apply per client rather than to the proxy; HSTS belongs on that TLS terminator.
-
-**Upgrading to the hardened frontend image:** it listens on 8080 instead of 80 inside the container. The Compose file maps `HTTP_PORT` to it; anything else that addressed the container's port 80 directly must change.
+The containers are locked down: the app containers run as non-root users (nginx still listens on port 80 inside its container) with no Linux capabilities, read-only filesystems and memory limits (`*_MEM_LIMIT` in `.env`). nginx sends security headers (CSP, `nosniff`, `X-Frame-Options`) and rate-limits `/api/` per client address: 10 requests/s with bursts of 40, and 2/s with bursts of 20 for the player and match routes, which can spend the Riot key's quota. Behind another proxy or load balancer, set `set_real_ip_from` in [frontend/nginx.conf.template](frontend/nginx.conf.template) so the limits apply per client rather than to the proxy; HSTS belongs on that TLS terminator.
 
 Optional, once:
 
