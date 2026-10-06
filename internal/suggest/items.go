@@ -28,7 +28,9 @@ type UnitUse struct {
 }
 
 // ItemBuild is a real 3-item build judged by its items alone: its stats
-// combine every unit that carried it, and Units lists the main carriers.
+// combine every unit that carried it (per carrier, so a board where two
+// units ran the same build counts twice; rare), and Units lists the main
+// carriers.
 type ItemBuild struct {
 	BuildOption
 	Units []UnitUse `json:"units"`
