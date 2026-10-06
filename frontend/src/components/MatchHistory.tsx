@@ -33,6 +33,8 @@ export function MatchHistory({
   costs,
   onFirstPage,
   onGamesAdded,
+  refreshSignal = 0,
+  onRefreshResult,
 }: {
   puuid: string;
   region: string;
@@ -42,6 +44,10 @@ export function MatchHistory({
   onFirstPage?: (page: PlayerMatches) => void;
   /** Called when a page gained games (synced or fetched from Riot). */
   onGamesAdded?: () => void;
+  /** Each increase makes the server sync the newest games now (the Update button). */
+  refreshSignal?: number;
+  /** The outcome of that request: the first page, or null if it failed. */
+  onRefreshResult?: (page: PlayerMatches | null) => void;
 }) {
   const navigate = useNavigate();
   // pages[i] is the response for offset i*PAGE.
@@ -69,10 +75,18 @@ export function MatchHistory({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [puuid, region]);
 
-  function loadPage(index: number): Promise<void> {
-    return getPlayerMatches(puuid, region, PAGE, index * PAGE)
+  // Update button: re-fetch the first page with refresh, which starts a sync
+  // and is then polled like any other.
+  useEffect(() => {
+    if (refreshSignal === 0) return;
+    loadPage(0, true).then((p) => onRefreshResult?.(p));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshSignal]);
+
+  function loadPage(index: number, refresh = false): Promise<PlayerMatches | null> {
+    return getPlayerMatches(puuid, region, PAGE, index * PAGE, refresh)
       .then((p) => {
-        if (!alive.current) return;
+        if (!alive.current) return null;
         const before = counts.current[index];
         counts.current[index] = p.matches.length;
         // A re-fetched page that grew (games stored meanwhile), or an older
@@ -89,9 +103,11 @@ export function MatchHistory({
         });
         if (index === 0) onFirstPage?.(p);
         if (p.refreshing) timers.current.push(setTimeout(() => loadPage(index).catch(() => {}), POLL_MS));
+        return p;
       })
       .catch(() => {
         if (alive.current) setError("couldn't load match history");
+        return null;
       });
   }
 

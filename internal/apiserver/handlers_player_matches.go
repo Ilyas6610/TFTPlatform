@@ -21,8 +21,13 @@ const (
 	// matchHistorySyncCount is how many recent matches a sync covers — one
 	// profile page's worth.
 	matchHistorySyncCount = 20
-	matchSyncTimeout      = 2 * time.Minute
-	matchSyncCooldown     = time.Minute
+	// matchHistoryRefreshMin is how soon after a sync the profile's Update
+	// button can start another (?refresh=1). Much shorter than
+	// matchHistoryStaleAfter, but it still bounds what one viewer can spend
+	// of the shared Riot key.
+	matchHistoryRefreshMin = 20 * time.Second
+	matchSyncTimeout       = 2 * time.Minute
+	matchSyncCooldown      = time.Minute
 	// matchHistoryMaxOffset bounds paging back through a history (Riot keeps
 	// about a thousand recent match ids; a profile rarely needs more).
 	matchHistoryMaxOffset = 500
@@ -48,6 +53,9 @@ type PlayerMatchesResponse struct {
 	// Stale is set when the last sync attempt failed; StaleReason says why.
 	Stale       bool   `json:"stale"`
 	StaleReason string `json:"staleReason,omitempty"`
+	// RefreshTooSoon answers ?refresh=1 when the history was synced under
+	// matchHistoryRefreshMin ago: nothing was started.
+	RefreshTooSoon bool `json:"refreshTooSoon,omitempty"`
 }
 
 // PlayerMatchView is a history game with what's derived for display.
@@ -140,7 +148,7 @@ func (s *Server) handlePlayerMatches(w http.ResponseWriter, r *http.Request) {
 				_, err := ingest.SyncOlderMatches(ctx, s.Riot, s.Store, platform, puuid, offset, limit)
 				return false, err
 			})
-		case offset == 0 && (syncedAt == nil || time.Since(*syncedAt) >= matchHistoryStaleAfter):
+		case offset == 0 && syncDue(r, syncedAt, &resp):
 			resp.Refreshing = s.jobs.start(key, matchSyncTimeout, matchSyncCooldown, func(ctx context.Context) (bool, error) {
 				result, err := ingest.SyncPlayerMatches(ctx, s.Riot, s.Store, platform, puuid, matchHistorySyncCount)
 				if err == nil && result.Stopped != "" {
@@ -171,6 +179,19 @@ func (s *Server) handlePlayerMatches(w http.ResponseWriter, r *http.Request) {
 
 	resp.HasMore = len(matches) == limit || resp.Refreshing
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// syncDue reports whether the newest games should be synced now: the history
+// was never synced or has aged past matchHistoryStaleAfter. ?refresh=1 (the
+// profile's Update button) waits only matchHistoryRefreshMin, and a refresh
+// that comes sooner is flagged on resp rather than run.
+func syncDue(r *http.Request, syncedAt *time.Time, resp *PlayerMatchesResponse) bool {
+	after := matchHistoryStaleAfter
+	if r.URL.Query().Get("refresh") == "1" {
+		after = matchHistoryRefreshMin
+		resp.RefreshTooSoon = syncedAt != nil && time.Since(*syncedAt) < after
+	}
+	return syncedAt == nil || time.Since(*syncedAt) >= after
 }
 
 // decorateMatches adds each game's patch and LP change, and returns the

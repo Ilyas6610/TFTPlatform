@@ -36,6 +36,12 @@ export default function ProfilePage() {
   // Bumped when the first history page changes, so stats include new games.
   const [statsVersion, setStatsVersion] = useState(0);
   const manifest = useManifest();
+  // Update button: bumping the signal makes the history sync now; `syncing`
+  // follows the history's own flag while the server fetches games.
+  const [refreshSignal, setRefreshSignal] = useState(0);
+  const [updating, setUpdating] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [updateNote, setUpdateNote] = useState<string | null>(null);
 
   // Opening a profile looks up the player; the history and stats panels
   // then load (and the history makes the server sync newer games).
@@ -47,6 +53,10 @@ export default function ProfilePage() {
     setProfile(null);
     setRecent([]);
     setRanks([]);
+    setRefreshSignal(0);
+    setUpdating(false);
+    setSyncing(false);
+    setUpdateNote(null);
     getPlayerProfile(region, name, tag)
       .then((p) => !cancelled && setProfile(p))
       .catch((e: unknown) => {
@@ -74,12 +84,35 @@ export default function ProfilePage() {
   const costs = useMemo(() => new Map(setData?.units.map((u) => [u.apiName, u.cost]) ?? []), [setData]);
   const [ranks, setRanks] = useState<RankEntry[]>([]);
   const onFirstPage = (p: PlayerMatches) => {
+    setSyncing(p.refreshing);
     setRecent(p.matches);
     if (p.ranks) setRanks(p.ranks);
   };
   // Games were added to the history (newest synced or an older page fetched):
   // stats are computed from stored games, so reload them.
-  const onGamesAdded = () => setStatsVersion((v) => v + 1);
+  const onGamesAdded = () => {
+    setStatsVersion((v) => v + 1);
+    setUpdateNote(null); // "Already up to date" is stale once games arrive
+  };
+
+  // Sync the newest games and rank now. The profile is re-requested too, but
+  // the server keeps its saved copy for an hour, so a changed name, icon or
+  // level only shows up once that has aged. Stats and LP reload as the
+  // games arrive.
+  function handleUpdate() {
+    if (!region || !name || !tag) return;
+    setUpdating(true);
+    setUpdateNote(null);
+    setRefreshSignal((n) => n + 1);
+    getPlayerProfile(region, name, tag)
+      .then(setProfile)
+      .catch(() => {});
+  }
+  const onRefreshResult = (p: PlayerMatches | null) => {
+    setUpdating(false);
+    if (!p) setUpdateNote("Couldn't update the profile.");
+    else if (p.refreshTooSoon) setUpdateNote("Already up to date.");
+  };
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -139,6 +172,12 @@ export default function ProfilePage() {
               ))}
             </div>
           )}
+          <div className="profile-update">
+            <button type="button" onClick={handleUpdate} disabled={updating || syncing}>
+              {updating || syncing ? "Updating…" : "Update"}
+            </button>
+            {updateNote && <span className="muted">{updateNote}</span>}
+          </div>
         </div>
       )}
 
@@ -171,6 +210,8 @@ export default function ProfilePage() {
           costs={costs}
           onFirstPage={onFirstPage}
           onGamesAdded={onGamesAdded}
+          refreshSignal={refreshSignal}
+          onRefreshResult={onRefreshResult}
         />
       )}
     </div>

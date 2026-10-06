@@ -2524,3 +2524,14 @@ table.partners td:first-child {
     overflow-wrap: anywhere;
   }
 }
+
+.profile-update {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rank-badges + .profile-update {
+  margin-left: 0;
+}
