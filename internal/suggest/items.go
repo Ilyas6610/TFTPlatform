@@ -202,3 +202,68 @@ func crafts(in Input, inv inventory) []Craft {
 	}
 	return out
 }
+
+// itemComps ranks comps (final boards) by how much of their carries' items
+// the inventory makes. The anchor board's itemized units are served in
+// board order (carries first) from one shared inventory, so no piece is
+// counted for two carries. Comps the inventory contributes nothing to are
+// left out; comps whose item advice is identical keep only the best one.
+func itemComps(in Input, inv inventory) []CompMatch {
+	type scored struct {
+		m             CompMatch
+		made, missing int
+	}
+	var all []scored
+	for _, c := range in.Comps {
+		m := CompMatch{Comp: c, Have: []string{}, Need: []string{}, Fits: []ItemFit{}}
+		left := inv.clone()
+		var made, missing int
+		for _, bu := range c.Board {
+			m.Need = append(m.Need, bu.ID)
+			if len(bu.Items) == 0 {
+				continue
+			}
+			var steps []Step
+			var miss []string
+			steps, miss, left = craft(bu.Items, left, in.Recipes)
+			made += len(steps)
+			missing += len(miss)
+			m.Fits = append(m.Fits, ItemFit{Unit: bu.ID, Items: bu.Items, Steps: nonNil(steps), Missing: nonNilStr(miss)})
+		}
+		if made > 0 {
+			all = append(all, scored{m, made, missing})
+		}
+	}
+	sort.SliceStable(all, func(i, j int) bool {
+		a, b := all[i], all[j]
+		if a.made != b.made {
+			return a.made > b.made
+		}
+		if a.missing != b.missing {
+			return a.missing < b.missing
+		}
+		if less, ok := lessSampled(a.m.Comp.AvgPlacement, a.m.Comp.Boards, b.m.Comp.AvgPlacement, b.m.Comp.Boards); ok {
+			return less
+		}
+		return a.m.Comp.Boards > b.m.Comp.Boards
+	})
+
+	out := []CompMatch{}
+	seen := map[string]bool{}
+	for _, s := range all {
+		var key []string
+		for _, f := range s.m.Fits {
+			key = append(key, f.Unit+":"+strings.Join(f.Items, ","))
+		}
+		k := strings.Join(key, ";")
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, s.m)
+		if len(out) == maxComps {
+			break
+		}
+	}
+	return out
+}

@@ -92,7 +92,10 @@ type Result struct {
 	// Units has every owned unit's alternatives, each judged against the
 	// whole inventory (so the same item may appear in several).
 	Units []UnitAdvice `json:"units"`
-	Comps []CompMatch  `json:"comps"`
+	// Comps fit the owned units; without units (items only) they are the
+	// final boards whose carries' items the inventory makes most of, with
+	// Have empty and Fits for every itemized unit.
+	Comps []CompMatch `json:"comps"`
 	// Candidates is set when no units were given: the units whose real
 	// builds this inventory fits best, one build each, closest to ready
 	// first.
@@ -292,7 +295,11 @@ func Advise(in Input) Result {
 		res.Crafts = crafts(in, inv)
 	}
 
-	res.Comps = matchComps(in, owned, inv)
+	if len(owned) == 0 && len(in.Items) > 0 {
+		res.Comps = itemComps(in, inv) // final boards for the items
+	} else {
+		res.Comps = matchComps(in, owned, inv)
+	}
 	return res
 }
 

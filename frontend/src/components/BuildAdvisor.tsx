@@ -216,6 +216,7 @@ export function BuildAdvisor({
             <>
               <ItemBuilds result={result} names={names} />
               <Crafts result={result} names={names} />
+              <Comps comps={result.comps} names={names} ownedUnits={[]} byItems />
               <Candidates result={result} names={names} />
             </>
           )}
@@ -509,59 +510,88 @@ function Alternatives({ result, names }: { result: SuggestResult; names: Names }
   );
 }
 
-function Comps({ comps, names, ownedUnits }: { comps: SuggestComp[]; names: Names; ownedUnits: string[] }) {
+/**
+ * Comps that fit the owned units, or with byItems (no units given) the final
+ * boards whose carries' items the inventory makes most of: carries you can
+ * itemize are highlighted instead of owned units.
+ */
+function Comps({
+  comps,
+  names,
+  ownedUnits,
+  byItems = false,
+}: {
+  comps: SuggestComp[];
+  names: Names;
+  ownedUnits: string[];
+  byItems?: boolean;
+}) {
   if (comps.length === 0) return null;
   const owned = new Set(ownedUnits);
   return (
     <div className="advisor-section">
-      <h3>Comps that fit your units</h3>
+      <h3>{byItems ? "Final boards for your items" : "Comps that fit your units"}</h3>
       <div className="advisor-comps">
-        {comps.map((c, i) => (
-          <div className="advisor-comp" key={i}>
-            <div className="advisor-comp-head">
-              <CompName comp={c.comp} names={names} />
-              <strong>
-                {c.have.length} of {c.comp.board.length} units
-              </strong>
-              <span className={placementTone(c.comp)}>{avg(c.comp.avgPlacement)} avg</span>
-              <span className="muted">
-                {c.comp.boards} boards · top 4 {pct(c.comp.top4Rate)}
-              </span>
-            </div>
-            <div className="advisor-comp-units">
-              {c.comp.board.map((u) => (
-                <span
-                  key={u.id}
-                  className={owned.has(u.id) ? "adv-unit have" : "adv-unit need"}
-                  title={`${names.name(u.id)}${owned.has(u.id) ? " — you have it" : " — still needed"}`}
-                >
-                  <GameIcon
-                    kind="champions"
-                    id={u.id}
-                    size={30}
-                    fallbackSrc={names.icon(u.id)}
-                    fallbackName={names.name(u.id)}
-                  />
+        {comps.map((c, i) => {
+          const itemized = new Set(c.fits.filter((f) => f.steps.length > 0).map((f) => f.unit));
+          const highlight = byItems ? itemized : owned;
+          const made = c.fits.reduce((n, f) => n + f.steps.length, 0);
+          const wanted = c.fits.reduce((n, f) => n + f.items.length, 0);
+          return (
+            <div className="advisor-comp" key={i}>
+              <div className="advisor-comp-head">
+                <CompName comp={c.comp} names={names} />
+                <strong>
+                  {byItems ? `${made} of ${wanted} carry items` : `${c.have.length} of ${c.comp.board.length} units`}
+                </strong>
+                <span className={placementTone(c.comp)}>{avg(c.comp.avgPlacement)} avg</span>
+                <span className="muted">
+                  {c.comp.boards} boards · top 4 {pct(c.comp.top4Rate)}
                 </span>
-              ))}
-            </div>
-            {c.fits.length > 0 && (
-              <ul className="advisor-fits">
-                {c.fits.map((f) => (
-                  <li key={f.unit}>
-                    {names.name(f.unit)}:{" "}
-                    <span className={f.missing.length === 0 ? "good" : "muted"}>
-                      {f.steps.length} of {f.items.length} items makeable
-                    </span>
-                    {f.missing.length > 0 && (
-                      <span className="muted"> (missing {f.missing.map((m) => names.name(m)).join(", ")})</span>
-                    )}
-                  </li>
+              </div>
+              <div className="advisor-comp-units">
+                {c.comp.board.map((u) => (
+                  <span
+                    key={u.id}
+                    className={highlight.has(u.id) ? "adv-unit have" : "adv-unit need"}
+                    title={`${names.name(u.id)}${
+                      byItems
+                        ? itemized.has(u.id)
+                          ? " — your items build toward it"
+                          : ""
+                        : owned.has(u.id)
+                          ? " — you have it"
+                          : " — still needed"
+                    }`}
+                  >
+                    <GameIcon
+                      kind="champions"
+                      id={u.id}
+                      size={30}
+                      fallbackSrc={names.icon(u.id)}
+                      fallbackName={names.name(u.id)}
+                    />
+                  </span>
                 ))}
-              </ul>
-            )}
-          </div>
-        ))}
+              </div>
+              {c.fits.length > 0 && (
+                <ul className="advisor-fits">
+                  {c.fits.map((f) => (
+                    <li key={f.unit}>
+                      {names.name(f.unit)}:{" "}
+                      <span className={f.missing.length === 0 ? "good" : "muted"}>
+                        {f.steps.length} of {f.items.length} items makeable
+                      </span>
+                      {f.missing.length > 0 && (
+                        <span className="muted"> (missing {f.missing.map((m) => names.name(m)).join(", ")})</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

@@ -5,6 +5,7 @@ import (
 	"slices"
 	"testing"
 
+	"tft-platform/internal/comps"
 	"tft-platform/internal/store"
 )
 
@@ -93,5 +94,42 @@ func TestAdvise_UnitsGivenSkipsItemsOnlySections(t *testing.T) {
 	})
 	if len(r.Builds) != 0 || len(r.Crafts) != 0 || len(r.Candidates) != 0 {
 		t.Errorf("items-only sections set with units: %+v", r)
+	}
+}
+
+// Items only: final boards are ranked by how many of their carries' items
+// the inventory makes, serving carries from one shared inventory.
+func TestAdvise_ItemsOnlyFinalBoards(t *testing.T) {
+	carry := func(id string, items ...string) comps.BoardUnit {
+		return comps.BoardUnit{ID: id, Items: items}
+	}
+	in := Input{
+		Items:   []string{"Sword", "Glove", "IE"},
+		Recipes: rec,
+		Comps: []comps.Comp{
+			// Two carries both want IE: one held IE plus Sword+Glove make two.
+			comp(4.0, 50, carry("A", "IE", "GS", "GS"), carry("B", "IE", "Bow", "Bow"), comps.BoardUnit{ID: "T"}),
+			// Better placement but only one IE makeable for its single carry.
+			comp(3.0, 50, carry("C", "IE", "JG", "JG"), comps.BoardUnit{ID: "T"}),
+			// Nothing makeable: dropped.
+			comp(2.0, 50, carry("D", "GS", "GS", "GS")),
+		},
+	}
+	r := Advise(in)
+	if len(r.Comps) != 2 {
+		t.Fatalf("comps = %+v, want the two the items help", r.Comps)
+	}
+	first := r.Comps[0]
+	if len(first.Fits) != 2 || len(first.Fits[0].Steps) != 1 || len(first.Fits[1].Steps) != 1 {
+		t.Fatalf("first = %+v, want IE for A and IE for B", first)
+	}
+	if first.Fits[0].Steps[0].From != nil || first.Fits[1].Steps[0].From == nil {
+		t.Errorf("A should take the held IE and B the Sword+Glove one, not both the same piece: %+v", first.Fits)
+	}
+	if len(first.Have) != 0 || len(first.Need) != 3 {
+		t.Errorf("have/need = %v/%v, want nothing owned (no units given)", first.Have, first.Need)
+	}
+	if r.Comps[1].Comp.AvgPlacement != 3.0 {
+		t.Errorf("second = %+v, want the one-IE comp", r.Comps[1])
 	}
 }
