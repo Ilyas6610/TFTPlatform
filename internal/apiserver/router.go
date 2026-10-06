@@ -26,6 +26,7 @@ func NewRouter(s *Server) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/players/{region}/{name}/{tag}", s.handlePlayerProfile)
 	mux.HandleFunc("GET /api/v1/players/{puuid}/matches", s.handlePlayerMatches)
+	mux.HandleFunc("GET /api/v1/players/{puuid}/stats", s.handlePlayerStats)
 	mux.HandleFunc("GET /api/v1/matches/{matchId}", s.handleMatchDetail)
 	mux.HandleFunc("GET /api/v1/leaderboard/{platform}", s.handleLeaderboard)
 	mux.HandleFunc("GET /api/v1/meta/units", s.handleMetaUnits)

@@ -10,6 +10,15 @@ export const pct = (n: number) => `${Math.round(n * 100)}%`;
 
 export const avg = (n: number) => n.toFixed(2);
 
+export const QUEUE_NAMES: Record<number, string> = {
+  1090: "Normal",
+  1100: "Ranked",
+  1130: "Hyper Roll",
+  1160: "Double Up",
+};
+
+export const queueName = (id: number) => QUEUE_NAMES[id] ?? `Queue ${id}`;
+
 export function StatCells({ row: r, total }: { row: PlacementStats; total: number }) {
   return (
     <>

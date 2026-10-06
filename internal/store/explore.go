@@ -18,6 +18,9 @@ type ExploreFilter struct {
 	Units    []UnitCond
 	Items    []string // item anywhere on the board
 	Traits   []TraitCond
+	// PUUID limits boards to one player's (player profile stats). It is a
+	// board condition like the others: the baseline stays everyone's.
+	PUUID string
 }
 
 // UnitCond matches a board fielding the unit, optionally at a minimum star
@@ -61,6 +64,9 @@ func (f ExploreFilter) whereClause(args *[]any) string {
 	}
 	if f.LevelMax > 0 {
 		conds = append(conds, "mp.level <= "+arg(f.LevelMax))
+	}
+	if f.PUUID != "" {
+		conds = append(conds, "mp.puuid = "+arg(f.PUUID))
 	}
 	for _, u := range f.Units {
 		// The containment test can use the GIN index on units; the EXISTS

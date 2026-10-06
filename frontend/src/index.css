@@ -1475,3 +1475,168 @@ details.patch[open] > summary::before {
   padding-left: 18px;
   font-size: 0.9rem;
 }
+
+/* Player profile */
+
+.history-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.history-head h3 {
+  margin: 0;
+}
+
+.player-scope {
+  display: flex;
+  gap: 8px;
+}
+
+.player-stats .stat-tiles {
+  margin-top: 12px;
+}
+
+.player-stats .stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.player-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px 24px;
+  align-items: start;
+}
+
+.player-charts .placement-bars {
+  height: 110px;
+}
+
+.form-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.form-strip .placement {
+  min-width: 1.7em;
+  text-align: center;
+  padding: 2px 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  cursor: pointer;
+}
+
+table.compact td,
+table.compact th {
+  padding: 4px 8px;
+}
+
+tr.dim {
+  opacity: 0.55;
+}
+
+.player-breakdowns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 0 16px;
+}
+
+.player-comps {
+  display: grid;
+  gap: 10px;
+}
+
+.player-comp {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.history-list {
+  display: grid;
+}
+
+.history-row {
+  display: grid;
+  grid-template-columns: 170px minmax(120px, 220px) 1fr;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 8px 6px;
+  border-top: 1px solid var(--border);
+  border-left: 3px solid transparent;
+  cursor: pointer;
+}
+
+.history-row:hover {
+  background: var(--bg);
+}
+
+.history-row.placement-row-top {
+  border-left-color: var(--placement-good);
+}
+
+.history-row.placement-row-bottom {
+  border-left-color: var(--placement-bad);
+}
+
+.history-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.85rem;
+}
+
+.history-meta .placement {
+  font-size: 1.15rem;
+}
+
+.history-traits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.history-units {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.history-unit {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.history-unit .unit-items {
+  min-height: 12px;
+}
+
+.unit-stars.star-2 {
+  color: #b9c4cf;
+}
+
+.unit-stars.star-3 {
+  color: var(--accent);
+}
+
+.load-more {
+  margin-top: 12px;
+}
+
+@media (max-width: 700px) {
+  .history-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.unit-stars.star-1 {
+  color: #a07850;
+}

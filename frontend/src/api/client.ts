@@ -37,29 +37,67 @@ export function getPlayerProfile(region: string, gameName: string, tagLine: stri
   );
 }
 
+export interface PlayerBoardUnit {
+  id: string;
+  star: number;
+  items: string[];
+}
+
+export interface PlayerActiveTrait {
+  id: string;
+  units: number;
+  tier: number;
+  style: number; // Riot's badge style: 1 bronze .. 4+ prismatic/unique
+}
+
 export interface PlayerMatchSummary {
   matchId: string;
   gameDatetime: string;
   tftSetNumber: number;
+  queueId: number;
   placement: number;
   level: number;
+  units: PlayerBoardUnit[];
+  traits: PlayerActiveTrait[]; // active only, highest style first
 }
 
 // Passing region lets the server sync the player's history from Riot in the
-// background when it's out of date; `refreshing` is true while that runs —
-// re-fetch to pick up new matches.
+// background: the newest games when out of date (offset 0), or an older page
+// that isn't fully stored. `refreshing` is true while that runs — re-fetch
+// to pick up the games. `hasMore` means an older page may exist.
 export interface PlayerMatches {
   matches: PlayerMatchSummary[];
+  hasMore: boolean;
   syncedAt: string | null;
   refreshing: boolean;
   stale: boolean;
   staleReason?: string;
 }
 
-export function getPlayerMatches(puuid: string, region: string, limit = 20) {
-  return get<PlayerMatches>(
-    `/api/v1/players/${encodeURIComponent(puuid)}/matches?limit=${limit}&region=${encodeURIComponent(region)}`,
-  );
+export function getPlayerMatches(puuid: string, region: string, limit = 20, offset = 0) {
+  const q = new URLSearchParams({ limit: String(limit), offset: String(offset), region });
+  return get<PlayerMatches>(`/api/v1/players/${encodeURIComponent(puuid)}/matches?${q}`);
+}
+
+export interface PlayerQueueStats extends PlacementStats {
+  queueId: number;
+}
+
+/** A player's results in one set/queue scope, from their stored games. */
+export interface PlayerStats {
+  sets: number[]; // sets with stored games, newest first
+  summary: PlacementStats & { placements: number[] };
+  baseline: PlacementStats; // everyone in the same scope
+  queues: PlayerQueueStats[];
+  units: ExploreRow[];
+  items: ExploreRow[];
+  traits: ExploreRow[];
+  comps: MetaComp[]; // the player's own comps (2+ games)
+}
+
+/** query: set and optional queue/level. */
+export function getPlayerStats(puuid: string, query: string) {
+  return get<PlayerStats>(`/api/v1/players/${encodeURIComponent(puuid)}/stats?${query}`);
 }
 
 // Match detail is the raw Riot TFT match payload (see
