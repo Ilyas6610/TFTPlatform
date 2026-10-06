@@ -133,3 +133,88 @@ func TestAdvise_ItemsOnlyFinalBoards(t *testing.T) {
 		t.Errorf("second = %+v, want the one-IE comp", r.Comps[1])
 	}
 }
+
+// An emblem is a reason to build a unit: a board with Yi gives Yi his real
+// emblem build even though the board's usual Yi build has no emblem, and a
+// board playing the emblem's trait uses it for that trait.
+func TestAdvise_ItemsOnlyFinalBoardsUseEmblems(t *testing.T) {
+	in := Input{
+		Items:        []string{"BrawlerEmblem"},
+		Recipes:      rec,
+		EmblemTraits: map[string]string{"BrawlerEmblem": "Brawler"},
+		Enablers:     map[string]bool{"BrawlerEmblem": true},
+		Builds: map[string][]store.MetaBuild{
+			"Yi": {build(3.0, 20, "IE", "IE", "GS"), build(4.0, 5, "BrawlerEmblem", "IE", "JG")},
+		},
+		Comps: []comps.Comp{
+			// Usual Yi build has no emblem.
+			{Stats: comps.Stats{Boards: 40, AvgPlacement: 4}, Board: []comps.BoardUnit{{ID: "Yi", Items: []string{"GS", "IE", "IE"}}, {ID: "T"}}},
+			// No Yi, but plays Brawler.
+			{Stats: comps.Stats{Boards: 40, AvgPlacement: 3}, Board: []comps.BoardUnit{{ID: "Vi"}}, Traits: []comps.Trait{{ID: "Brawler", Units: 2, Tier: 1}}},
+			// Neither: dropped.
+			{Stats: comps.Stats{Boards: 40, AvgPlacement: 2}, Board: []comps.BoardUnit{{ID: "Z", Items: []string{"GS"}}}},
+		},
+	}
+	r := Advise(in)
+	if len(r.Comps) != 2 {
+		t.Fatalf("comps = %+v, want the Yi board and the Brawler board", r.Comps)
+	}
+	var yi, brawler *CompMatch
+	for i := range r.Comps {
+		if len(r.Comps[i].Fits) > 0 {
+			yi = &r.Comps[i]
+		} else {
+			brawler = &r.Comps[i]
+		}
+	}
+	if yi == nil || brawler == nil {
+		t.Fatalf("comps = %+v", r.Comps)
+	}
+	if f := yi.Fits[0]; !f.Alt || !slices.Equal(f.Enablers, []string{"BrawlerEmblem"}) || len(f.Steps) != 1 {
+		t.Errorf("Yi fit = %+v, want his emblem build, marked Alt", f)
+	}
+	if len(yi.Emblems) != 0 {
+		t.Errorf("the emblem went to Yi's build; it can't also count for a trait: %+v", yi.Emblems)
+	}
+	if len(brawler.Emblems) != 1 || brawler.Emblems[0].Trait != "Brawler" {
+		t.Errorf("brawler board emblems = %+v", brawler.Emblems)
+	}
+}
+
+// A generic component never pulls a unit off its usual build: only emblems
+// and artifacts do.
+func TestAdvise_ItemsOnlyComponentsKeepUsualBuilds(t *testing.T) {
+	in := Input{
+		Items:   []string{"Sword", "Glove"},
+		Recipes: rec,
+		Builds:  map[string][]store.MetaBuild{"Yi": {build(3.0, 20, "IE", "JG", "JG")}},
+		Comps: []comps.Comp{
+			{Stats: comps.Stats{Boards: 40, AvgPlacement: 4}, Board: []comps.BoardUnit{{ID: "Yi", Items: []string{"GS", "GS", "GS"}}}},
+		},
+	}
+	if r := Advise(in); len(r.Comps) != 0 {
+		t.Errorf("comps = %+v, want none: IE is only in an alternative Yi build", r.Comps)
+	}
+}
+
+// With only an emblem, the board where it's the reason to build a unit
+// ranks first, then boards by how much they invest in the emblem's trait.
+func TestAdvise_ItemsOnlyEmblemBoardsRanking(t *testing.T) {
+	brawler := func(units int) []comps.Trait { return []comps.Trait{{ID: "Brawler", Units: units, Tier: 1}} }
+	in := Input{
+		Items:        []string{"BrawlerEmblem"},
+		EmblemTraits: map[string]string{"BrawlerEmblem": "Brawler"},
+		Enablers:     map[string]bool{"BrawlerEmblem": true},
+		Builds:       map[string][]store.MetaBuild{"Yi": {build(4.0, 5, "BrawlerEmblem", "IE", "JG")}},
+		Comps: []comps.Comp{
+			{Stats: comps.Stats{Boards: 90, AvgPlacement: 2}, Board: []comps.BoardUnit{{ID: "A"}}, Traits: brawler(2)},
+			{Stats: comps.Stats{Boards: 90, AvgPlacement: 3}, Board: []comps.BoardUnit{{ID: "B"}}, Traits: brawler(4)},
+			{Stats: comps.Stats{Boards: 20, AvgPlacement: 4}, Board: []comps.BoardUnit{{ID: "Yi", Items: []string{"IE", "IE", "IE"}}, {ID: "C"}}},
+		},
+	}
+	r := Advise(in)
+	if len(r.Comps) != 3 || r.Comps[0].Board()[0] != "Yi" || r.Comps[1].Board()[0] != "B" {
+		t.Fatalf("order = %v, %v, %v; want the Yi board, then Brawler 4, then Brawler 2",
+			r.Comps[0].Board(), r.Comps[1].Board(), r.Comps[2].Board())
+	}
+}

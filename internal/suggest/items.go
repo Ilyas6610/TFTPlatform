@@ -1,9 +1,11 @@
 package suggest
 
 import (
+	"slices"
 	"sort"
 	"strings"
 
+	"tft-platform/internal/comps"
 	"tft-platform/internal/store"
 )
 
@@ -212,32 +214,74 @@ func itemComps(in Input, inv inventory) []CompMatch {
 	type scored struct {
 		m             CompMatch
 		made, missing int
+		enabled       int // units given a build because of a held emblem or artifact
+		traitUnits    int // units in the traits the emblems add to
 	}
 	var all []scored
 	for _, c := range in.Comps {
-		m := CompMatch{Comp: c, Have: []string{}, Need: []string{}, Fits: []ItemFit{}}
+		m := CompMatch{Comp: c, Have: []string{}, Need: []string{}, Fits: []ItemFit{}, Emblems: []EmblemFit{}}
 		left := inv.clone()
-		var made, missing int
+		fits := map[string]ItemFit{}
+
+		// Emblems and artifacts first: they are the reason to build a
+		// particular unit, so a board unit with a real build using one
+		// takes that build (Master Yi with a Brawler Emblem).
+		for _, bu := range c.Board {
+			if f, after, ok := enablerFit(in, bu, left); ok {
+				fits[bu.ID], left = f, after
+			}
+		}
+		// Then each itemized unit's usual build from what's left.
 		for _, bu := range c.Board {
 			m.Need = append(m.Need, bu.ID)
-			if len(bu.Items) == 0 {
+			if _, done := fits[bu.ID]; done || len(bu.Items) == 0 {
 				continue
 			}
-			var steps []Step
-			var miss []string
-			steps, miss, left = craft(bu.Items, left, in.Recipes)
-			made += len(steps)
-			missing += len(miss)
-			m.Fits = append(m.Fits, ItemFit{Unit: bu.ID, Items: bu.Items, Steps: nonNil(steps), Missing: nonNilStr(miss)})
+			steps, miss, after := craft(bu.Items, left, in.Recipes)
+			fits[bu.ID], left = ItemFit{Unit: bu.ID, Items: bu.Items, Steps: nonNil(steps), Missing: nonNilStr(miss)}, after
+		}
+		// Finally emblems for traits the board plays.
+		m.Emblems, left = emblemFits(in, c, left)
+
+		var made, missing int
+		for _, bu := range c.Board {
+			if f, ok := fits[bu.ID]; ok {
+				m.Fits = append(m.Fits, f)
+				made += len(f.Steps)
+				missing += len(f.Missing)
+			}
+		}
+		made += len(m.Emblems)
+		var enabled, traitUnits int
+		for _, f := range m.Fits {
+			if len(f.Enablers) > 0 {
+				enabled++
+			}
+		}
+		for _, e := range m.Emblems {
+			for _, t := range c.Traits {
+				if t.ID == e.Trait {
+					traitUnits += t.Units
+				}
+			}
 		}
 		if made > 0 {
-			all = append(all, scored{m, made, missing})
+			all = append(all, scored{m, made, missing, enabled, traitUnits})
 		}
 	}
 	sort.SliceStable(all, func(i, j int) bool {
 		a, b := all[i], all[j]
 		if a.made != b.made {
 			return a.made > b.made
+		}
+		// An emblem or artifact that is the reason to build a unit on the
+		// board beats one that only adds to a trait, and a trait the board
+		// invests in beats one it merely touches.
+		if a.enabled != b.enabled {
+			return a.enabled > b.enabled
+		}
+		if a.traitUnits != b.traitUnits {
+			return a.traitUnits > b.traitUnits
 		}
 		if a.missing != b.missing {
 			return a.missing < b.missing
@@ -255,6 +299,11 @@ func itemComps(in Input, inv inventory) []CompMatch {
 		for _, f := range s.m.Fits {
 			key = append(key, f.Unit+":"+strings.Join(f.Items, ","))
 		}
+		if len(key) == 0 {
+			// No carry advice (only an emblem for a trait): the boards
+			// themselves are what differ.
+			key = s.m.Board()
+		}
 		k := strings.Join(key, ";")
 		if seen[k] {
 			continue
@@ -266,4 +315,69 @@ func itemComps(in Input, inv inventory) []CompMatch {
 		}
 	}
 	return out
+}
+
+// enablerFit picks, for board unit bu, its best real build that uses a held
+// (or makeable) emblem or artifact, crafted from left. ok is false if no
+// build of the unit uses one.
+func enablerFit(in Input, bu comps.BoardUnit, left inventory) (fit ItemFit, after inventory, ok bool) {
+	var best *BuildOption
+	var used []string
+	for _, b := range in.Builds[bu.ID] {
+		o, rest := option(b, left, in.Recipes)
+		var enablers []string
+		for _, st := range o.Steps {
+			if in.Enablers[st.Item] {
+				enablers = append(enablers, st.Item)
+			}
+		}
+		if len(enablers) == 0 {
+			continue
+		}
+		if best == nil || better(o, *best) {
+			o := o
+			best, after, used = &o, rest, enablers
+		}
+	}
+	if best == nil {
+		return ItemFit{}, left, false
+	}
+	return ItemFit{
+		Unit: bu.ID, Items: best.Items, Steps: best.Steps, Missing: best.Missing,
+		Alt: !slices.Equal(best.Items, bu.Items), Enablers: used,
+	}, after, true
+}
+
+// emblemFits uses the emblems left (held or makeable) whose trait board c
+// plays, one copy per emblem.
+func emblemFits(in Input, c comps.Comp, left inventory) ([]EmblemFit, inventory) {
+	plays := map[string]bool{}
+	for _, t := range c.Traits {
+		plays[t.ID] = true
+	}
+	emblems := make([]string, 0, len(in.EmblemTraits))
+	for e, trait := range in.EmblemTraits {
+		if plays[trait] {
+			emblems = append(emblems, e)
+		}
+	}
+	sort.Strings(emblems)
+	out := []EmblemFit{}
+	for _, e := range emblems {
+		steps, _, after := craft([]string{e}, left, in.Recipes)
+		if len(steps) == 1 {
+			out = append(out, EmblemFit{Item: e, Trait: in.EmblemTraits[e], From: steps[0].From})
+			left = after
+		}
+	}
+	return out, left
+}
+
+// Board lists the comp's anchor board unit ids (handy in tests and logs).
+func (m CompMatch) Board() []string {
+	ids := make([]string, len(m.Comp.Board))
+	for i, bu := range m.Comp.Board {
+		ids[i] = bu.ID
+	}
+	return ids
 }

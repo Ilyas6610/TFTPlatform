@@ -535,14 +535,14 @@ function Comps({
         {comps.map((c, i) => {
           const itemized = new Set(c.fits.filter((f) => f.steps.length > 0).map((f) => f.unit));
           const highlight = byItems ? itemized : owned;
-          const made = c.fits.reduce((n, f) => n + f.steps.length, 0);
-          const wanted = c.fits.reduce((n, f) => n + f.items.length, 0);
+          const made = c.fits.reduce((n, f) => n + f.steps.length, 0) + (c.emblems ?? []).length;
+          const wanted = c.fits.reduce((n, f) => n + f.items.length, 0) + (c.emblems ?? []).length;
           return (
             <div className="advisor-comp" key={i}>
               <div className="advisor-comp-head">
                 <CompName comp={c.comp} names={names} />
                 <strong>
-                  {byItems ? `${made} of ${wanted} carry items` : `${c.have.length} of ${c.comp.board.length} units`}
+                  {byItems ? `${made} of ${wanted} items from yours` : `${c.have.length} of ${c.comp.board.length} units`}
                 </strong>
                 <span className={placementTone(c.comp)}>{avg(c.comp.avgPlacement)} avg</span>
                 <span className="muted">
@@ -574,17 +574,31 @@ function Comps({
                   </span>
                 ))}
               </div>
-              {c.fits.length > 0 && (
+              {(c.fits.length > 0 || (c.emblems ?? []).length > 0) && (
                 <ul className="advisor-fits">
                   {c.fits.map((f) => (
                     <li key={f.unit}>
-                      {names.name(f.unit)}:{" "}
+                      {names.name(f.unit)}
+                      {f.alt && (
+                        <span className="muted" title="Not this board's usual build: one players ran with your item">
+                          {" "}
+                          (build with your {(f.enablers ?? []).map(names.name).join(", ")})
+                        </span>
+                      )}
+                      :{" "}
                       <span className={f.missing.length === 0 ? "good" : "muted"}>
                         {f.steps.length} of {f.items.length} items makeable
                       </span>
                       {f.missing.length > 0 && (
                         <span className="muted"> (missing {f.missing.map((m) => names.name(m)).join(", ")})</span>
                       )}
+                    </li>
+                  ))}
+                  {(c.emblems ?? []).map((e) => (
+                    <li key={e.item}>
+                      {names.name(e.item)}:{" "}
+                      <span className="good">+1 {names.name(e.trait)}</span>
+                      {e.from && <span className="muted"> (from {e.from.map(names.name).join(" + ")})</span>}
                     </li>
                   ))}
                 </ul>

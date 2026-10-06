@@ -379,6 +379,15 @@ export interface SuggestFit {
   items: string[];
   steps: SuggestStep[];
   missing: string[];
+  alt?: boolean; // not the board's usual build: one that uses your emblem or artifact
+  enablers?: string[]; // the emblems/artifacts that build uses
+}
+
+/** Items only: an emblem (held or makeable) for a trait the board plays. */
+export interface SuggestEmblemFit {
+  item: string;
+  trait: string;
+  from?: string[];
 }
 
 export interface SuggestComp {
@@ -386,6 +395,7 @@ export interface SuggestComp {
   have: string[];
   need: string[];
   fits: SuggestFit[];
+  emblems: SuggestEmblemFit[];
 }
 
 export interface SuggestResult {
