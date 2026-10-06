@@ -312,3 +312,14 @@ func TestAdvise_ThinSamplesSortBehindReliableOnes(t *testing.T) {
 		t.Fatalf("a 5-board comp must not outrank a 19-board one: %+v", r.Comps)
 	}
 }
+
+// Every list in the result is non-nil, so clients can rely on arrays.
+func TestAdvise_CompListsAreNeverNull(t *testing.T) {
+	r := Advise(Input{
+		Units: []string{"A", "B"}, Items: []string{"Sword"},
+		Comps: []comps.Comp{comp(3.0, 20, comps.BoardUnit{ID: "A"}, comps.BoardUnit{ID: "B"})},
+	})
+	if len(r.Comps) != 1 || r.Comps[0].Emblems == nil || r.Comps[0].Fits == nil {
+		t.Fatalf("comps = %+v, want non-nil emblems and fits", r.Comps)
+	}
+}

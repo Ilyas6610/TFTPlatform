@@ -379,6 +379,15 @@ export interface SuggestFit {
   items: string[];
   steps: SuggestStep[];
   missing: string[];
+  alt?: boolean; // not the board's usual build: one that uses your emblem or artifact
+  enablers?: string[]; // the emblems/artifacts that build uses
+}
+
+/** Items only: an emblem (held or makeable) for a trait the board plays. */
+export interface SuggestEmblemFit {
+  item: string;
+  trait: string;
+  from?: string[];
 }
 
 export interface SuggestComp {
@@ -386,6 +395,7 @@ export interface SuggestComp {
   have: string[];
   need: string[];
   fits: SuggestFit[];
+  emblems: SuggestEmblemFit[];
 }
 
 export interface SuggestResult {
@@ -393,8 +403,28 @@ export interface SuggestResult {
   leftover: string[];
   units: { id: string; options: SuggestBuild[] }[];
   comps: SuggestComp[];
-  // Only without units: the units the items fit best.
+  // Only without units: the units the items fit best, real builds by their
+  // items (whoever carried them), and what the held components make now.
   candidates: { unit: string; build: SuggestBuild }[];
+  builds: SuggestItemBuild[];
+  crafts: SuggestCraft[];
+}
+
+/** A unit that carried a build or item, and how it did. */
+export interface SuggestUnitUse extends PlacementStats {
+  id: string;
+}
+
+/** A real build judged by its items: stats combine every unit that carried it. */
+export interface SuggestItemBuild extends SuggestBuild {
+  units: SuggestUnitUse[]; // main carriers
+}
+
+/** A completed item held whole (no from) or makeable from two held components. */
+export interface SuggestCraft extends PlacementStats {
+  item: string;
+  from?: string[];
+  units: SuggestUnitUse[];
 }
 
 /** query: set and optional queue/level, plus have_unit and have_item (repeat per copy). */

@@ -5,14 +5,18 @@ import { Names } from "./stats";
 /**
  * A comp's name: the traits it invests in (a higher tier or 3+ units), then
  * its itemized carries. Flexible boards with only 2-unit traits go by their
- * carries alone ("Aphelios & Nidalee").
+ * carries alone ("Aphelios & Nidalee"); boards with neither go by their
+ * most-played units.
  */
 export function CompName({ comp: c, names }: { comp: MetaComp; names: Names }) {
   const mainTraits = c.traits
     .filter((t) => t.tier >= 2 || t.units >= 3)
     .sort((a, b) => b.tier - a.tier || b.units - a.units)
     .slice(0, 2);
-  const carries = c.board.filter((u) => u.items.length > 0).slice(0, 2);
+  const itemized = c.board.filter((u) => u.items.length > 0);
+  const carries = (
+    itemized.length > 0 || mainTraits.length > 0 ? itemized : [...c.board].sort((a, b) => b.frequency - a.frequency)
+  ).slice(0, 2);
   return (
     <div className="comp-name">
       {mainTraits.map((t) => (

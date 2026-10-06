@@ -3,11 +3,13 @@ import { useSearchParams } from "react-router-dom";
 import {
   ApiError,
   ExploreOptions,
+  PlacementStats,
   SetData,
   SuggestBuild,
   SuggestComp,
   SuggestResult,
   SuggestStep,
+  SuggestUnitUse,
   getExploreSuggest,
 } from "../api/client";
 import { GameIcon } from "../assets/tft";
@@ -144,8 +146,9 @@ export function BuildAdvisor({
     <div className="panel advisor">
       <h2>What can I build?</h2>
       <p className="muted">
-        Add the units you have and what is in your inventory: items (whole or still components), emblems and
-        artifacts. Units alone show their best builds; items alone show which units they fit.
+        Add the units you have and what is in your inventory: items (whole or still components), emblems and artifacts.
+        Units alone show their best builds; items alone show the builds they lead to, what your components make and
+        which units they fit.
       </p>
 
       <div className="advisor-pickers">
@@ -210,7 +213,11 @@ export function BuildAdvisor({
               <Comps comps={result.comps} names={names} ownedUnits={units} />
             </>
           ) : (
-            <Candidates result={result} names={names} />
+            <>
+              <ItemBuilds result={result} names={names} />
+              <Crafts result={result} names={names} />
+              <Comps comps={result.comps} names={names} ownedUnits={[]} byItems />
+            </>
           )}
         </div>
       )}
@@ -276,14 +283,23 @@ function BuildStatus({ build, aim }: { build: SuggestBuild; aim?: boolean }) {
   return <span className="muted">missing {build.missing.length}</span>;
 }
 
-function BuildStats({ build }: { build: SuggestBuild }) {
+function BuildStats({
+  build,
+  title = "Boards that ran exactly this build on this unit",
+  noun = "boards",
+}: {
+  build: PlacementStats;
+  title?: string;
+  /** What the count counts: "boards", or "uses" when one board can count per carrier. */
+  noun?: string;
+}) {
   return (
-    <span className="build-stats">
+    <span className="advisor-stats">
       <span className={placementTone(build)} title="Average placement">
         {avg(build.avgPlacement)}
       </span>{" "}
-      <span className="muted" title="Boards that ran exactly this build on this unit">
-        · {build.boards} boards · top 4 {pct(build.top4Rate)}
+      <span className="muted" title={title}>
+        · {build.boards} {noun} · top 4 {pct(build.top4Rate)}
       </span>
     </span>
   );
@@ -339,26 +355,120 @@ function Plan({ result, names, hasItems }: { result: SuggestResult; names: Names
   );
 }
 
-/** Items only: the units whose builds those items fit best. */
-function Candidates({ result, names }: { result: SuggestResult; names: Names }) {
+/** Small carrier icons with their board counts. */
+function Carriers({ units, names }: { units: SuggestUnitUse[]; names: Names }) {
+  if (units.length === 0) return null;
+  return (
+    <span className="carriers muted">
+      on{" "}
+      {units.map((u) => (
+        <span
+          key={u.id}
+          className="carrier"
+          title={`${names.name(u.id)}: ${u.boards} boards, ${avg(u.avgPlacement)} avg`}
+        >
+          <GameIcon
+            kind="champions"
+            id={u.id}
+            size={20}
+            fallbackSrc={names.icon(u.id)}
+            fallbackName={names.name(u.id)}
+          />
+          {u.boards}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** Items only: real builds closest to what you hold, whoever carried them. */
+function ItemBuilds({ result, names }: { result: SuggestResult; names: Names }) {
   return (
     <div className="advisor-section">
-      <h3>Units that fit your items</h3>
-      {result.candidates.length === 0 ? (
-        <p className="muted">No unit has a build seen with these items in this queue and level range.</p>
+      <h3>Builds for your items</h3>
+      {result.builds.length === 0 ? (
+        <p className="muted">No build seen in this queue and level range uses these items.</p>
       ) : (
         <div className="plan-list">
-          {result.candidates.map((c) => (
-            <div className="plan-row" key={c.unit}>
-              <UnitHead id={c.unit} names={names} />
-              <BuildItems build={c.build} names={names} />
-              <BuildStatus build={c.build} />
-              <BuildStats build={c.build} />
+          {result.builds.map((b) => (
+            <div className="plan-row" key={b.items.join(",")}>
+              <BuildItems build={b} names={names} />
+              <BuildStatus build={b} />
+              <BuildStats
+                build={b}
+                noun="uses"
+                title="Units that ran exactly this build, counted per unit (a board with two carriers counts twice)"
+              />
+              <Carriers units={b.units} names={names} />
             </div>
           ))}
         </div>
       )}
-      <p className="muted">Add a unit above to see its other builds and the comps that fit.</p>
+      <p className="muted legend">
+        <span className="build-item held">held</span> you have it · <span className="build-item combine">combine</span>{" "}
+        make it from the two small icons · <span className="build-item missing">missing</span> not possible yet
+      </p>
+    </div>
+  );
+}
+
+/** Items only: each completed item held or makeable now, and how builds with it did. */
+function Crafts({ result, names }: { result: SuggestResult; names: Names }) {
+  if (result.crafts.length === 0) return null;
+  return (
+    <div className="advisor-section">
+      <h3>What your components make</h3>
+      {sharesPieces(result.crafts) && (
+        <p className="muted">
+          These are options, not a shopping list: several use the same pieces, so you can make only some of them
+          together.
+        </p>
+      )}
+      <div className="plan-list">
+        {result.crafts.map((c) => (
+          <div className="plan-row" key={c.item}>
+            <span className="game-label">
+              <GameIcon
+                kind="items"
+                id={c.item}
+                size={26}
+                fallbackSrc={names.icon(c.item)}
+                fallbackName={names.name(c.item)}
+              />
+              <strong>{names.name(c.item)}</strong>
+            </span>
+            <span className="muted craft-from">
+              {c.from ? (
+                <>
+                  {c.from.map((f, i) => (
+                    <span key={i} className="craft-part">
+                      {i > 0 && "+ "}
+                      <GameIcon
+                        kind="items"
+                        id={f}
+                        size={18}
+                        fallbackSrc={names.icon(f)}
+                        fallbackName={names.name(f)}
+                      />
+                      {names.name(f)}
+                    </span>
+                  ))}
+                </>
+              ) : (
+                "held"
+              )}
+            </span>
+            {c.boards > 0 ? (
+              <>
+                <BuildStats build={c} noun="uses" title="Units whose full build included this item, counted per unit" />
+                <Carriers units={c.units} names={names} />
+              </>
+            ) : (
+              <span className="muted">not in any build seen here</span>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -388,60 +498,129 @@ function Alternatives({ result, names }: { result: SuggestResult; names: Names }
   );
 }
 
-function Comps({ comps, names, ownedUnits }: { comps: SuggestComp[]; names: Names; ownedUnits: string[] }) {
+/**
+ * Comps that fit the owned units, or with byItems (no units given) the final
+ * boards whose carries' items the inventory makes most of: carries you can
+ * itemize are highlighted instead of owned units.
+ */
+function Comps({
+  comps,
+  names,
+  ownedUnits,
+  byItems = false,
+}: {
+  comps: SuggestComp[];
+  names: Names;
+  ownedUnits: string[];
+  byItems?: boolean;
+}) {
   if (comps.length === 0) return null;
   const owned = new Set(ownedUnits);
   return (
     <div className="advisor-section">
-      <h3>Comps that fit your units</h3>
+      <h3>{byItems ? "Final boards for your items" : "Comps that fit your units"}</h3>
       <div className="advisor-comps">
-        {comps.map((c, i) => (
-          <div className="advisor-comp" key={i}>
-            <div className="advisor-comp-head">
-              <CompName comp={c.comp} names={names} />
-              <strong>
-                {c.have.length} of {c.comp.board.length} units
-              </strong>
-              <span className={placementTone(c.comp)}>{avg(c.comp.avgPlacement)} avg</span>
-              <span className="muted">
-                {c.comp.boards} boards · top 4 {pct(c.comp.top4Rate)}
-              </span>
-            </div>
-            <div className="advisor-comp-units">
-              {c.comp.board.map((u) => (
-                <span
-                  key={u.id}
-                  className={owned.has(u.id) ? "adv-unit have" : "adv-unit need"}
-                  title={`${names.name(u.id)}${owned.has(u.id) ? " — you have it" : " — still needed"}`}
-                >
-                  <GameIcon
-                    kind="champions"
-                    id={u.id}
-                    size={30}
-                    fallbackSrc={names.icon(u.id)}
-                    fallbackName={names.name(u.id)}
-                  />
+        {comps.map((c, i) => {
+          const itemized = new Set(c.fits.filter((f) => f.steps.length > 0).map((f) => f.unit));
+          const highlight = byItems ? itemized : owned;
+          const made = c.fits.reduce((n, f) => n + f.steps.length, 0) + (c.emblems ?? []).length;
+          const wanted = c.fits.reduce((n, f) => n + f.items.length, 0) + (c.emblems ?? []).length;
+          return (
+            <div className="advisor-comp" key={i}>
+              <div className="advisor-comp-head">
+                <CompName comp={c.comp} names={names} />
+                <strong>
+                  {byItems
+                    ? `${made} of ${wanted} items from yours`
+                    : `${c.have.length} of ${c.comp.board.length} units`}
+                </strong>
+                <span className={placementTone(c.comp)}>{avg(c.comp.avgPlacement)} avg</span>
+                <span className="muted">
+                  {c.comp.boards} boards · top 4 {pct(c.comp.top4Rate)}
                 </span>
-              ))}
-            </div>
-            {c.fits.length > 0 && (
-              <ul className="advisor-fits">
-                {c.fits.map((f) => (
-                  <li key={f.unit}>
-                    {names.name(f.unit)}:{" "}
-                    <span className={f.missing.length === 0 ? "good" : "muted"}>
-                      {f.steps.length} of {f.items.length} items makeable
-                    </span>
-                    {f.missing.length > 0 && (
-                      <span className="muted"> (missing {f.missing.map((m) => names.name(m)).join(", ")})</span>
-                    )}
-                  </li>
+              </div>
+              <div className="advisor-comp-units">
+                {c.comp.board.map((u) => (
+                  <span
+                    key={u.id}
+                    className={highlight.has(u.id) ? "adv-unit have" : "adv-unit need"}
+                    title={`${names.name(u.id)}${
+                      byItems
+                        ? itemized.has(u.id)
+                          ? " — your items build toward it"
+                          : ""
+                        : owned.has(u.id)
+                          ? " — you have it"
+                          : " — still needed"
+                    }`}
+                  >
+                    <GameIcon
+                      kind="champions"
+                      id={u.id}
+                      size={30}
+                      fallbackSrc={names.icon(u.id)}
+                      fallbackName={names.name(u.id)}
+                    />
+                  </span>
                 ))}
-              </ul>
-            )}
-          </div>
-        ))}
+              </div>
+              {(c.fits.length > 0 || (c.emblems ?? []).length > 0) && (
+                <ul className="advisor-fits">
+                  {(byItems ? c.fits.filter((f) => f.steps.length > 0) : c.fits).map((f) => (
+                    <li key={f.unit}>
+                      {names.name(f.unit)}
+                      {f.alt && (
+                        <span className="muted" title="Not this board's usual build: one players ran with your item">
+                          {" "}
+                          (build with your {(f.enablers ?? []).map(names.name).join(", ")})
+                        </span>
+                      )}
+                      :{" "}
+                      <span className={f.missing.length === 0 ? "good" : "muted"}>
+                        {f.steps.length} of {f.items.length} items makeable
+                      </span>
+                      {f.missing.length > 0 && (
+                        <span className="muted"> (missing {f.missing.map((m) => names.name(m)).join(", ")})</span>
+                      )}
+                    </li>
+                  ))}
+                  {(c.emblems ?? []).map((e) => (
+                    <li key={e.item}>
+                      {names.name(e.item)}: <span className="good">+1 {names.name(e.trait)}</span>
+                      {e.from && <span className="muted"> (from {e.from.map(names.name).join(" + ")})</span>}
+                    </li>
+                  ))}
+                  {byItems && c.fits.some((f) => f.steps.length === 0) && (
+                    <li
+                      className="muted"
+                      title={c.fits
+                        .filter((f) => f.steps.length === 0)
+                        .map((f) => `${names.name(f.unit)}: ${f.items.map(names.name).join(", ")}`)
+                        .join("\n")}
+                    >
+                      {c.fits.filter((f) => f.steps.length === 0).length} more{" "}
+                      {c.fits.filter((f) => f.steps.length === 0).length === 1 ? "carry needs" : "carries need"} other
+                      items
+                    </li>
+                  )}
+                </ul>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
+}
+
+/** Whether two of the crafts need the same held component. */
+function sharesPieces(crafts: SuggestResult["crafts"]): boolean {
+  const seen = new Set<string>();
+  for (const c of crafts) {
+    for (const piece of new Set(c.from ?? [])) {
+      if (seen.has(piece)) return true;
+      seen.add(piece);
+    }
+  }
+  return false;
 }
