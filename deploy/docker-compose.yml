@@ -31,5 +31,34 @@ services:
         "up"
       ]
 
+  # Background Riot -> Postgres sync (see internal/riotsync). Not part of
+  # scripts/dev-up.sh; start it with:
+  #   docker compose -f deploy/docker-compose.yml --profile sync up -d --build riotsync
+  # Personal keys expire every 24h: refresh deploy/.secrets/riot-api-key.txt
+  # (re-read on every request, no restart needed). The container runs as
+  # APP_UID:APP_GID (default 1000:1000, your host user) so it can read the
+  # chmod 600 key file.
+  riotsync:
+    profiles: ["sync"]
+    build:
+      context: ..
+    image: tft-platform-backend:dev
+    restart: unless-stopped
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+    command: ["riotsync"]
+    environment:
+      DATABASE_URL: postgres://tft:tft@postgres:5432/tft?sslmode=disable
+      RIOT_API_KEY_FILE: /run/secrets/riot_api_key
+      RIOTSYNC_PLATFORMS: ${INGEST_PLATFORMS:-na1}
+    secrets:
+      - riot_api_key
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+secrets:
+  riot_api_key:
+    file: ./.secrets/riot-api-key.txt
+
 volumes:
   postgres-data:
