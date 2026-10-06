@@ -21,6 +21,10 @@ type ExploreFilter struct {
 	// PUUID limits boards to one player's (player profile stats). It is a
 	// board condition like the others: the baseline stays everyone's.
 	PUUID string
+	// Baseline, when set, is used as the result's baseline instead of
+	// querying it: callers that already hold the scope's everyone-stats
+	// (cached) avoid a scan of every board in scope per call.
+	Baseline *PlacementStats
 }
 
 // UnitCond matches a board fielding the unit, optionally at a minimum star
@@ -160,6 +164,18 @@ type ExploreResult struct {
 // (trait, tier) pair; far above any real set's count.
 const traitTierLimit = 1000
 
+// ScopeBaseline is everyone's stats in f's scope (set, queues, levels): the
+// same boards as f with no board conditions.
+func (s *Store) ScopeBaseline(ctx context.Context, f ExploreFilter) (PlacementStats, error) {
+	var args []any
+	base := ExploreFilter{Set: f.Set, Queues: f.Queues, LevelMin: f.LevelMin, LevelMax: f.LevelMax}
+	var bl PlacementStats
+	err := s.Pool.QueryRow(ctx, `SELECT `+statsCols+`
+		FROM match_participants mp JOIN matches m USING (match_id)
+		WHERE `+base.whereClause(&args), args...).Scan(&bl.Boards, &bl.AvgPlacement, &bl.Top4Rate, &bl.WinRate)
+	return bl, err
+}
+
 // Explore runs filter and computes its summary, baseline and breakdowns
 // (each limited to the `limit` most common entries).
 func (s *Store) Explore(ctx context.Context, f ExploreFilter, limit int) (*ExploreResult, error) {
@@ -187,13 +203,14 @@ func (s *Store) Explore(ctx context.Context, f ExploreFilter, limit int) (*Explo
 	}
 
 	// Baseline: the same scope without board conditions.
-	var baseArgs []any
-	base := ExploreFilter{Set: f.Set, Queues: f.Queues, LevelMin: f.LevelMin, LevelMax: f.LevelMax}
-	bl := &res.Baseline
-	if err := s.Pool.QueryRow(ctx, `SELECT `+statsCols+`
-		FROM match_participants mp JOIN matches m USING (match_id)
-		WHERE `+base.whereClause(&baseArgs), baseArgs...).Scan(&bl.Boards, &bl.AvgPlacement, &bl.Top4Rate, &bl.WinRate); err != nil {
-		return nil, fmt.Errorf("explore baseline: %w", err)
+	if f.Baseline != nil {
+		res.Baseline = *f.Baseline
+	} else {
+		bl, err := s.ScopeBaseline(ctx, f)
+		if err != nil {
+			return nil, fmt.Errorf("explore baseline: %w", err)
+		}
+		res.Baseline = bl
 	}
 
 	limitArg := len(args) + 1

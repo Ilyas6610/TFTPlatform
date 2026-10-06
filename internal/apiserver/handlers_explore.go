@@ -38,12 +38,34 @@ func (s *Server) handleExplore(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_filter", err.Error())
 		return
 	}
-	res, err := s.Store.Explore(r.Context(), f, exploreLimit)
+	// In this replica's memory only, in a cache of its own (see Server.explore).
+	v, err := s.explore.get(r.Context(), exploreCacheKey(f), func(ctx context.Context) (any, error) {
+		return s.Store.Explore(ctx, f, exploreLimit)
+	})
 	if err != nil {
 		writeDBError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, res)
+	writeJSON(w, http.StatusOK, v.(*store.ExploreResult))
+}
+
+// exploreCacheKey identifies an explorer search: its scope plus every
+// condition, queues in any order.
+func exploreCacheKey(f store.ExploreFilter) string {
+	queues := slices.Clone(f.Queues)
+	slices.Sort(queues)
+	f.Queues = slices.Compact(queues)
+	f.Baseline = nil // an input, not part of the search
+	return fmt.Sprintf("explore|%+v", f)
+}
+
+// scopeBaseline is everyone's stats in f's scope, cached like the other
+// match-derived stats: it's the same for every player and search in the
+// scope, but costs a scan of every board in it.
+func (s *Server) scopeBaseline(ctx context.Context, f store.ExploreFilter) (store.PlacementStats, error) {
+	return cached(ctx, s, &s.stats, metaCacheKey("baseline", f), func(ctx context.Context) (store.PlacementStats, error) {
+		return s.Store.ScopeBaseline(ctx, f)
+	})
 }
 
 // handleExploreOptions serves GET /api/v1/explore/options?set=18: the
@@ -54,7 +76,9 @@ func (s *Server) handleExploreOptions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_set", fmt.Sprintf("set must be a number from 1 to %d", maxSetNumber))
 		return
 	}
-	opts, err := s.Store.ExploreOptions(r.Context(), set)
+	opts, err := cached(r.Context(), s, &s.stats, "options|"+strconv.Itoa(set), func(ctx context.Context) (*store.ExploreOptions, error) {
+		return s.Store.ExploreOptions(ctx, set)
+	})
 	if err != nil {
 		writeDBError(w, r, err)
 		return
@@ -187,7 +211,7 @@ func (s *Server) handleMetaBuilds(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_filter", err.Error())
 		return
 	}
-	res, err := s.meta.get(r.Context(), metaCacheKey("builds", f), func(ctx context.Context) (any, error) {
+	res, err := cached(r.Context(), s, &s.meta, metaCacheKey("builds", f), func(ctx context.Context) (*store.MetaResult, error) {
 		return s.Store.MetaBuilds(ctx, f, metaMinBuildGames, metaBuildsPerUnit, metaItemsPerUnit)
 	})
 	if err != nil {

@@ -63,7 +63,7 @@ func (s *Server) handleExploreSuggest(w http.ResponseWriter, r *http.Request) {
 		writeDBError(w, r, err)
 		return
 	}
-	meta, err := s.meta.get(ctx, metaCacheKey("builds-wide", f), func(ctx context.Context) (any, error) {
+	meta, err := cached(ctx, s, &s.meta, metaCacheKey("builds-wide", f), func(ctx context.Context) (*store.MetaResult, error) {
 		return s.Store.MetaBuilds(ctx, f, metaMinBuildGames, suggestBuildsPerUnit, metaItemsPerUnit)
 	})
 	if err != nil {
@@ -77,7 +77,7 @@ func (s *Server) handleExploreSuggest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	builds := map[string][]store.MetaBuild{}
-	for _, u := range meta.(*store.MetaResult).Units {
+	for _, u := range meta.Units {
 		builds[u.ID] = u.Builds
 	}
 	writeJSON(w, http.StatusOK, suggest.Advise(suggest.Input{
@@ -126,7 +126,7 @@ type setItems struct {
 // trait is the trait named like it without " Emblem" ("Brawler Emblem" ->
 // Brawler), which holds for every Set 18 emblem.
 func (s *Server) setItemData(ctx context.Context, set int) (setItems, error) {
-	v, err := s.meta.get(ctx, "setitems|"+strconv.Itoa(set), func(ctx context.Context) (any, error) {
+	v, err := s.sets.get(ctx, "setitems|"+strconv.Itoa(set), func(ctx context.Context) (any, error) {
 		snaps, err := setdata.LoadSnapshots(ctx, s.Store, set)
 		if err != nil {
 			return nil, err
@@ -165,15 +165,11 @@ func (s *Server) setItemData(ctx context.Context, set int) (setItems, error) {
 // metaComps computes the comps for scope f, shared (and cached) with the
 // Meta page's comps endpoint.
 func (s *Server) metaComps(ctx context.Context, f store.ExploreFilter) (MetaCompsResponse, error) {
-	v, err := s.meta.get(ctx, metaCacheKey("comps", f), func(ctx context.Context) (any, error) {
+	return cached(ctx, s, &s.meta, metaCacheKey("comps", f), func(ctx context.Context) (MetaCompsResponse, error) {
 		boards, err := s.Store.FinalBoards(ctx, f, compMinLevel)
 		if err != nil {
-			return nil, err
+			return MetaCompsResponse{}, err
 		}
 		return MetaCompsResponse{Boards: len(boards), Comps: comps.Build(boards, comps.Options{})}, nil
 	})
-	if err != nil {
-		return MetaCompsResponse{}, err
-	}
-	return v.(MetaCompsResponse), nil
 }

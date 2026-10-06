@@ -17,6 +17,19 @@ services:
       timeout: 2s
       retries: 30
 
+  # Shared stats cache for the API (REDIS_URL=redis://localhost:6379/0).
+  # Optional and not persisted; local only like Postgres.
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
   migrate:
     image: migrate/migrate:v4.17.1
     depends_on:

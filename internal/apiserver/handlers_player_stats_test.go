@@ -298,3 +298,38 @@ func TestPlayerAdvice(t *testing.T) {
 		}
 	}
 }
+
+// The everyone's baseline in /stats comes from the stats cache: a player's
+// own numbers are live, but the scope baseline (a scan of every board in it)
+// is reused, and shared by every player in the scope.
+func TestPlayerStats_BaselineIsCachedPerScope(t *testing.T) {
+	s := &Server{Store: storetest.New(t)}
+	h := NewRouter(s)
+	seedBoards(t, s.Store, "NA1_1", [][]string{{"A"}, {"A"}, {"A"}}) // players NA1_1-p0..p2
+	stats := func(puuid string) PlayerStatsResponse {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/players/"+puuid+"/stats?set=18&queue=1100", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("got %d: %s", rec.Code, rec.Body)
+		}
+		var res PlayerStatsResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+
+	if got := stats("NA1_1-p0"); got.Baseline.Boards != 3 || got.Summary.Boards != 1 {
+		t.Fatalf("baseline %d boards, summary %d; want 3 and 1", got.Baseline.Boards, got.Summary.Boards)
+	}
+	seedBoards(t, s.Store, "NA1_2", [][]string{{"A"}, {"A"}})
+	// Another player in the same scope reuses the cached baseline...
+	if got := stats("NA1_1-p1"); got.Baseline.Boards != 3 {
+		t.Errorf("baseline %d boards, want the cached 3", got.Baseline.Boards)
+	}
+	// ...while a player's own games are always live.
+	if got := stats("NA1_2-p0"); got.Summary.Boards != 1 || got.Baseline.Boards != 3 {
+		t.Errorf("summary %d, baseline %d; want 1 live game and the cached baseline 3", got.Summary.Boards, got.Baseline.Boards)
+	}
+}

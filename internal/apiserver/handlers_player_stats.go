@@ -90,6 +90,14 @@ func (s *Server) handlePlayerStats(w http.ResponseWriter, r *http.Request) {
 		writeDBError(w, r, err)
 		return
 	}
+	// Everyone's stats in the scope come from the cache; only the player's
+	// own boards (indexed by puuid) are queried per request.
+	baseline, err := s.scopeBaseline(ctx, f)
+	if err != nil {
+		writeDBError(w, r, err)
+		return
+	}
+	f.Baseline = &baseline
 	ex, err := s.Store.Explore(ctx, f, playerStatsRows)
 	if err != nil {
 		writeDBError(w, r, err)
