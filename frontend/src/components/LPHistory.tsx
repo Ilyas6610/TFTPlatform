@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { RankPoint, getRankHistory } from "../api/client";
-import { LPChart, rankText } from "./LPChart";
+import { LPChart } from "./LPChart";
 
 /**
  * A compact LP-over-time chart for one ranked queue, from recorded rank
@@ -24,14 +24,7 @@ export function LPHistory({ puuid, queue, reloadKey }: { puuid: string; queue: s
   if (points.length === 0) return null;
   return (
     <div className="lp-mini">
-      {points.length < 2 ? (
-        <p className="muted">
-          LP tracked since {new Date(points[0].fetchedAt).toLocaleDateString()} ({rankText(points[0])}); the graph fills
-          in as it changes.
-        </p>
-      ) : (
-        <LPChart points={points} />
-      )}
+      <LPChart points={points} />
     </div>
   );
 }

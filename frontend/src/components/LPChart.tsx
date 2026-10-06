@@ -144,6 +144,11 @@ export function LPChart({ points }: { points: RankPoint[] }) {
               </span>
             )}
           </>
+        ) : points.length === 1 ? (
+          <>
+            Tracking since {fmtDateTime(new Date(first.fetchedAt))} at <strong>{rankText(first)}</strong>; the line
+            moves as their LP changes (checked whenever the profile updates).
+          </>
         ) : (
           <>
             Since {fmtDate(new Date(points[0].fetchedAt))}:{" "}
