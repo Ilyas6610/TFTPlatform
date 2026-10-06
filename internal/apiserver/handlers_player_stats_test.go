@@ -270,3 +270,22 @@ func TestPlayerStats_DoubleUpPartners(t *testing.T) {
 		t.Errorf("history partners = %v, want %v", got, want)
 	}
 }
+
+func TestPlayerAdvice(t *testing.T) {
+	s := &Server{Store: storetest.New(t)}
+	for path, want := range map[string]int{
+		"/api/v1/players/bad%20id/advice?set=18":     http.StatusBadRequest,
+		"/api/v1/players/me/advice?set=18&unit=X":    http.StatusBadRequest,
+		"/api/v1/players/me/advice?set=18&queue=abc": http.StatusBadRequest,
+		"/api/v1/players/me/advice?set=18":           http.StatusOK, // no games: empty advice
+	} {
+		rec := httptest.NewRecorder()
+		NewRouter(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != want {
+			t.Errorf("%s: got %d, want %d: %s", path, rec.Code, want, rec.Body)
+		}
+		if want == http.StatusOK && rec.Body.String() != `{"edge":0,"weak":[],"strong":[],"builds":[]}`+"\n" {
+			t.Errorf("%s: body %s", path, rec.Body)
+		}
+	}
+}

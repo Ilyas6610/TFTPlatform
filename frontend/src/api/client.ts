@@ -183,6 +183,35 @@ export function getPlayerStats(puuid: string, query: string) {
   return get<PlayerStats>(`/api/v1/players/${encodeURIComponent(puuid)}/stats?${query}`);
 }
 
+/** A unit the player does notably worse or better with than expected (everyone's average shifted by their edge). */
+export interface AdviceUnit {
+  unit: string;
+  games: number;
+  avg: number;
+  metaAvg: number;
+  expected: number;
+}
+
+/** The player's usual build on a unit next to one everyone does clearly better with. */
+export interface AdviceBuild {
+  unit: string;
+  theirs: MetaBuild; // the player's games
+  theirsMeta: PlacementStats; // everyone's games with the player's build
+  better: MetaBuild; // everyone's games
+}
+
+export interface PlayerAdvice {
+  edge: number; // the player's average minus everyone's (negative = better)
+  weak: AdviceUnit[];
+  strong: AdviceUnit[];
+  builds: AdviceBuild[];
+}
+
+/** query: set and optional queue/level, as for stats. */
+export function getPlayerAdvice(puuid: string, query: string) {
+  return get<PlayerAdvice>(`/api/v1/players/${encodeURIComponent(puuid)}/advice?${query}`);
+}
+
 // Match detail is the raw Riot TFT match payload (see
 // internal/apiserver/handlers_match.go) plus a "source" marker; only the
 // fields the UI actually renders are typed here, everything else in the

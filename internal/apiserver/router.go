@@ -29,6 +29,7 @@ func NewRouter(s *Server) http.Handler {
 	mux.HandleFunc("GET /api/v1/players/{puuid}/matches", s.handlePlayerMatches)
 	mux.HandleFunc("GET /api/v1/players/{puuid}/stats", s.handlePlayerStats)
 	mux.HandleFunc("GET /api/v1/players/{puuid}/ranks", s.handlePlayerRankHistory)
+	mux.HandleFunc("GET /api/v1/players/{puuid}/advice", s.handlePlayerAdvice)
 	mux.HandleFunc("GET /api/v1/players/{puuid}/backfill", s.handlePlayerBackfill)
 	mux.HandleFunc("POST /api/v1/players/{puuid}/backfill", s.handlePlayerBackfill)
 	mux.HandleFunc("GET /api/v1/matches/{matchId}", s.handleMatchDetail)

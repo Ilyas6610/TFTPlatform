@@ -408,3 +408,14 @@ func (s *Store) ExploreOptions(ctx context.Context, set int) (*ExploreOptions, e
 	sort.SliceStable(o.Traits, func(i, j int) bool { return o.Traits[i].Boards > o.Traits[j].Boards })
 	return o, rows.Err()
 }
+
+// PlacementSummary is the stats over the boards matching f.
+func (s *Store) PlacementSummary(ctx context.Context, f ExploreFilter) (PlacementStats, error) {
+	var args []any
+	where := f.whereClause(&args)
+	var p PlacementStats
+	err := s.Pool.QueryRow(ctx, `SELECT `+statsCols+`
+		FROM match_participants mp JOIN matches m USING (match_id) WHERE `+where, args...).
+		Scan(&p.Boards, &p.AvgPlacement, &p.Top4Rate, &p.WinRate)
+	return p, err
+}

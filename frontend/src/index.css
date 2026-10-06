@@ -1900,3 +1900,47 @@ table.partners td:first-child {
   max-width: 320px;
   accent-color: var(--accent);
 }
+
+/* Player advice */
+.advice-lists {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 24px;
+}
+
+@media (max-width: 700px) {
+  .advice-lists {
+    grid-template-columns: 1fr;
+  }
+}
+
+.advice-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.advice-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.advice-list li > .game-label {
+  min-width: 120px;
+}
+
+/* Builds take a full row: two item sets side by side. */
+.advice-builds {
+  grid-column: 1 / -1;
+}
+
+.advice-items {
+  display: inline-flex;
+  gap: 2px;
+  vertical-align: middle;
+}
