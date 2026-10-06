@@ -1860,3 +1860,21 @@ details.patch[open] > summary::before {
   align-items: center;
   gap: 4px;
 }
+
+/* Planner: in-game Team Planner code */
+.planner-code-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.planner-code-row input {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.planner-code-box {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+}

@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"tft-platform/internal/riotapi"
+	"tft-platform/internal/setdata"
 	"tft-platform/internal/store"
 )
 
@@ -14,6 +15,9 @@ import (
 type Server struct {
 	Riot  *riotapi.Client
 	Store *store.Store
+	// Source is where public game data is downloaded from (CommunityDragon);
+	// nil means the real one. Tests point it at a fake.
+	Source *setdata.Source
 
 	leaderboard leaderboardSync
 	jobs        backgroundJobs
@@ -38,6 +42,7 @@ func NewRouter(s *Server) http.Handler {
 	mux.HandleFunc("GET /api/v1/explore/options", s.handleExploreOptions)
 	mux.HandleFunc("GET /api/v1/sets/{set}/data", s.handleSetData)
 	mux.HandleFunc("GET /api/v1/sets/{set}/patches", s.handleSetPatches)
+	mux.HandleFunc("GET /api/v1/sets/{set}/planner-codes", s.handlePlannerCodes)
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	return mux
 }

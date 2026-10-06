@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ApiError, SetData, SetItem, getSetData } from "../api/client";
+import { ApiError, PlannerCodes, SetData, SetItem, getPlannerCodes, getSetData } from "../api/client";
 import { GameIcon } from "../assets/tft";
 import { Picker, PickerOption } from "../components/Picker";
 import { ItemGrid, UnitGrid } from "../components/PickTables";
 import { Names, TIER_STYLE, buildNames } from "../components/stats";
 import { CURRENT_TFT_SET } from "../config";
+import { decodeTeamCode, encodeTeamCode, teamCodeSet } from "../planner/teamCode";
 import { AUGMENT_SLOTS, augmentTier, availableAt } from "../planner/augmentStages";
 import {
   Board,
@@ -47,6 +48,7 @@ export default function PlannerPage() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
+  const [plannerCodes, setPlannerCodes] = useState<PlannerCodes | null>(null);
 
   useEffect(() => {
     setData(null);
@@ -54,6 +56,15 @@ export default function PlannerPage() {
     getSetData(set)
       .then(setData)
       .catch((e: unknown) => setError(e instanceof ApiError ? e.message : "couldn't load set data"));
+  }, [set]);
+
+  // The in-game planner's unit numbers; without them (set not published, or
+  // the source is down) the code section is simply left out.
+  useEffect(() => {
+    setPlannerCodes(null);
+    getPlannerCodes(set)
+      .then(setPlannerCodes)
+      .catch(() => setPlannerCodes(null));
   }, [set]);
 
   // Until set data arrives the board is shown as decoded; afterwards, with
@@ -239,6 +250,15 @@ export default function PlannerPage() {
             Drag a unit, or select it and click another cell, to move or swap. Front line is at the top.
           </p>
         </div>
+
+        {plannerCodes && (
+          <TeamCodePanel
+            board={board}
+            codes={plannerCodes.codes}
+            names={names}
+            onLoad={(units) => update((b) => units.reduce<Board>((acc, id) => addUnit(acc, id), { ...b, units: [] }))}
+          />
+        )}
 
         <div className="panel planner-units">
           <h3>Units</h3>
@@ -426,6 +446,82 @@ function UnitEditor({
       >
         Remove unit
       </button>
+    </div>
+  );
+}
+
+/** The in-game Team Planner code for the board's units, and loading units from one. */
+function TeamCodePanel({
+  board,
+  codes,
+  names,
+  onLoad,
+}: {
+  board: Board;
+  codes: Record<string, number>;
+  names: Names;
+  onLoad: (units: string[]) => void;
+}) {
+  const [pasted, setPasted] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  // Front line first, so if there are more than 10 units the back line drops.
+  const ordered = [...board.units].sort((a, b) => a.pos - b.pos).map((u) => u.id);
+  const team = encodeTeamCode(ordered, codes, board.set);
+
+  function copy() {
+    const done = () => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    };
+    navigator.clipboard?.writeText(team.code).then(done, () => window.prompt("Copy this code:", team.code));
+    if (!navigator.clipboard) window.prompt("Copy this code:", team.code);
+  }
+
+  function load() {
+    // The set first: another set's unit numbers mean other units here.
+    const set = teamCodeSet(pasted);
+    if (set !== null && set !== board.set) return setMessage(`That code is for Set ${set}, this board is Set ${board.set}.`);
+    const r = decodeTeamCode(pasted, codes);
+    if (!r.ok) return setMessage(r.error);
+    onLoad(r.units);
+    setMessage(r.units.length === 0 ? "That code is empty." : `Loaded ${r.units.length} units. Their positions are yours to set.`);
+    setPasted("");
+  }
+
+  const nameList = (ids: string[]) => ids.map((u) => names.name(u)).join(", ");
+  return (
+    <div className="panel planner-code">
+      <h3>In-game Team Planner</h3>
+      <p className="muted">
+        Paste this code into the game&apos;s Team Planner. It holds up to 10 units only: positions, stars, items and
+        augments stay here (use the share link for those).
+      </p>
+      <div className="planner-code-row">
+        <input className="planner-code-box" readOnly value={team.code} aria-label="Team Planner code" onFocus={(e) => e.target.select()} />
+        <button type="button" onClick={copy} disabled={team.included.length === 0}>
+          {copied ? "Copied" : "Copy code"}
+        </button>
+      </div>
+      {team.unknown.length > 0 && (
+        <p className="muted">Not in the game&apos;s planner, left out: {nameList(team.unknown)}.</p>
+      )}
+      {team.overflow.length > 0 && (
+        <p className="warning-box">The planner holds 10 units; left out: {nameList(team.overflow)}.</p>
+      )}
+      <div className="planner-code-row">
+        <input
+          value={pasted}
+          placeholder="Paste a code to load its units…"
+          aria-label="Team Planner code to load"
+          onChange={(e) => setPasted(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && load()}
+        />
+        <button type="button" onClick={load} disabled={!pasted.trim()}>
+          Load units
+        </button>
+      </div>
+      {message && <p className="muted">{message}</p>}
     </div>
   );
 }

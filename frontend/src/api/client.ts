@@ -401,3 +401,14 @@ export interface SuggestResult {
 export function getExploreSuggest(query: string) {
   return get<SuggestResult>(`/api/v1/explore/suggest?${query}`);
 }
+
+// The in-game Team Planner's number for each shop champion — see
+// internal/setdata/plannercodes.go and frontend/src/planner/teamCode.ts.
+export interface PlannerCodes {
+  set: number;
+  codes: Record<string, number>;
+}
+
+export function getPlannerCodes(set: number) {
+  return get<PlannerCodes>(`/api/v1/sets/${set}/planner-codes`);
+}
