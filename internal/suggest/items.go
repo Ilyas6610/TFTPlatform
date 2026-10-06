@@ -375,7 +375,8 @@ func emblemFits(in Input, c comps.Comp, left inventory) ([]EmblemFit, inventory)
 	return out, left
 }
 
-// Board lists the comp's anchor board unit ids (handy in tests and logs).
+// Board lists the comp's anchor board unit ids; it's the dedupe key for
+// boards with no carry advice (itemComps) and handy in tests.
 func (m CompMatch) Board() []string {
 	ids := make([]string, len(m.Comp.Board))
 	for i, bu := range m.Comp.Board {

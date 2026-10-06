@@ -217,7 +217,6 @@ export function BuildAdvisor({
               <ItemBuilds result={result} names={names} />
               <Crafts result={result} names={names} />
               <Comps comps={result.comps} names={names} ownedUnits={[]} byItems />
-              <Candidates result={result} names={names} />
             </>
           )}
         </div>
@@ -287,9 +286,12 @@ function BuildStatus({ build, aim }: { build: SuggestBuild; aim?: boolean }) {
 function BuildStats({
   build,
   title = "Boards that ran exactly this build on this unit",
+  noun = "boards",
 }: {
   build: PlacementStats;
   title?: string;
+  /** What the count counts: "boards", or "uses" when one board can count per carrier. */
+  noun?: string;
 }) {
   return (
     <span className="advisor-stats">
@@ -297,7 +299,7 @@ function BuildStats({
         {avg(build.avgPlacement)}
       </span>{" "}
       <span className="muted" title={title}>
-        · {build.boards} boards · top 4 {pct(build.top4Rate)}
+        · {build.boards} {noun} · top 4 {pct(build.top4Rate)}
       </span>
     </span>
   );
@@ -392,7 +394,11 @@ function ItemBuilds({ result, names }: { result: SuggestResult; names: Names }) 
             <div className="plan-row" key={b.items.join(",")}>
               <BuildItems build={b} names={names} />
               <BuildStatus build={b} />
-              <BuildStats build={b} title="Boards that ran exactly this build, any unit" />
+              <BuildStats
+                build={b}
+                noun="uses"
+                title="Units that ran exactly this build, counted per unit (a board with two carriers counts twice)"
+              />
               <Carriers units={b.units} names={names} />
             </div>
           ))}
@@ -412,6 +418,12 @@ function Crafts({ result, names }: { result: SuggestResult; names: Names }) {
   return (
     <div className="advisor-section">
       <h3>What your components make</h3>
+      {sharesPieces(result.crafts) && (
+        <p className="muted">
+          These are options, not a shopping list: several use the same pieces, so you can make only some of them
+          together.
+        </p>
+      )}
       <div className="plan-list">
         {result.crafts.map((c) => (
           <div className="plan-row" key={c.item}>
@@ -448,7 +460,7 @@ function Crafts({ result, names }: { result: SuggestResult; names: Names }) {
             </span>
             {c.boards > 0 ? (
               <>
-                <BuildStats build={c} title="Boards whose full build included this item" />
+                <BuildStats build={c} noun="uses" title="Units whose full build included this item, counted per unit" />
                 <Carriers units={c.units} names={names} />
               </>
             ) : (
@@ -457,30 +469,6 @@ function Crafts({ result, names }: { result: SuggestResult; names: Names }) {
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-/** Items only: the units whose builds those items fit best. */
-function Candidates({ result, names }: { result: SuggestResult; names: Names }) {
-  return (
-    <div className="advisor-section">
-      <h3>Units that fit your items</h3>
-      {result.candidates.length === 0 ? (
-        <p className="muted">No unit has a build seen with these items in this queue and level range.</p>
-      ) : (
-        <div className="plan-list">
-          {result.candidates.map((c) => (
-            <div className="plan-row" key={c.unit}>
-              <UnitHead id={c.unit} names={names} />
-              <BuildItems build={c.build} names={names} />
-              <BuildStatus build={c.build} />
-              <BuildStats build={c.build} />
-            </div>
-          ))}
-        </div>
-      )}
-      <p className="muted">Add a unit above to see its other builds and the comps that fit.</p>
     </div>
   );
 }
@@ -542,7 +530,9 @@ function Comps({
               <div className="advisor-comp-head">
                 <CompName comp={c.comp} names={names} />
                 <strong>
-                  {byItems ? `${made} of ${wanted} items from yours` : `${c.have.length} of ${c.comp.board.length} units`}
+                  {byItems
+                    ? `${made} of ${wanted} items from yours`
+                    : `${c.have.length} of ${c.comp.board.length} units`}
                 </strong>
                 <span className={placementTone(c.comp)}>{avg(c.comp.avgPlacement)} avg</span>
                 <span className="muted">
@@ -576,7 +566,7 @@ function Comps({
               </div>
               {(c.fits.length > 0 || (c.emblems ?? []).length > 0) && (
                 <ul className="advisor-fits">
-                  {c.fits.map((f) => (
+                  {(byItems ? c.fits.filter((f) => f.steps.length > 0) : c.fits).map((f) => (
                     <li key={f.unit}>
                       {names.name(f.unit)}
                       {f.alt && (
@@ -596,11 +586,23 @@ function Comps({
                   ))}
                   {(c.emblems ?? []).map((e) => (
                     <li key={e.item}>
-                      {names.name(e.item)}:{" "}
-                      <span className="good">+1 {names.name(e.trait)}</span>
+                      {names.name(e.item)}: <span className="good">+1 {names.name(e.trait)}</span>
                       {e.from && <span className="muted"> (from {e.from.map(names.name).join(" + ")})</span>}
                     </li>
                   ))}
+                  {byItems && c.fits.some((f) => f.steps.length === 0) && (
+                    <li
+                      className="muted"
+                      title={c.fits
+                        .filter((f) => f.steps.length === 0)
+                        .map((f) => `${names.name(f.unit)}: ${f.items.map(names.name).join(", ")}`)
+                        .join("\n")}
+                    >
+                      {c.fits.filter((f) => f.steps.length === 0).length} more{" "}
+                      {c.fits.filter((f) => f.steps.length === 0).length === 1 ? "carry needs" : "carries need"} other
+                      items
+                    </li>
+                  )}
                 </ul>
               )}
             </div>
@@ -609,4 +611,16 @@ function Comps({
       </div>
     </div>
   );
+}
+
+/** Whether two of the crafts need the same held component. */
+function sharesPieces(crafts: SuggestResult["crafts"]): boolean {
+  const seen = new Set<string>();
+  for (const c of crafts) {
+    for (const piece of new Set(c.from ?? [])) {
+      if (seen.has(piece)) return true;
+      seen.add(piece);
+    }
+  }
+  return false;
 }
