@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"tft-platform/internal/ingest"
+	"tft-platform/internal/lp"
 	"tft-platform/internal/riotapi"
+	"tft-platform/internal/setdata"
 	"tft-platform/internal/store"
 )
 
@@ -27,8 +29,13 @@ const (
 )
 
 type PlayerMatchesResponse struct {
-	// Matches is the requested page, newest first, with each final board.
-	Matches []store.PlayerMatch `json:"matches"`
+	// Matches is the requested page, newest first, with each final board,
+	// the patch it was played on and, for ranked games, the LP it gained or
+	// lost when rank snapshots bracket it.
+	Matches []PlayerMatchView `json:"matches"`
+	// Ranks is the player's latest known rank per ranked queue (first page
+	// only), refreshed by the newest-games sync.
+	Ranks []store.RankSnapshot `json:"ranks,omitempty"`
 	// HasMore is set when an older page may exist: this page is full, or
 	// its missing games are still being fetched from Riot.
 	HasMore bool `json:"hasMore"`
@@ -41,6 +48,13 @@ type PlayerMatchesResponse struct {
 	// Stale is set when the last sync attempt failed; StaleReason says why.
 	Stale       bool   `json:"stale"`
 	StaleReason string `json:"staleReason,omitempty"`
+}
+
+// PlayerMatchView is a history game with what's derived for display.
+type PlayerMatchView struct {
+	store.PlayerMatch
+	Patch string     `json:"patch,omitempty"` // "18.3"
+	LP    *lp.Change `json:"lp,omitempty"`
 }
 
 func matchSyncKey(puuid string) string {
@@ -91,7 +105,15 @@ func (s *Server) handlePlayerMatches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := PlayerMatchesResponse{Matches: matches}
+	views, ranks, err := s.decorateMatches(ctx, puuid, matches)
+	if err != nil {
+		writeDBError(w, r, err)
+		return
+	}
+	resp := PlayerMatchesResponse{Matches: views}
+	if offset == 0 {
+		resp.Ranks = ranks
+	}
 	key := matchSyncKey(puuid)
 	if offset > 0 {
 		key = olderMatchesKey(puuid, offset)
@@ -124,6 +146,13 @@ func (s *Server) handlePlayerMatches(w http.ResponseWriter, r *http.Request) {
 				if err == nil && result.Stopped != "" {
 					log.Printf("match sync %s: stopped early: %s", puuid, result.Stopped)
 				}
+				// Rank right after the games: the snapshot brackets them for
+				// per-game LP. Best effort; a failure doesn't fail the sync.
+				if err == nil && result.IDsFetched {
+					if _, rerr := ingest.SyncPlayerRank(ctx, s.Riot, s.Store, platform, puuid); rerr != nil {
+						log.Printf("rank sync %s: %v", puuid, rerr)
+					}
+				}
 				return result.Stopped == "", err
 			})
 		}
@@ -142,4 +171,53 @@ func (s *Server) handlePlayerMatches(w http.ResponseWriter, r *http.Request) {
 
 	resp.HasMore = len(matches) == limit || resp.Refreshing
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// decorateMatches adds each game's patch and LP change, and returns the
+// player's latest rank per queue.
+func (s *Server) decorateMatches(ctx context.Context, puuid string, matches []store.PlayerMatch) ([]PlayerMatchView, []store.RankSnapshot, error) {
+	cal, err := s.Store.PatchCalendar(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	history, err := s.Store.RankHistory(ctx, puuid)
+	if err != nil {
+		return nil, nil, err
+	}
+	var changes map[string]lp.Change
+	if len(history) > 1 {
+		games, err := s.Store.PlayerGamesSince(ctx, puuid, history[0].FetchedAt)
+		if err != nil {
+			return nil, nil, err
+		}
+		changes = lp.Attribute(history, games)
+	}
+
+	views := make([]PlayerMatchView, len(matches))
+	for i, m := range matches {
+		views[i] = PlayerMatchView{PlayerMatch: m, Patch: setdata.PatchOfGame(cal, m.TFTSetNumber, m.GameDatetime, m.GameVersion)}
+		if c, ok := changes[m.MatchID]; ok {
+			views[i].LP = &c
+		}
+	}
+	return views, latestRanks(history), nil
+}
+
+// latestRanks keeps the newest snapshot per queue, Ranked first.
+func latestRanks(history []store.RankSnapshot) []store.RankSnapshot {
+	last := map[string]store.RankSnapshot{}
+	for _, r := range history { // oldest first
+		last[r.QueueType] = r
+	}
+	out := []store.RankSnapshot{}
+	for _, q := range []string{"RANKED_TFT", "RANKED_TFT_DOUBLE_UP"} {
+		if r, ok := last[q]; ok {
+			out = append(out, r)
+			delete(last, q)
+		}
+	}
+	for _, r := range last {
+		out = append(out, r)
+	}
+	return out
 }

@@ -176,6 +176,29 @@ export function PlayerStats({
                   </p>
                 </div>
               )}
+              {stats.patches.length > 0 && (
+                <div>
+                  <div className="meta-section-title muted">By patch</div>
+                  <table className="compact">
+                    <tbody>
+                      {stats.patches.map((p) => (
+                        <tr key={p.patch || "unknown"}>
+                          <td>{p.patch ? `Patch ${p.patch}` : "Unknown"}</td>
+                          <td className="num">{p.boards}</td>
+                          <td className={`num ${placementTone(p)}`}>{avg(p.avgPlacement)}</td>
+                          <td className="num">{pct(p.top4Rate)}</td>
+                          <td
+                            className={`num ${p.lpGames === 0 ? "muted" : p.lp >= 0 ? "good" : "bad"}`}
+                            title={p.lpGames ? `Known LP change over ${p.lpGames} ranked games` : "No LP tracked yet"}
+                          >
+                            {p.lpGames ? `${p.lp > 0 ? "+" : ""}${p.lp} LP` : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
               {stats.queues.length > 1 && queue === "all" && (
                 <div>
                   <div className="meta-section-title muted">By queue</div>

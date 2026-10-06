@@ -1536,6 +1536,7 @@ details.patch[open] > summary::before {
 table.compact td,
 table.compact th {
   padding: 4px 8px;
+  white-space: nowrap;
 }
 
 tr.dim {
@@ -1680,3 +1681,53 @@ tr.dim {
   border-color: var(--accent);
   background: var(--accent-dim);
 }
+
+.patch-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 10px 6px 6px;
+  border-top: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.lp-badge {
+  margin-left: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.profile-header {
+  flex-wrap: wrap;
+}
+
+.rank-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.rank-badge {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 0.85rem;
+}
+
+.rank-badge.tier-challenger { border-left-color: #f4c874; }
+.rank-badge.tier-grandmaster { border-left-color: #e5534b; }
+.rank-badge.tier-master { border-left-color: #b46fd6; }
+.rank-badge.tier-diamond { border-left-color: #6f8fe8; }
+.rank-badge.tier-emerald { border-left-color: #2fae7a; }
+.rank-badge.tier-platinum { border-left-color: #4fb3b0; }
+.rank-badge.tier-gold { border-left-color: #d6a84a; }
+.rank-badge.tier-silver { border-left-color: #9aa4af; }
+.rank-badge.tier-bronze { border-left-color: #a87452; }
+.rank-badge.tier-iron { border-left-color: #6e6a66; }

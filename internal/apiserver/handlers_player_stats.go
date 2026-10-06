@@ -1,9 +1,15 @@
 package apiserver
 
 import (
+	"context"
 	"net/http"
+	"slices"
+	"sort"
+	"time"
 
 	"tft-platform/internal/comps"
+	"tft-platform/internal/lp"
+	"tft-platform/internal/setdata"
 	"tft-platform/internal/store"
 )
 
@@ -30,6 +36,18 @@ type PlayerStatsResponse struct {
 	// Comps groups the player's level 8+ boards like the Meta page does,
 	// keeping comps they ran at least twice.
 	Comps []comps.Comp `json:"comps"`
+	// Patches splits the games by patch, newest first (queue scope applies,
+	// level scope doesn't).
+	Patches []PatchStats `json:"patches"`
+}
+
+// PatchStats is a player's results on one patch. LP is the known LP change
+// over LPGames ranked games (rank snapshots don't cover every game).
+type PatchStats struct {
+	Patch string `json:"patch"` // "" when unknown
+	store.PlacementStats
+	LP      int `json:"lp"`
+	LPGames int `json:"lpGames"`
 }
 
 // handlePlayerStats serves GET /api/v1/players/{puuid}/stats?set=18
@@ -88,8 +106,76 @@ func (s *Server) handlePlayerStats(w http.ResponseWriter, r *http.Request) {
 		playerComps = []comps.Comp{}
 	}
 
+	patches, err := s.playerPatches(ctx, puuid, f)
+	if err != nil {
+		writeDBError(w, r, err)
+		return
+	}
+
 	writeJSON(w, http.StatusOK, PlayerStatsResponse{
 		Sets: sets, Summary: ex.Summary, Baseline: ex.Baseline, Queues: queues,
-		Units: ex.Units, Items: ex.Items, Traits: ex.Traits, Comps: playerComps,
+		Units: ex.Units, Items: ex.Items, Traits: ex.Traits, Comps: playerComps, Patches: patches,
 	})
+}
+
+// playerPatches groups the player's games in f's set and queues by patch,
+// with the LP change rank snapshots account for.
+func (s *Server) playerPatches(ctx context.Context, puuid string, f store.ExploreFilter) ([]PatchStats, error) {
+	games, err := s.Store.PlayerGamesSince(ctx, puuid, time.Time{})
+	if err != nil {
+		return nil, err
+	}
+	cal, err := s.Store.PatchCalendar(ctx)
+	if err != nil {
+		return nil, err
+	}
+	history, err := s.Store.RankHistory(ctx, puuid)
+	if err != nil {
+		return nil, err
+	}
+	changes := lp.Attribute(history, games)
+
+	type acc struct {
+		stats      PatchStats
+		last       time.Time
+		sum, top4s float64
+		wins       int
+	}
+	byPatch := map[string]*acc{}
+	for _, g := range games {
+		if g.SetNumber != f.Set || (len(f.Queues) > 0 && !slices.Contains(f.Queues, g.QueueID)) {
+			continue
+		}
+		patch := setdata.PatchOfGame(cal, g.SetNumber, g.GameDatetime, g.GameVersion)
+		a := byPatch[patch]
+		if a == nil {
+			a = &acc{stats: PatchStats{Patch: patch}}
+			byPatch[patch] = a
+		}
+		a.stats.Boards++
+		a.sum += float64(g.Placement)
+		if g.Placement <= 4 {
+			a.top4s++
+		}
+		if g.Placement == 1 {
+			a.wins++
+		}
+		if g.GameDatetime.After(a.last) {
+			a.last = g.GameDatetime
+		}
+		if c, ok := changes[g.MatchID]; ok {
+			a.stats.LP += c.Delta
+			a.stats.LPGames += c.Games
+		}
+	}
+	out := make([]PatchStats, 0, len(byPatch))
+	order := map[string]time.Time{}
+	for patch, a := range byPatch {
+		n := float64(a.stats.Boards)
+		a.stats.AvgPlacement, a.stats.Top4Rate, a.stats.WinRate = a.sum/n, a.top4s/n, float64(a.wins)/n
+		out = append(out, a.stats)
+		order[patch] = a.last
+	}
+	sort.Slice(out, func(i, j int) bool { return order[out[i].Patch].After(order[out[j].Patch]) })
+	return out, nil
 }

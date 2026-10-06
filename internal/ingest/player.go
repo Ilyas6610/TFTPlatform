@@ -53,3 +53,29 @@ func SyncOlderMatches(ctx context.Context, riot *riotapi.Client, st *store.Store
 	}
 	return crawlPage(ctx, riot, st, routing, puuid, start, count, count+1)
 }
+
+// SyncPlayerRank records a player's current rank in each ranked queue (one
+// request) as rank snapshots, unchanged standings excepted. Taken right
+// after a match history sync, consecutive snapshots bracket the games in
+// between, which is how per-game LP is worked out (internal/lp). It returns
+// how many snapshots were added.
+func SyncPlayerRank(ctx context.Context, riot *riotapi.Client, st *store.Store, platform riotapi.PlatformRegion, puuid string) (int, error) {
+	entries, err := riot.GetRankedEntries(ctx, platform, puuid)
+	if err != nil {
+		return 0, fmt.Errorf("fetch rank: %w", err)
+	}
+	added := 0
+	for _, e := range entries {
+		ok, err := st.AddRankSnapshot(ctx, puuid, store.RankSnapshot{
+			QueueType: e.QueueType, Tier: e.Tier, Rank: e.Rank,
+			LeaguePoints: e.LeaguePoints, Wins: e.Wins, Losses: e.Losses,
+		})
+		if err != nil {
+			return added, fmt.Errorf("store rank: %w", err)
+		}
+		if ok {
+			added++
+		}
+	}
+	return added, nil
+}

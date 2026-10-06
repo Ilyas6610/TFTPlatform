@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PlayerMatchSummary, PlayerMatches, getPlayerMatches, staleSuffix } from "../api/client";
 import { GameIcon } from "../assets/tft";
 import { CURRENT_TFT_SET } from "../config";
-import { Names, queueName } from "./stats";
+import { Names, avg, pct, queueName } from "./stats";
 
 const PAGE = 20;
 // The server pages back at most this far (it mirrors matchHistoryMaxOffset).
@@ -37,8 +37,8 @@ export function MatchHistory({
   region: string;
   names: Names;
   costs: Map<string, number>;
-  /** Called with each version of the first page (to show recent form). */
-  onFirstPage?: (matches: PlayerMatchSummary[]) => void;
+  /** Called with each version of the first page (recent form, current rank). */
+  onFirstPage?: (page: PlayerMatches) => void;
   /** Called when a page gained games (synced or fetched from Riot). */
   onGamesAdded?: () => void;
 }) {
@@ -86,7 +86,7 @@ export function MatchHistory({
           next[index] = p;
           return next;
         });
-        if (index === 0) onFirstPage?.(p.matches);
+        if (index === 0) onFirstPage?.(p);
         if (p.refreshing) timers.current.push(setTimeout(() => loadPage(index).catch(() => {}), POLL_MS));
       })
       .catch(() => {
@@ -146,69 +146,88 @@ export function MatchHistory({
       )}
 
       <div className="history-list">
-        {matches.map((m) => (
-          <div
-            key={m.matchId}
-            className={`history-row placement-row-${m.placement <= 4 ? "top" : "bottom"}`}
-            role="link"
-            tabIndex={0}
-            onClick={() => navigate(`/matches/${m.matchId}`)}
-            onKeyDown={(e) => e.key === "Enter" && navigate(`/matches/${m.matchId}`)}
-          >
-            <div className="history-meta">
-              <span className={`placement placement-${m.placement}`}>#{m.placement}</span>
-              <span>{queueName(m.queueId)}</span>
-              <span className="muted" title={new Date(m.gameDatetime).toLocaleString()}>
-                {timeAgo(m.gameDatetime)} · lvl {m.level}
-                {m.tftSetNumber && m.tftSetNumber !== CURRENT_TFT_SET ? ` · set ${m.tftSetNumber}` : ""}
+        {patchGroups(matches).map((g) => (
+          <Fragment key={g.patch + g.matches[0].matchId}>
+            <div className="patch-head">
+              <strong>{g.patch ? `Patch ${g.patch}` : "Patch unknown"}</strong>
+              <span className="muted">
+                {g.matches.length} {g.matches.length === 1 ? "game" : "games"} · {avg(g.avg)} avg · top 4 {pct(g.top4)}
               </span>
-            </div>
-            <div className="history-traits">
-              {m.traits.slice(0, 6).map((t) => (
-                <span
-                  className={`trait-badge trait-style-${Math.min(t.style, 4)}`}
-                  key={t.id}
-                  title={`${names.name(t.id)} ${t.units}`}
-                >
-                  <GameIcon
-                    kind="traits"
-                    id={t.id}
-                    size={18}
-                    fallbackSrc={names.icon(t.id)}
-                    fallbackName={names.name(t.id)}
-                  />
-                  {t.units > 0 && t.units}
+              {g.lpGames > 0 && (
+                <span className={g.lp >= 0 ? "good" : "bad"} title={`Known LP change over ${g.lpGames} ranked games`}>
+                  {g.lp > 0 ? "+" : ""}
+                  {g.lp} LP
                 </span>
-              ))}
+              )}
             </div>
-            <div className="history-units">
-              {m.units.map((u, i) => (
-                <span key={i} className="history-unit" title={`${names.name(u.id)} ${"★".repeat(u.star || 1)}`}>
-                  <span className={`unit-stars star-${u.star}`}>{"★".repeat(u.star || 1)}</span>
-                  <GameIcon
-                    kind="champions"
-                    id={u.id}
-                    size={34}
-                    fallbackSrc={names.icon(u.id)}
-                    fallbackName={names.name(u.id)}
-                    className={costs.get(u.id) ? `cost-${costs.get(u.id)}` : ""}
-                  />
-                  <span className="unit-items">
-                    {u.items.map((it, j) => (
-                      <GameIcon
-                        key={j}
-                        kind="items"
-                        id={it}
-                        size={12}
-                        fallbackSrc={names.icon(it)}
-                        fallbackName={names.name(it)}
-                      />
-                    ))}
+            {g.matches.map((m) => (
+              <div
+                key={m.matchId}
+                className={`history-row placement-row-${m.placement <= 4 ? "top" : "bottom"}`}
+                role="link"
+                tabIndex={0}
+                onClick={() => navigate(`/matches/${m.matchId}`)}
+                onKeyDown={(e) => e.key === "Enter" && navigate(`/matches/${m.matchId}`)}
+              >
+                <div className="history-meta">
+                  <span className={`placement placement-${m.placement}`}>#{m.placement}</span>
+                  <span>
+                    {queueName(m.queueId)}
+                    {m.lp && <LPBadge change={m.lp} />}
                   </span>
-                </span>
-              ))}
-            </div>
-          </div>
+                  <span className="muted" title={new Date(m.gameDatetime).toLocaleString()}>
+                    {timeAgo(m.gameDatetime)} · lvl {m.level}
+                    {m.tftSetNumber && m.tftSetNumber !== CURRENT_TFT_SET ? ` · set ${m.tftSetNumber}` : ""}
+                  </span>
+                </div>
+                <div className="history-traits">
+                  {m.traits.slice(0, 6).map((t) => (
+                    <span
+                      className={`trait-badge trait-style-${Math.min(t.style, 4)}`}
+                      key={t.id}
+                      title={`${names.name(t.id)} ${t.units}`}
+                    >
+                      <GameIcon
+                        kind="traits"
+                        id={t.id}
+                        size={18}
+                        fallbackSrc={names.icon(t.id)}
+                        fallbackName={names.name(t.id)}
+                      />
+                      {t.units > 0 && t.units}
+                    </span>
+                  ))}
+                </div>
+                <div className="history-units">
+                  {m.units.map((u, i) => (
+                    <span key={i} className="history-unit" title={`${names.name(u.id)} ${"★".repeat(u.star || 1)}`}>
+                      <span className={`unit-stars star-${u.star}`}>{"★".repeat(u.star || 1)}</span>
+                      <GameIcon
+                        kind="champions"
+                        id={u.id}
+                        size={34}
+                        fallbackSrc={names.icon(u.id)}
+                        fallbackName={names.name(u.id)}
+                        className={costs.get(u.id) ? `cost-${costs.get(u.id)}` : ""}
+                      />
+                      <span className="unit-items">
+                        {u.items.map((it, j) => (
+                          <GameIcon
+                            key={j}
+                            kind="items"
+                            id={it}
+                            size={12}
+                            fallbackSrc={names.icon(it)}
+                            fallbackName={names.name(it)}
+                          />
+                        ))}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </Fragment>
         ))}
       </div>
 
@@ -229,5 +248,53 @@ export function MatchHistory({
         <p className="muted">That's the whole history Riot keeps for this player.</p>
       )}
     </div>
+  );
+}
+
+/** Consecutive games grouped by patch (the list is newest first). */
+function patchGroups(matches: PlayerMatchSummary[]) {
+  const groups: {
+    patch: string;
+    matches: PlayerMatchSummary[];
+    avg: number;
+    top4: number;
+    lp: number;
+    lpGames: number;
+  }[] = [];
+  for (const m of matches) {
+    const patch = m.patch ?? "";
+    let g = groups[groups.length - 1];
+    if (!g || g.patch !== patch) {
+      g = { patch, matches: [], avg: 0, top4: 0, lp: 0, lpGames: 0 };
+      groups.push(g);
+    }
+    g.matches.push(m);
+    if (m.lp) {
+      g.lp += m.lp.delta;
+      g.lpGames += m.lp.games;
+    }
+  }
+  for (const g of groups) {
+    g.avg = g.matches.reduce((n, m) => n + m.placement, 0) / g.matches.length;
+    g.top4 = g.matches.filter((m) => m.placement <= 4).length / g.matches.length;
+  }
+  return groups;
+}
+
+/** A ranked game's LP change; over several games when snapshots were further apart. */
+function LPBadge({ change }: { change: { delta: number; games: number } }) {
+  const sign = change.delta > 0 ? "+" : "";
+  return (
+    <span
+      className={`lp-badge ${change.delta >= 0 ? "good" : "bad"}`}
+      title={
+        change.games > 1
+          ? `${sign}${change.delta} LP over the last ${change.games} ranked games (rank checked before and after them)`
+          : `${sign}${change.delta} LP this game`
+      }
+    >
+      {sign}
+      {change.delta} LP{change.games > 1 ? ` / ${change.games}` : ""}
+    </span>
   );
 }

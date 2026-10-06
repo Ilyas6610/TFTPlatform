@@ -1,6 +1,15 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ApiError, PlayerMatchSummary, PlayerProfile, SetData, getPlayerProfile, getSetData } from "../api/client";
+import {
+  ApiError,
+  PlayerMatchSummary,
+  PlayerMatches,
+  PlayerProfile,
+  RankEntry,
+  SetData,
+  getPlayerProfile,
+  getSetData,
+} from "../api/client";
 import { profileIconUrl, useManifest } from "../assets/tft";
 import { MatchHistory } from "../components/MatchHistory";
 import { PlayerStats } from "../components/PlayerStats";
@@ -36,6 +45,7 @@ export default function ProfilePage() {
     setError(null);
     setProfile(null);
     setRecent([]);
+    setRanks([]);
     getPlayerProfile(region, name, tag)
       .then((p) => !cancelled && setProfile(p))
       .catch((e: unknown) => {
@@ -61,7 +71,11 @@ export default function ProfilePage() {
 
   const names = useMemo(() => buildNames(setData), [setData]);
   const costs = useMemo(() => new Map(setData?.units.map((u) => [u.apiName, u.cost]) ?? []), [setData]);
-  const onFirstPage = (m: PlayerMatchSummary[]) => setRecent(m);
+  const [ranks, setRanks] = useState<RankEntry[]>([]);
+  const onFirstPage = (p: PlayerMatches) => {
+    setRecent(p.matches);
+    if (p.ranks) setRanks(p.ranks);
+  };
   // Games were added to the history (newest synced or an older page fetched):
   // stats are computed from stored games, so reload them.
   const onGamesAdded = () => setStatsVersion((v) => v + 1);
@@ -117,6 +131,13 @@ export default function ProfilePage() {
               {profile.summonerLevel > 1 && <> &middot; Level {profile.summonerLevel}</>}
             </p>
           </div>
+          {ranks.length > 0 && (
+            <div className="rank-badges">
+              {ranks.map((r) => (
+                <RankBadge key={r.queueType} entry={r} />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -143,6 +164,29 @@ export default function ProfilePage() {
           onGamesAdded={onGamesAdded}
         />
       )}
+    </div>
+  );
+}
+
+const QUEUE_LABEL: Record<string, string> = { RANKED_TFT: "Ranked", RANKED_TFT_DOUBLE_UP: "Double Up" };
+const APEX = new Set(["MASTER", "GRANDMASTER", "CHALLENGER"]);
+
+function RankBadge({ entry: r }: { entry: RankEntry }) {
+  const games = r.wins + r.losses;
+  const tier = r.tier.charAt(0) + r.tier.slice(1).toLowerCase();
+  return (
+    <div
+      className={`rank-badge tier-${r.tier.toLowerCase()}`}
+      title={`As of ${new Date(r.fetchedAt).toLocaleString()}`}
+    >
+      <span className="muted">{QUEUE_LABEL[r.queueType] ?? r.queueType}</span>
+      <strong>
+        {tier}
+        {APEX.has(r.tier) ? "" : ` ${r.rank}`} · {r.leaguePoints} LP
+      </strong>
+      <span className="muted">
+        {games} games · {r.wins} top 4 ({Math.round((r.wins / Math.max(1, games)) * 100)}%)
+      </span>
     </div>
   );
 }

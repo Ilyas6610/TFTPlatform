@@ -59,6 +59,20 @@ export interface PlayerMatchSummary {
   level: number;
   units: PlayerBoardUnit[];
   traits: PlayerActiveTrait[]; // active only, highest style first
+  patch?: string; // "18.3", from the game's date for Set 18
+  // LP gained/lost, when rank snapshots bracket the game; games > 1 means
+  // the change covers that many games (shown on the newest of them).
+  lp?: { delta: number; games: number };
+}
+
+export interface RankEntry {
+  queueType: string; // RANKED_TFT, RANKED_TFT_DOUBLE_UP
+  tier: string;
+  rank: string;
+  leaguePoints: number;
+  wins: number;
+  losses: number;
+  fetchedAt: string;
 }
 
 // Passing region lets the server sync the player's history from Riot in the
@@ -67,6 +81,7 @@ export interface PlayerMatchSummary {
 // to pick up the games. `hasMore` means an older page may exist.
 export interface PlayerMatches {
   matches: PlayerMatchSummary[];
+  ranks?: RankEntry[]; // first page only: latest known rank per queue
   hasMore: boolean;
   syncedAt: string | null;
   refreshing: boolean;
@@ -93,6 +108,8 @@ export interface PlayerStats {
   items: ExploreRow[];
   traits: ExploreRow[];
   comps: MetaComp[]; // the player's own comps (2+ games)
+  // By patch, newest first; lp is the known change over lpGames ranked games.
+  patches: (PlacementStats & { patch: string; lp: number; lpGames: number })[];
 }
 
 /** query: set and optional queue/level. */

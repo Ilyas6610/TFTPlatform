@@ -21,6 +21,7 @@ type PlayerMatch struct {
 	GameDatetime time.Time     `json:"gameDatetime"`
 	TFTSetNumber int           `json:"tftSetNumber"`
 	QueueID      int           `json:"queueId"`
+	GameVersion  string        `json:"-"` // for the patch, when Riot reports one
 	Placement    int           `json:"placement"`
 	Level        int           `json:"level"`
 	Units        []BoardUnit   `json:"units"`
@@ -44,7 +45,7 @@ type ActiveTrait struct {
 // offset games are skipped, then up to limit returned.
 func (s *Store) PlayerMatches(ctx context.Context, puuid string, offset, limit int) ([]PlayerMatch, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT mp.match_id, m.game_datetime, m.tft_set_number, m.queue_id, mp.placement, coalesce(mp.level, 0),
+		SELECT mp.match_id, m.game_datetime, m.tft_set_number, m.queue_id, coalesce(m.game_version, ''), mp.placement, coalesce(mp.level, 0),
 			`+arrayOr("mp.units")+`, `+arrayOr("mp.traits")+`
 		FROM match_participants mp
 		JOIN matches m USING (match_id)
@@ -61,7 +62,7 @@ func (s *Store) PlayerMatches(ctx context.Context, puuid string, offset, limit i
 	for rows.Next() {
 		var m PlayerMatch
 		var unitsJSON, traitsJSON []byte
-		if err := rows.Scan(&m.MatchID, &m.GameDatetime, &m.TFTSetNumber, &m.QueueID, &m.Placement, &m.Level, &unitsJSON, &traitsJSON); err != nil {
+		if err := rows.Scan(&m.MatchID, &m.GameDatetime, &m.TFTSetNumber, &m.QueueID, &m.GameVersion, &m.Placement, &m.Level, &unitsJSON, &traitsJSON); err != nil {
 			return nil, err
 		}
 		m.Units, m.Traits = parseBoard(unitsJSON, traitsJSON)
