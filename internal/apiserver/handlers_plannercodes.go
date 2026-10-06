@@ -74,7 +74,10 @@ func (s *Server) handlePlannerCodes(w http.ResponseWriter, r *http.Request) {
 		return setdata.FetchPlannerCodes(ctx, src)
 	})
 	if err != nil {
-		s.plannerFail.record()
+		// A visitor who left while waiting says nothing about the source.
+		if r.Context().Err() == nil {
+			s.plannerFail.record()
+		}
 		writeUpstreamError(w, r, err)
 		return
 	}

@@ -1,6 +1,7 @@
 package apiserver
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -96,5 +97,26 @@ func TestPlannerCodes_FailureIsRememberedBriefly(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	if c := get(); c != http.StatusOK {
 		t.Errorf("after the cooldown got %d, want 200", c)
+	}
+}
+
+func TestPlannerCodes_CancelledRequestIsNotRemembered(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"TFTSet18": [{"character_id": "DA_18_Ahri", "team_planner_code": 1001}]}`))
+	}))
+	defer up.Close()
+	s := &Server{Source: &setdata.Source{BaseURL: up.URL, HTTP: up.Client()}}
+	h := NewRouter(s)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/v1/sets/18/planner-codes", nil).WithContext(ctx))
+	if s.plannerFail.active() {
+		t.Fatal("a visitor leaving must not mark the source as failing")
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/sets/18/planner-codes", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("next visitor got %d %s", rec.Code, rec.Body)
 	}
 }
