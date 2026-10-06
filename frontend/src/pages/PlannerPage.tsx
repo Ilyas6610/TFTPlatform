@@ -24,6 +24,7 @@ import {
   addUnit,
   augmentsByTier,
   buildFormIndex,
+  slotsUsed,
   buildTraitChoices,
   boardCost,
   cleanTitle,
@@ -145,8 +146,9 @@ export default function PlannerPage() {
   }
 
   const size = data ? teamSizeBonus(board, data) : { bonus: 0, sources: [] as string[] };
+  const slots = data ? slotsUsed(board, data) : { used: board.units.length, extra: [] };
   const maxUnits = board.level + size.bonus;
-  const over = board.units.length > maxUnits;
+  const over = slots.used > maxUnits;
 
   return (
     <div className="planner">
@@ -192,8 +194,11 @@ export default function PlannerPage() {
         </div>
         <div className="planner-summary muted">
           <span className={over ? "bad" : undefined}>
-            Units {board.units.length}/{maxUnits}
+            Units {slots.used}/{maxUnits}
           </span>
+          {slots.extra.length > 0 && (
+            <span>({[...new Set(slots.extra.map((e) => `${e.unit} takes ${e.slots} slots`))].join(", ")})</span>
+          )}
           {size.bonus > 0 && (
             <span title={size.sources.join(", ")}>
               +{size.bonus} team size ({[...new Set(size.sources)].join(", ")})

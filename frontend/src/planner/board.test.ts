@@ -7,6 +7,8 @@ import {
   addItem,
   addUnit,
   boardCost,
+  buildSlotRules,
+  slotsUsed,
   addItemChecked,
   canHoldItem,
   dropRedundantEmblems,
@@ -486,5 +488,55 @@ describe("team size items", () => {
     expect(teamSizeBonus(b, data)).toEqual({ bonus: 2, sources: ["Tactician's Crown", "Tactician's Cape"] });
     b = removeItem(b, 0, 0);
     expect(teamSizeBonus(b, data).bonus).toBe(1);
+  });
+});
+
+describe("units that take two team slots (Elder Dragon)", () => {
+  const dragonData = {
+    units: [
+      { apiName: "U_Dragon", name: "Elder Dragon", cost: 5, traits: ["Apex", "Beast"] },
+      { apiName: "U_Beast", name: "Beastie", cost: 1, traits: ["Beast"] },
+      { apiName: "U_Other", name: "Other", cost: 1, traits: ["Plain"] },
+    ],
+    traits: [
+      { apiName: "T_Apex", name: "Apex", desc: "Elder Dragon takes up 2 team slots and grants +2 to the Beast trait.", breakpoints: [{ minUnits: 1, style: 4 }] },
+      { apiName: "T_Beast", name: "Beast", desc: "", breakpoints: [{ minUnits: 3, style: 1, text: "(3) Do things." }, { minUnits: 5, style: 2 }] },
+      { apiName: "T_Plain", name: "Plain", desc: "", breakpoints: [{ minUnits: 2, style: 1 }] },
+    ],
+    items: [],
+    augments: [],
+  } as unknown as SetData;
+
+  it("reads the rule from the trait text", () => {
+    expect(buildSlotRules(dragonData).get("U_Dragon")).toEqual({ slots: 2, trait: "Beast", traitCount: 2 });
+    expect(buildSlotRules(dragonData).size).toBe(1);
+  });
+
+  it("a rule about an unknown unit or trait is ignored; the slots part works without a trait", () => {
+    const odd = {
+      ...dragonData,
+      traits: [
+        { apiName: "T1", name: "T1", desc: "Nobody takes up 3 team slots.", breakpoints: [] },
+        { apiName: "T2", name: "T2", desc: "Elder Dragon takes up 2 team slots.", breakpoints: [] },
+        { apiName: "T3", name: "T3", desc: "Beastie takes up 2 team slots and grants +1 to the Missing trait.", breakpoints: [] },
+      ],
+    } as unknown as SetData;
+    expect(buildSlotRules(odd).get("U_Dragon")).toEqual({ slots: 2 });
+    expect(buildSlotRules(odd).get("U_Beast")).toEqual({ slots: 2 });
+  });
+
+  it("the dragon uses two slots", () => {
+    const b = addUnit(addUnit(emptyBoard(18), "U_Dragon", 0), "U_Other", 1);
+    expect(slotsUsed(b, dragonData)).toEqual({ used: 3, extra: [{ unit: "Elder Dragon", slots: 2 }] });
+    expect(slotsUsed(addUnit(emptyBoard(18), "U_Other", 0), dragonData).used).toBe(1);
+  });
+
+  it("the dragon counts as two for its trait", () => {
+    const b = addUnit(addUnit(emptyBoard(18), "U_Dragon", 0), "U_Beast", 1);
+    const t = Object.fromEntries(computeTraits(b, dragonData).map((x) => [x.name, x]));
+    expect(t.Beast.count).toBe(3); // dragon 2 + Beastie 1
+    expect(t.Beast.tier).toBe(0);
+    expect(t.Apex.count).toBe(1);
+    expect(Object.fromEntries(computeTraits(addUnit(emptyBoard(18), "U_Dragon", 0), dragonData).map((x) => [x.name, x.count])).Beast).toBe(2);
   });
 });

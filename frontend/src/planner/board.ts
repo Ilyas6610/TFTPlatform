@@ -207,6 +207,58 @@ export function clickCell(b: Board, selected: number | null, pos: number): CellC
   return { selected: null };
 }
 
+// ---- Units that take more than one team slot (Elder Dragon) --------------------
+
+export interface SlotRule {
+  /** Team slots the unit takes (the unit limit counts these, not units). */
+  slots: number;
+  /** A trait the unit counts extra for, and how many units it counts as there. */
+  trait?: string;
+  traitCount?: number;
+}
+
+/**
+ * Reads, from trait text like "Elder Dragon takes up 2 team slots and grants
+ * +2 to the Riftbeast trait.", which units take extra slots and what they
+ * count for in a trait. Units are matched by name; others take one slot.
+ */
+export function buildSlotRules(data: Pick<SetData, "units" | "traits">): Map<string, SlotRule> {
+  const unitByName = new Map(data.units.map((u) => [u.name, u]));
+  const traitNames = new Set(data.traits.map((t) => t.name));
+  const out = new Map<string, SlotRule>();
+  const re = /([^.]+?) takes up (\d+) team slots?(?: and grants \+?(\d+) to the ([^.]+?) trait)?\./gi;
+  for (const t of data.traits) {
+    for (const text of [t.desc, ...t.breakpoints.map((bp) => bp.text ?? "")]) {
+      for (const m of (text ?? "").matchAll(re)) {
+        const unit = unitByName.get(m[1].trim());
+        const slots = Number(m[2]);
+        if (!unit || slots < 1) continue;
+        const rule: SlotRule = { slots };
+        if (m[3] && traitNames.has(m[4].trim())) {
+          rule.trait = m[4].trim();
+          rule.traitCount = Number(m[3]);
+        }
+        out.set(unit.apiName, rule);
+      }
+    }
+  }
+  return out;
+}
+
+/** Team slots the board uses: one per unit, more for units like Elder Dragon. */
+export function slotsUsed(b: Board, data: SetData): { used: number; extra: { unit: string; slots: number }[] } {
+  const rules = buildSlotRules(data);
+  const name = new Map(data.units.map((u) => [u.apiName, u.name]));
+  let used = 0;
+  const extra: { unit: string; slots: number }[] = [];
+  for (const u of b.units) {
+    const slots = rules.get(u.id)?.slots ?? 1;
+    used += slots;
+    if (slots > 1) extra.push({ unit: name.get(u.id) ?? u.id, slots });
+  }
+  return { used, extra };
+}
+
 // ---- Units with a chosen trait (Lux) ----------------------------------------
 
 /** One form of a unit: the apiName to field and the trait it was given. */
@@ -462,7 +514,7 @@ export interface TraitCount {
 /**
  * Traits active on the board. Each distinct unit counts once however many
  * copies are fielded; an emblem adds its trait to the unit holding it, unless
- * the unit already has that trait; a form unit's chosen trait (Lux) counts twice.
+ * the unit already has that trait; a form unit's chosen trait (Lux) counts twice, and so does Elder Dragon's Riftbeast.
  */
 export function computeTraits(b: Board, data: SetData): TraitCount[] {
   const unitById = new Map<string, SetUnit>(data.units.map((u) => [u.apiName, u]));
@@ -470,6 +522,7 @@ export function computeTraits(b: Board, data: SetData): TraitCount[] {
   const itemById = new Map<string, SetItem>(data.items.map((i) => [i.apiName, i]));
 
   const forms = buildFormIndex(data.units);
+  const slotRules = buildSlotRules(data);
   const traitNameByApi = new Map(data.traits.map((t) => [t.apiName, t.name]));
   // trait name -> distinct unit ids (+ emblem holders) and what each counts for
   const members = new Map<string, Map<string, number>>();
@@ -483,7 +536,8 @@ export function computeTraits(b: Board, data: SetData): TraitCount[] {
     if (!unit) continue;
     // A form's chosen trait (Lux's) is counted twice.
     const chosen = forms.chosen.get(placed.id);
-    for (const t of unit.traits) add(t, placed.id, t === chosen ? 2 : 1);
+    const rule = slotRules.get(placed.id);
+    for (const t of unit.traits) add(t, placed.id, t === chosen ? 2 : t === rule?.trait ? (rule.traitCount ?? 1) : 1);
     // Traits gained by evolving count once each (never again for one it has).
     for (const tid of placed.extra) {
       const name = traitNameByApi.get(tid);
