@@ -10,7 +10,7 @@ import {
 } from "../api/client";
 import { GameIcon } from "../assets/tft";
 import { CompName } from "./CompName";
-import { Names, TraitsBreakdown, avg, pct, placementTone, queueName } from "./stats";
+import { Names, avg, pct, placementTone, queueName } from "./stats";
 
 // Breakdown rows from fewer games than this are shown but dimmed: one lucky
 // game says little about a unit.
@@ -199,50 +199,55 @@ export function PlayerStats({
       </div>
 
       {s.boards > 0 && (
-        <div className="player-breakdowns">
-          <div className="panel">
-            <h3>Most played units</h3>
-            <BreakdownTable
+        <div className="panel">
+          <h3>What they play</h3>
+          <div className="player-breakdowns">
+            <BreakdownList
+              title="Units"
               rows={stats.units}
               total={s.boards}
               label={(id) => (
                 <span className="game-label">
-                  {unitIcon(id, 24)}
+                  {unitIcon(id, 22)}
                   {names.name(id)}
                 </span>
               )}
               versus={metaAvg}
             />
-          </div>
-          <div className="panel">
-            <h3>Most used items</h3>
-            <BreakdownTable
+            <BreakdownList
+              title="Items"
               rows={stats.items}
               total={s.boards}
               label={(id) => (
                 <span className="game-label">
-                  <GameIcon kind="items" id={id} size={22} fallbackSrc={names.icon(id)} fallbackName={names.name(id)} />
+                  <GameIcon kind="items" id={id} size={20} fallbackSrc={names.icon(id)} fallbackName={names.name(id)} />
                   {names.name(id)}
                 </span>
               )}
             />
+            <BreakdownList
+              title="Traits"
+              rows={byTrait(stats.traits)}
+              total={s.boards}
+              label={(id) => (
+                <span className="game-label">
+                  <GameIcon
+                    kind="traits"
+                    id={id}
+                    size={20}
+                    fallbackSrc={names.icon(id)}
+                    fallbackName={names.name(id)}
+                  />
+                  {names.name(id)}
+                </span>
+              )}
+              onPick={(id) => {
+                const q = new URLSearchParams(scope);
+                q.append("trait", id);
+                navigate(`/explore?${q}`);
+              }}
+            />
           </div>
-        </div>
-      )}
-
-      {s.boards > 0 && stats.traits.length > 0 && (
-        <div className="panel">
-          <h3>Traits</h3>
-          <TraitsBreakdown
-            rows={stats.traits}
-            names={names}
-            total={s.boards}
-            onPick={(id, tier) => {
-              const q = new URLSearchParams(scope);
-              q.append("trait", `${id}${tier ? `*${tier.minUnits}-${tier.maxUnits || ""}` : ""}`);
-              navigate(`/explore?${q}`);
-            }}
-          />
         </div>
       )}
 
@@ -261,59 +266,103 @@ export function PlayerStats({
   );
 }
 
-function BreakdownTable({
+// Rows shown before "Show all".
+const PREVIEW_ROWS = 6;
+
+/** Trait tier rows merged into one row per trait (a board has one tier per trait). */
+function byTrait(rows: ExploreRow[]): ExploreRow[] {
+  const merged = new Map<string, ExploreRow>();
+  for (const r of rows) {
+    const m = merged.get(r.id);
+    if (!m) {
+      merged.set(r.id, { ...r, tier: undefined });
+      continue;
+    }
+    const n = m.boards + r.boards;
+    const mix = (a: number, b: number) => (a * m.boards + b * r.boards) / n;
+    merged.set(r.id, {
+      ...m,
+      boards: n,
+      avgPlacement: mix(m.avgPlacement, r.avgPlacement),
+      top4Rate: mix(m.top4Rate, r.top4Rate),
+      winRate: mix(m.winRate, r.winRate),
+    });
+  }
+  return [...merged.values()].sort((a, b) => b.boards - a.boards);
+}
+
+/** A short ranked list: top rows with games and average, the rest behind "Show all". */
+function BreakdownList({
+  title,
   rows,
   total,
   label,
   versus,
+  onPick,
 }: {
+  title: string;
   rows: ExploreRow[];
   total: number;
   label: (id: string) => JSX.Element;
   /** Everyone's average placement per id, for a "vs meta" column. */
   versus?: Map<string, number>;
+  onPick?: (id: string) => void;
 }) {
-  if (rows.length === 0) return <p className="muted">None yet.</p>;
+  const [all, setAll] = useState(false);
+  const shown = all ? rows : rows.slice(0, PREVIEW_ROWS);
   return (
-    <div className="table-scroll">
-      <table className="compact">
-        <thead>
-          <tr>
-            <th />
-            <th className="num">Games</th>
-            <th className="num">Avg</th>
-            <th className="num">Top 4</th>
-            {versus && (
-              <th className="num" title="Their average minus everyone's with this unit: negative is better">
-                vs meta
+    <div className="breakdown-list">
+      <div className="meta-section-title muted">{title}</div>
+      {rows.length === 0 ? (
+        <p className="muted">None yet.</p>
+      ) : (
+        <table className="compact">
+          <thead>
+            <tr>
+              <th />
+              <th className="num" title="Games (share of all their games)">
+                Games
               </th>
-            )}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => {
-            const meta = versus?.get(r.id);
-            const delta = meta === undefined ? undefined : r.avgPlacement - meta;
-            return (
-              <tr key={r.id} className={r.boards < MIN_GAMES ? "dim" : undefined}>
-                <td>{label(r.id)}</td>
-                <td className="num">
-                  {r.boards} <span className="muted share">{pct(r.boards / Math.max(1, total))}</span>
-                </td>
-                <td className={`num ${placementTone(r)}`}>{avg(r.avgPlacement)}</td>
-                <td className="num">{pct(r.top4Rate)}</td>
-                {versus && (
-                  <td
-                    className={`num ${delta === undefined ? "muted" : delta <= -0.25 ? "good" : delta >= 0.25 ? "bad" : ""}`}
-                  >
-                    {delta === undefined ? "—" : `${delta > 0 ? "+" : ""}${delta.toFixed(2)}`}
-                  </td>
-                )}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+              <th className="num">Avg</th>
+              {versus && (
+                <th className="num" title="Their average minus everyone's with this unit: negative is better">
+                  vs meta
+                </th>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((r) => {
+              const meta = versus?.get(r.id);
+              const delta = meta === undefined ? undefined : r.avgPlacement - meta;
+              return (
+                <tr
+                  key={r.id}
+                  className={`${r.boards < MIN_GAMES ? "dim" : ""} ${onPick ? "clickable" : ""}`}
+                  title={`${r.boards} games (${pct(r.boards / Math.max(1, total))}) · top 4 ${pct(r.top4Rate)} · ${pct(r.winRate)} wins`}
+                  onClick={onPick && (() => onPick(r.id))}
+                >
+                  <td>{label(r.id)}</td>
+                  <td className="num">{r.boards}</td>
+                  <td className={`num ${placementTone(r)}`}>{avg(r.avgPlacement)}</td>
+                  {versus && (
+                    <td
+                      className={`num ${delta === undefined ? "muted" : delta <= -0.25 ? "good" : delta >= 0.25 ? "bad" : ""}`}
+                    >
+                      {delta === undefined ? "—" : `${delta > 0 ? "+" : ""}${delta.toFixed(2)}`}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+      {rows.length > PREVIEW_ROWS && (
+        <button type="button" className="show-more" onClick={() => setAll(!all)}>
+          {all ? "Show less" : `Show all ${rows.length}`}
+        </button>
+      )}
     </div>
   );
 }
