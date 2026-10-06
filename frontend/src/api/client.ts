@@ -193,6 +193,8 @@ export interface MatchParticipant {
   riotIdGameName?: string;
   riotIdTagline?: string;
   placement: number;
+  // Double Up team (Set 17 payloads); Set 18 dropped it, teams are then placement pairs.
+  partner_group_id?: number;
   level: number;
   last_round: number;
   total_damage_to_players: number;
@@ -210,6 +212,7 @@ export interface MatchDetail {
     game_version: string;
     tft_set_number: number;
     tft_game_type: string;
+    queue_id?: number;
     participants: MatchParticipant[];
   };
 }

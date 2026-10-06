@@ -354,6 +354,31 @@ td a:hover {
   color: var(--accent);
 }
 
+/* Double Up: a team's two boards framed together. */
+.du-team {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--placement-good);
+  border-radius: 8px;
+  padding: 10px 10px 0;
+  margin-bottom: 16px;
+}
+
+.du-team-bottom {
+  border-left-color: var(--placement-bad);
+}
+
+.du-team-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 10px 4px;
+  font-weight: 600;
+}
+
+.du-team .panel {
+  margin-bottom: 10px;
+}
+
 .participant-level {
   font-weight: 400;
   margin-left: auto;
