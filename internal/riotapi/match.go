@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 // GetTFTMatchIDsByPUUID returns up to count recent match IDs for puuid via
@@ -15,6 +16,12 @@ func (c *Client) GetTFTMatchIDsByPUUID(ctx context.Context, routing RoutingRegio
 // GetTFTMatchIDsPage returns up to count match IDs for puuid after skipping
 // the start most recent ones, for paging back through a player's history.
 func (c *Client) GetTFTMatchIDsPage(ctx context.Context, routing RoutingRegion, puuid string, start, count int) ([]string, error) {
+	return c.GetTFTMatchIDsSince(ctx, routing, puuid, start, count, time.Time{})
+}
+
+// GetTFTMatchIDsSince is GetTFTMatchIDsPage limited to games played after
+// since (Riot's startTime filter); a zero since means no limit.
+func (c *Client) GetTFTMatchIDsSince(ctx context.Context, routing RoutingRegion, puuid string, start, count int, since time.Time) ([]string, error) {
 	seg, err := pathSegment(puuid)
 	if err != nil {
 		return nil, err
@@ -22,6 +29,9 @@ func (c *Client) GetTFTMatchIDsPage(ctx context.Context, routing RoutingRegion, 
 	u := fmt.Sprintf("%s/tft/match/v1/matches/by-puuid/%s/ids?count=%d", routingHost(routing), seg, count)
 	if start > 0 {
 		u += fmt.Sprintf("&start=%d", start)
+	}
+	if !since.IsZero() {
+		u += fmt.Sprintf("&startTime=%d", since.Unix())
 	}
 
 	var ids []string

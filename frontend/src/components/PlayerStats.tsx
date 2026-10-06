@@ -10,6 +10,7 @@ import {
 } from "../api/client";
 import { GameIcon } from "../assets/tft";
 import { CompName } from "./CompName";
+import { SetBackfill } from "./SetBackfill";
 import { Names, avg, pct, placementTone, queueName } from "./stats";
 
 // Breakdown rows from fewer games than this are shown but dimmed: one lucky
@@ -29,6 +30,7 @@ export function PlayerStats({
   names,
   costs,
   recent,
+  region,
 }: {
   puuid: string;
   /** Changes when the player's stored games change; stats reload. */
@@ -39,12 +41,16 @@ export function PlayerStats({
   costs: Map<string, number>;
   /** Newest games across queues, for the recent form strip. */
   recent: PlayerMatchSummary[];
+  /** The player's platform, for loading their whole set from Riot. */
+  region: string;
 }) {
   const navigate = useNavigate();
   const [queue, setQueue] = useState<number | "all">("all");
   const [stats, setStats] = useState<Stats | null>(null);
   const [metaAvg, setMetaAvg] = useState<Map<string, number>>(new Map());
   const [error, setError] = useState<string | null>(null);
+  // Bumped as a whole-set load brings games in.
+  const [reloads, setReloads] = useState(0);
 
   const scope = useMemo(() => {
     const q = new URLSearchParams({ set: String(set) });
@@ -67,7 +73,7 @@ export function PlayerStats({
     return () => {
       cancelled = true;
     };
-  }, [puuid, scope, refreshKey]);
+  }, [puuid, scope, refreshKey, reloads]);
 
   if (error) return <div className="error-box">{error}</div>;
   if (!stats) return <p className="muted">Loading stats…</p>;
@@ -116,9 +122,9 @@ export function PlayerStats({
           </div>
         </div>
         <p className="muted">
-          From the {s.boards} stored games{queue === "all" ? "" : ` in ${queueName(queue)}`} in Set {set}. Load more
-          history below to include older games.
+          From the {s.boards} stored games{queue === "all" ? "" : ` in ${queueName(queue)}`} in Set {set}.
         </p>
+        <SetBackfill puuid={puuid} region={region} onGames={() => setReloads((n) => n + 1)} />
 
         {s.boards === 0 ? (
           <p className="muted">No stored games in this set and queue yet.</p>

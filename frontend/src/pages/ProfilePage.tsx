@@ -159,6 +159,7 @@ export default function ProfilePage() {
           names={names}
           costs={costs}
           recent={recent}
+          region={profile.platformRegion}
         />
       )}
 

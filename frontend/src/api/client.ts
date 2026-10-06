@@ -12,8 +12,8 @@ export class ApiError extends Error {
   }
 }
 
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(path);
+async function get<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, init);
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: "unknown", message: res.statusText }));
     throw new ApiError(res.status, body.error ?? "unknown", body.message ?? res.statusText);
@@ -68,6 +68,29 @@ export interface PlayerMatchSummary {
 /** A rank snapshot with its place on one linear LP scale (100 per division, Master = 2800). */
 export interface RankPoint extends RankEntry {
   value: number;
+}
+
+/** A whole-set history load (one at a time server-wide). */
+export interface BackfillStatus {
+  state: "idle" | "running" | "done" | "failed";
+  found: number; // the player's games this set, per Riot (capped at 500)
+  missing: number; // not stored when the load started
+  fetched: number;
+  since?: string;
+  error?: string;
+  finishedAt?: string;
+}
+
+export function getBackfill(puuid: string) {
+  return get<BackfillStatus>(`/api/v1/players/${encodeURIComponent(puuid)}/backfill`);
+}
+
+/** Starts loading the player's whole current set; a 409 ApiError (code "busy") if another load is running. */
+export function startBackfill(puuid: string, region: string) {
+  return get<BackfillStatus>(
+    `/api/v1/players/${encodeURIComponent(puuid)}/backfill?region=${encodeURIComponent(region)}`,
+    { method: "POST" },
+  );
 }
 
 /** An estimated Ranked standing right after an older game (before the first recorded rank). */

@@ -1825,3 +1825,26 @@ tr.dim {
   margin: 4px 0 0;
   font-size: 0.8rem;
 }
+
+.backfill {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: -4px 0 8px;
+  font-size: 0.85rem;
+}
+
+.backfill .show-more {
+  width: auto;
+  padding: 2px 0;
+  background: none;
+  border: none;
+  color: var(--accent);
+}
+
+.backfill progress {
+  flex: 1 1 160px;
+  max-width: 320px;
+  accent-color: var(--accent);
+}
