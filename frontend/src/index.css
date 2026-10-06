@@ -2014,3 +2014,35 @@ details.patch[open] > summary::before {
   margin: 0 0 8px;
   font-size: 0.85rem;
 }
+
+.few-games {
+  opacity: 0.55;
+}
+
+/* The tier under the name replaces the Tier column on phones. */
+.tier-inline {
+  display: none;
+  font-size: 0.78rem;
+}
+
+@media (max-width: 600px) {
+  .leaderboard-table .col-tier,
+  .leaderboard-table .col-games,
+  .leaderboard-table .stored-n {
+    display: none;
+  }
+  .leaderboard-table .tier-inline {
+    display: block;
+  }
+  .leaderboard-table th,
+  .leaderboard-table td {
+    padding-left: 4px;
+    padding-right: 4px;
+    font-size: 0.85rem;
+  }
+  /* Long Riot IDs wrap instead of widening the table. */
+  .leaderboard-table td:nth-child(2) {
+    max-width: 120px;
+    overflow-wrap: anywhere;
+  }
+}

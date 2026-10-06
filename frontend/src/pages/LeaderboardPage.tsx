@@ -1,12 +1,21 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ApiError, Leaderboard, getLeaderboard, staleSuffix } from "../api/client";
+import { ApiError, Leaderboard, LeaderboardEntry, getLeaderboard, staleSuffix } from "../api/client";
 
 const PLATFORMS = ["na1", "euw1", "eun1", "kr", "jp1", "br1", "la1", "la2", "oc1", "tr1", "ru"];
 
 // While the server is resolving Riot IDs in the background, re-fetch at this
 // interval so names fill in as they're found.
 const RESOLVE_POLL_MS = 3000;
+
+// Below this many stored games a player's 1st-place rate and average say
+// little (one bad game reads as an 8.00 average), so they're dimmed.
+const MIN_STORED_GAMES = 10;
+
+// Apex tiers have no divisions, so Riot's "I" says nothing there.
+const APEX = new Set(["MASTER", "GRANDMASTER", "CHALLENGER"]);
+const tierLabel = (tier: string, rank: string | null) =>
+  tier.charAt(0) + tier.slice(1).toLowerCase() + (rank && !APEX.has(tier) ? ` ${rank}` : "");
 
 const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
 
@@ -90,20 +99,21 @@ export default function LeaderboardPage() {
       {!loading && !error && board && (
         <div className="panel">
           <p className="muted leaderboard-note">
-            Games and top 4 rate cover the whole ranked season (Riot). Win rate (1st place) and average placement come from the
-            ranked games stored here (the number after the dot is how many), so they firm up as more games are collected.
+            Games and top 4 rate cover the whole ranked season (Riot). 1st place rate and average placement come from the ranked
+            games stored here (the number after the dot is how many; dimmed under {MIN_STORED_GAMES} games), so they firm up as more games are
+            collected.
           </p>
-          <table>
+          <table className="leaderboard-table">
             <thead>
               <tr>
                 <th>#</th>
                 <th>Player</th>
-                <th>Tier</th>
+                <th className="col-tier">Tier</th>
                 <th>LP</th>
-                <th title="Ranked games this season (Riot)">Games</th>
+                <th className="col-games" title="Ranked games this season (Riot)">Games</th>
                 <th title="Share of ranked games finished in the top 4 this season (Riot)">Top 4</th>
-                <th title="Share of stored ranked games won (1st place); the number after the dot is how many games we have">Win rate</th>
-                <th title="Average placement over the ranked games we have stored">Avg</th>
+                <th title="Share of stored ranked games won (1st place); the number after the dot is how many games we have">1st</th>
+                <th title="Average placement over the ranked games we have stored; the number after the dot is how many games we have">Avg</th>
               </tr>
             </thead>
             <tbody>
@@ -119,25 +129,13 @@ export default function LeaderboardPage() {
                     ) : (
                       <span className="muted">{board.resolving ? "resolving…" : "unknown"}</span>
                     )}
+                    <span className="tier-inline muted">{tierLabel(e.tier, e.rank)}</span>
                   </td>
-                  <td>
-                    {e.tier}
-                    {e.rank ? ` ${e.rank}` : ""}
-                  </td>
+                  <td className="col-tier">{tierLabel(e.tier, e.rank)}</td>
                   <td>{e.leaguePoints}</td>
-                  <td>{e.games}</td>
+                  <td className="col-games">{e.games}</td>
                   <td>{e.top4Rate == null ? "–" : pct(e.top4Rate)}</td>
-                  <td title={e.stored ? `${e.stored.games} stored ranked games` : undefined}>
-                    {e.stored ? (
-                      <>
-                        {pct(e.stored.winRate)}
-                        <span className="muted"> · {e.stored.games}</span>
-                      </>
-                    ) : (
-                      <span className="muted">–</span>
-                    )}
-                  </td>
-                  <td>{e.stored ? e.stored.avgPlacement.toFixed(2) : <span className="muted">–</span>}</td>
+                  <StoredCells stored={e.stored} />
                 </tr>
               ))}
             </tbody>
@@ -150,5 +148,30 @@ export default function LeaderboardPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function StoredCells({ stored }: { stored: LeaderboardEntry["stored"] }) {
+  if (!stored)
+    return (
+      <>
+        <td className="muted">–</td>
+        <td className="muted">–</td>
+      </>
+    );
+  const few = stored.games < MIN_STORED_GAMES;
+  const cls = few ? "muted few-games" : undefined;
+  const title = few ? `Only ${stored.games} stored ranked games` : `${stored.games} stored ranked games`;
+  return (
+    <>
+      <td className={cls} title={title}>
+        {pct(stored.winRate)}
+        <span className="muted stored-n"> · {stored.games}</span>
+      </td>
+      <td className={cls} title={title}>
+        {stored.avgPlacement.toFixed(2)}
+        <span className="muted stored-n"> · {stored.games}</span>
+      </td>
+    </>
   );
 }

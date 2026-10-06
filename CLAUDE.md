@@ -36,7 +36,7 @@ Other env vars: `RIOT_API_KEY` (fallback when no key file), `RIOT_APP_RATE_LIMIT
 
 Personal Riot API keys expire every 24h — refresh `deploy/.secrets/riot-api-key.txt` (gitignored) before ingesting.
 
-Background sync in dev: `docker compose -f deploy/docker-compose.yml --profile sync up -d --build riotsync` runs `riotsync` in a container (restarts unless stopped, runs as `APP_UID:APP_GID`, default 1000:1000, so it can read the chmod 600 key; key rotation needs no restart). It waits for `migrate`, so the checkout's migrations must match the dev database's applied version (use `--no-deps` otherwise).
+Background sync in dev: `docker compose -f deploy/docker-compose.yml --profile sync up -d --build riotsync` runs `riotsync` in a container (restarts unless stopped, runs as `APP_UID:APP_GID`, default 1000:1000, so it can read the chmod 600 key; key rotation needs no restart). It keeps running (and spending the key) after a reboot until stopped: `docker compose -f deploy/docker-compose.yml --profile sync stop riotsync` (`down` removes it). It waits for `migrate`, so the checkout's migrations must match the dev database's applied version (use `--no-deps` otherwise).
 
 ### Frontend (`frontend/`)
 ```bash
