@@ -220,3 +220,29 @@ func TestPlayerMatches_RejectsBadOffset(t *testing.T) {
 		}
 	}
 }
+
+func TestPlayerMatches_RefreshSyncsSoonerThanAPlainView(t *testing.T) {
+	s, riot := newMatchServer(t)
+	getMatches(t, s, meMatches)
+	waitForJob(t, s, matchSyncKey("me"))
+	calls := riot.matchCalls.Load()
+
+	// Just synced: a refresh is answered, not run.
+	_, resp := getMatches(t, s, meMatches+"&refresh=1")
+	if resp.Refreshing || !resp.RefreshTooSoon || riot.matchCalls.Load() != calls {
+		t.Errorf("a refresh right after a sync should do nothing, got %+v", resp)
+	}
+
+	// A minute old: too fresh for a plain view, fine for a refresh.
+	if _, err := s.Store.Pool.Exec(t.Context(),
+		`UPDATE ingest_puuid_queue SET last_crawled_at = now() - interval '1 minute' WHERE puuid = 'me'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, resp = getMatches(t, s, meMatches); resp.Refreshing {
+		t.Fatal("a plain view shouldn't sync a history that is a minute old")
+	}
+	if _, resp = getMatches(t, s, meMatches+"&refresh=1"); !resp.Refreshing || resp.RefreshTooSoon {
+		t.Errorf("a refresh should start a sync, got %+v", resp)
+	}
+	waitForJob(t, s, matchSyncKey("me"))
+}

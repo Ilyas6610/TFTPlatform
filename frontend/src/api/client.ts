@@ -151,10 +151,14 @@ export interface PlayerMatches {
   refreshing: boolean;
   stale: boolean;
   staleReason?: string;
+  /** Answer to refresh: it was synced moments ago, so nothing was started. */
+  refreshTooSoon?: boolean;
 }
 
-export function getPlayerMatches(puuid: string, region: string, limit = 20, offset = 0) {
+/** refresh asks the server to sync the newest games now rather than waiting for the history to age (the Update button). */
+export function getPlayerMatches(puuid: string, region: string, limit = 20, offset = 0, refresh = false) {
   const q = new URLSearchParams({ limit: String(limit), offset: String(offset), region });
+  if (refresh) q.set("refresh", "1");
   return get<PlayerMatches>(`/api/v1/players/${encodeURIComponent(puuid)}/matches?${q}`);
 }
 
