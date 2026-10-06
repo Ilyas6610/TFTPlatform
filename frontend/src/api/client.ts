@@ -273,6 +273,18 @@ export interface LeaderboardEntry {
   wins: number;
   losses: number;
   fetchedAt: string;
+  /** Season ranked games and top 4 share, from Riot's league entry (its wins are top 4s). */
+  games: number;
+  top4Rate: number | null;
+  /** Only the ranked games we have stored; null when there are none. */
+  stored: LeaderboardStoredStats | null;
+}
+
+export interface LeaderboardStoredStats {
+  games: number;
+  winRate: number;
+  top4Rate: number;
+  avgPlacement: number;
 }
 
 // The server refreshes the snapshot from Riot when it's more than a couple
