@@ -181,12 +181,15 @@ func TestPlayerRankHistory(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 	NewRouter(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/players/me/ranks", nil))
-	var res map[string][]RankPoint
+	var res RankHistoryResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
 		t.Fatalf("%v: %s", err, rec.Body)
 	}
-	ranked := res["RANKED_TFT"]
-	if len(ranked) != 2 || ranked[0].Value != 2780 || ranked[1].Value != 2810 || len(res["RANKED_TFT_DOUBLE_UP"]) != 1 {
-		t.Errorf("history = %+v, want Diamond I 80 (2780) -> Master 10 (2810) and one Double Up point", res)
+	ranked := res.History["RANKED_TFT"]
+	if len(ranked) != 2 || ranked[0].Value != 2780 || ranked[1].Value != 2810 || len(res.History["RANKED_TFT_DOUBLE_UP"]) != 1 {
+		t.Errorf("history = %+v, want Diamond I 80 (2780) -> Master 10 (2810) and one Double Up point", res.History)
+	}
+	if res.Estimated == nil || len(res.Estimated) != 0 {
+		t.Errorf("estimated = %+v, want an empty list (no games stored)", res.Estimated)
 	}
 }

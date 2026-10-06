@@ -96,3 +96,43 @@ func gamesIn(games []store.TimedGame, from, to time.Time) []store.TimedGame {
 	}
 	return out
 }
+
+// typicalLP is a rough LP change per placement in Ranked (index 0 = 1st).
+// Real gains depend on hidden MMR (+30..+60 for a win, more or less per
+// player), so this only sketches the shape of a past climb.
+var typicalLP = [8]int{40, 30, 20, 10, -10, -20, -30, -40}
+
+// EstimatedPoint is an estimated standing right after a past game.
+type EstimatedPoint struct {
+	MatchID      string    `json:"matchId"`
+	GameDatetime time.Time `json:"gameDatetime"`
+	Placement    int       `json:"placement"`
+	Value        int       `json:"value"` // on Value's linear scale
+}
+
+// EstimateBefore walks back from the first real snapshot through the
+// stored Ranked games before it (same set, oldest first in games), undoing
+// a typical LP change per placement, so the line ends exactly at first.
+// It returns the estimated standing after each of those games, oldest
+// first; nil when there's nothing before the first snapshot.
+func EstimateBefore(first store.RankSnapshot, games []store.TimedGame, set int) []EstimatedPoint {
+	var before []store.TimedGame
+	for _, g := range games {
+		if g.QueueID == 1100 && g.SetNumber == set && g.GameDatetime.Before(first.FetchedAt) {
+			before = append(before, g)
+		}
+	}
+	out := make([]EstimatedPoint, len(before))
+	v := Value(first)
+	for i := len(before) - 1; i >= 0; i-- {
+		g := before[i]
+		out[i] = EstimatedPoint{MatchID: g.MatchID, GameDatetime: g.GameDatetime, Placement: g.Placement, Value: v}
+		if g.Placement >= 1 && g.Placement <= 8 {
+			v -= typicalLP[g.Placement-1]
+		}
+		if v < 0 {
+			v = 0
+		}
+	}
+	return out
+}

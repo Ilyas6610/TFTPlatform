@@ -1,30 +1,60 @@
 import { useEffect, useState } from "react";
-import { RankPoint, getRankHistory } from "../api/client";
+import { RankHistory, getRankHistory } from "../api/client";
 import { LPChart } from "./LPChart";
 
+const QUEUES: [string, string][] = [
+  ["RANKED_TFT", "Ranked"],
+  ["RANKED_TFT_DOUBLE_UP", "Double Up"],
+];
+
 /**
- * A compact LP-over-time chart for one ranked queue, from recorded rank
- * snapshots; sits in the profile header under the rank badges. reloadKey
- * changes when a sync may have recorded a new snapshot.
+ * The player's LP over time per ranked queue: recorded rank snapshots, and
+ * for Ranked an estimate for the older stored games. reloadKey changes when
+ * a sync may have recorded a new snapshot.
  */
-export function LPHistory({ puuid, queue, reloadKey }: { puuid: string; queue: string; reloadKey: string }) {
-  const [history, setHistory] = useState<Record<string, RankPoint[]> | null>(null);
+export function LPHistory({ puuid, reloadKey }: { puuid: string; reloadKey: string }) {
+  const [data, setData] = useState<RankHistory | null>(null);
+  const [queue, setQueue] = useState("RANKED_TFT");
 
   useEffect(() => {
     let cancelled = false;
     getRankHistory(puuid)
-      .then((h) => !cancelled && setHistory(h))
-      .catch(() => !cancelled && setHistory(null));
+      .then((d) => {
+        if (cancelled) return;
+        setData(d);
+        const h = d.history;
+        // Default to a queue that has data.
+        setQueue((q) => (h[q]?.length ? q : (QUEUES.find(([k]) => h[k]?.length)?.[0] ?? q)));
+      })
+      .catch(() => !cancelled && setData(null));
     return () => {
       cancelled = true;
     };
   }, [puuid, reloadKey]);
 
-  const points = history?.[queue] ?? [];
-  if (points.length === 0) return null;
+  const available = QUEUES.filter(([k]) => data?.history[k]?.length);
+  if (!data || available.length === 0) return null;
+  const points = data.history[queue] ?? [];
+
   return (
-    <div className="lp-mini">
-      <LPChart points={points} />
+    <div className="panel">
+      <div className="history-head">
+        <h3>LP history</h3>
+        {available.length > 1 && (
+          <div className="mode-tabs" role="tablist" aria-label="Ranked queue">
+            {available.map(([k, label]) => (
+              <button type="button" role="tab" key={k} aria-selected={queue === k} onClick={() => setQueue(k)}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <LPChart points={points} estimated={queue === "RANKED_TFT" ? data.estimated : []} />
+      <p className="muted lp-note">
+        Recorded since {new Date(points[0].fetchedAt).toLocaleDateString()}: Riot keeps no past LP, so the line before
+        that is estimated and new points are added whenever the profile updates.
+      </p>
     </div>
   );
 }

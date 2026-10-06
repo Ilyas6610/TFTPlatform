@@ -64,3 +64,19 @@ func TestAttribute(t *testing.T) {
 		}
 	}
 }
+
+func TestEstimateBefore(t *testing.T) {
+	first := snap("RANKED_TFT", "MASTER", "I", 100, 10, 10, 3*time.Hour) // 2900
+	games := []store.TimedGame{
+		{MatchID: "old-set", QueueID: 1100, SetNumber: 17, Placement: 1, GameDatetime: t0},
+		{MatchID: "A", QueueID: 1100, SetNumber: 18, Placement: 1, GameDatetime: t0.Add(time.Hour)},
+		{MatchID: "N", QueueID: 1090, SetNumber: 18, Placement: 8, GameDatetime: t0.Add(90 * time.Minute)},
+		{MatchID: "B", QueueID: 1100, SetNumber: 18, Placement: 8, GameDatetime: t0.Add(2 * time.Hour)},
+		{MatchID: "after", QueueID: 1100, SetNumber: 18, Placement: 1, GameDatetime: t0.Add(4 * time.Hour)},
+	}
+	got := EstimateBefore(first, games, 18)
+	// After B: 2900 (matches the snapshot); before B (-40) = after A: 2940.
+	if len(got) != 2 || got[0].MatchID != "A" || got[0].Value != 2940 || got[1].MatchID != "B" || got[1].Value != 2900 {
+		t.Fatalf("got %+v", got)
+	}
+}

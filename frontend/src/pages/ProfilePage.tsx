@@ -73,15 +73,9 @@ export default function ProfilePage() {
   const names = useMemo(() => buildNames(setData), [setData]);
   const costs = useMemo(() => new Map(setData?.units.map((u) => [u.apiName, u.cost]) ?? []), [setData]);
   const [ranks, setRanks] = useState<RankEntry[]>([]);
-  // Which ranked queue the header's LP chart shows (click a rank badge).
-  const [lpQueue, setLpQueue] = useState("RANKED_TFT");
   const onFirstPage = (p: PlayerMatches) => {
     setRecent(p.matches);
-    if (p.ranks) {
-      setRanks(p.ranks);
-      const queues = p.ranks.map((r) => r.queueType);
-      setLpQueue((q) => (queues.includes(q) || queues.length === 0 ? q : queues[0]));
-    }
+    if (p.ranks) setRanks(p.ranks);
   };
   // Games were added to the history (newest synced or an older page fetched):
   // stats are computed from stored games, so reload them.
@@ -141,23 +135,18 @@ export default function ProfilePage() {
           {ranks.length > 0 && (
             <div className="rank-badges">
               {ranks.map((r) => (
-                <RankBadge
-                  key={r.queueType}
-                  entry={r}
-                  selected={ranks.length > 1 && lpQueue === r.queueType}
-                  onSelect={() => setLpQueue(r.queueType)}
-                />
+                <RankBadge key={r.queueType} entry={r} />
               ))}
             </div>
           )}
-          {ranks.length > 0 && (
-            <LPHistory
-              puuid={profile.puuid}
-              queue={lpQueue}
-              reloadKey={ranks.map((r) => `${r.queueType}:${r.leaguePoints}:${r.wins + r.losses}`).join(",")}
-            />
-          )}
         </div>
+      )}
+
+      {profile && (
+        <LPHistory
+          puuid={profile.puuid}
+          reloadKey={ranks.map((r) => `${r.queueType}:${r.leaguePoints}:${r.wins + r.losses}`).join(",")}
+        />
       )}
 
       {profile && (
@@ -190,15 +179,13 @@ export default function ProfilePage() {
 const QUEUE_LABEL: Record<string, string> = { RANKED_TFT: "Ranked", RANKED_TFT_DOUBLE_UP: "Double Up" };
 const APEX = new Set(["MASTER", "GRANDMASTER", "CHALLENGER"]);
 
-function RankBadge({ entry: r, selected, onSelect }: { entry: RankEntry; selected: boolean; onSelect: () => void }) {
+function RankBadge({ entry: r }: { entry: RankEntry }) {
   const games = r.wins + r.losses;
   const tier = r.tier.charAt(0) + r.tier.slice(1).toLowerCase();
   return (
-    <button
-      type="button"
-      className={`rank-badge tier-${r.tier.toLowerCase()}${selected ? " selected" : ""}`}
-      title={`As of ${new Date(r.fetchedAt).toLocaleString()} · click for its LP history`}
-      onClick={onSelect}
+    <div
+      className={`rank-badge tier-${r.tier.toLowerCase()}`}
+      title={`As of ${new Date(r.fetchedAt).toLocaleString()}`}
     >
       <span className="muted">{QUEUE_LABEL[r.queueType] ?? r.queueType}</span>
       <strong>
@@ -208,6 +195,6 @@ function RankBadge({ entry: r, selected, onSelect }: { entry: RankEntry; selecte
       <span className="muted">
         {games} games · {r.wins} top 4 ({Math.round((r.wins / Math.max(1, games)) * 100)}%)
       </span>
-    </button>
+    </div>
   );
 }

@@ -187,23 +187,49 @@ type RankPoint struct {
 	Value int `json:"value"`
 }
 
-// handlePlayerRankHistory serves GET /api/v1/players/{puuid}/ranks: every
-// recorded rank change per ranked queue, oldest first. Snapshots exist from
-// the player's first profile sync (or apex ladder refresh) on.
+// RankHistoryResponse is a player's recorded rank changes per ranked queue
+// (oldest first) and, for Ranked, an estimate for the stored games before
+// the first recorded rank.
+type RankHistoryResponse struct {
+	History map[string][]RankPoint `json:"history"`
+	// Estimated works back from the first Ranked snapshot through earlier
+	// stored Ranked games of the current set with a typical LP change per
+	// placement (lp.EstimateBefore). An estimate, not Riot data.
+	Estimated []lp.EstimatedPoint `json:"estimated"`
+}
+
+// handlePlayerRankHistory serves GET /api/v1/players/{puuid}/ranks. Real
+// snapshots exist from the player's first profile sync (or apex ladder
+// refresh) on; Riot keeps no past LP, hence the estimate.
 func (s *Server) handlePlayerRankHistory(w http.ResponseWriter, r *http.Request) {
 	puuid := r.PathValue("puuid")
 	if !validPUUID(puuid) {
 		writeError(w, http.StatusBadRequest, "invalid_puuid", "puuid must be 1-100 letters, digits, '-' or '_'")
 		return
 	}
-	history, err := s.Store.RankHistory(r.Context(), puuid)
+	ctx := r.Context()
+	history, err := s.Store.RankHistory(ctx, puuid)
 	if err != nil {
 		writeDBError(w, r, err)
 		return
 	}
-	out := map[string][]RankPoint{}
+	resp := RankHistoryResponse{History: map[string][]RankPoint{}, Estimated: []lp.EstimatedPoint{}}
 	for _, h := range history {
-		out[h.QueueType] = append(out[h.QueueType], RankPoint{RankSnapshot: h, Value: lp.Value(h)})
+		resp.History[h.QueueType] = append(resp.History[h.QueueType], RankPoint{RankSnapshot: h, Value: lp.Value(h)})
 	}
-	writeJSON(w, http.StatusOK, out)
+	if ranked := resp.History["RANKED_TFT"]; len(ranked) > 0 {
+		games, err := s.Store.PlayerGamesSince(ctx, puuid, time.Time{})
+		if err != nil {
+			writeDBError(w, r, err)
+			return
+		}
+		set := 0
+		for _, g := range games {
+			set = max(set, g.SetNumber) // LP resets each set: estimate the current one
+		}
+		if est := lp.EstimateBefore(ranked[0].RankSnapshot, games, set); est != nil {
+			resp.Estimated = est
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
 }

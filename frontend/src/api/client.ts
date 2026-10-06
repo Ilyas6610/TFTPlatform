@@ -70,9 +70,21 @@ export interface RankPoint extends RankEntry {
   value: number;
 }
 
-/** Every recorded rank change per ranked queue, oldest first. */
+/** An estimated Ranked standing right after an older game (before the first recorded rank). */
+export interface EstimatedLP {
+  matchId: string;
+  gameDatetime: string;
+  placement: number;
+  value: number; // same linear scale as RankPoint.value
+}
+
+export interface RankHistory {
+  history: Record<string, RankPoint[]>; // recorded rank changes per queue, oldest first
+  estimated: EstimatedLP[]; // Ranked only, oldest first; typical LP per placement
+}
+
 export function getRankHistory(puuid: string) {
-  return get<Record<string, RankPoint[]>>(`/api/v1/players/${encodeURIComponent(puuid)}/ranks`);
+  return get<RankHistory>(`/api/v1/players/${encodeURIComponent(puuid)}/ranks`);
 }
 
 export interface RankEntry {
