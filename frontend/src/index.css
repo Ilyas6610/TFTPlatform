@@ -1606,6 +1606,33 @@ tr.dim {
   font-size: 1.15rem;
 }
 
+.history-partner {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-partner a {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.history-partner a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+table.partners th {
+  font-weight: normal;
+  font-size: 0.8rem;
+}
+
+table.partners td:first-child {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .history-traits {
   display: flex;
   flex-wrap: wrap;

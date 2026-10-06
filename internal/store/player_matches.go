@@ -26,6 +26,9 @@ type PlayerMatch struct {
 	Level        int           `json:"level"`
 	Units        []BoardUnit   `json:"units"`
 	Traits       []ActiveTrait `json:"traits"` // active only, most units first
+	// Double Up only: the teammate and the team's placement (1-4).
+	Partner *PlayerRef `json:"partner,omitempty"`
+	Team    int        `json:"team,omitempty"`
 }
 
 type BoardUnit struct {
@@ -46,13 +49,16 @@ type ActiveTrait struct {
 func (s *Store) PlayerMatches(ctx context.Context, puuid string, offset, limit int) ([]PlayerMatch, error) {
 	rows, err := s.Pool.Query(ctx, `
 		SELECT mp.match_id, m.game_datetime, m.tft_set_number, m.queue_id, coalesce(m.game_version, ''), mp.placement, coalesce(mp.level, 0),
-			`+arrayOr("mp.units")+`, `+arrayOr("mp.traits")+`
+			`+arrayOr("mp.units")+`, `+arrayOr("mp.traits")+`,
+			pt.puuid, `+riotIDOf("acc", "m", "pt.puuid")+`
 		FROM match_participants mp
 		JOIN matches m USING (match_id)
+		LEFT JOIN match_participants pt ON m.queue_id = $4 AND `+teammateJoin+`
+		LEFT JOIN accounts acc ON acc.puuid = pt.puuid
 		WHERE mp.puuid = $1
 		ORDER BY m.game_datetime DESC, mp.match_id DESC
 		OFFSET $2 LIMIT $3
-	`, puuid, offset, limit)
+	`, puuid, offset, limit, DoubleUpQueue)
 	if err != nil {
 		return nil, err
 	}
@@ -62,10 +68,16 @@ func (s *Store) PlayerMatches(ctx context.Context, puuid string, offset, limit i
 	for rows.Next() {
 		var m PlayerMatch
 		var unitsJSON, traitsJSON []byte
-		if err := rows.Scan(&m.MatchID, &m.GameDatetime, &m.TFTSetNumber, &m.QueueID, &m.GameVersion, &m.Placement, &m.Level, &unitsJSON, &traitsJSON); err != nil {
+		var partner, name, tag *string
+		if err := rows.Scan(&m.MatchID, &m.GameDatetime, &m.TFTSetNumber, &m.QueueID, &m.GameVersion, &m.Placement, &m.Level, &unitsJSON, &traitsJSON,
+			&partner, &name, &tag); err != nil {
 			return nil, err
 		}
 		m.Units, m.Traits = parseBoard(unitsJSON, traitsJSON)
+		if partner != nil {
+			m.Partner = &PlayerRef{PUUID: *partner, GameName: deref(name), TagLine: deref(tag)}
+			m.Team = (m.Placement + 1) / 2
+		}
 		out = append(out, m)
 	}
 	return out, rows.Err()

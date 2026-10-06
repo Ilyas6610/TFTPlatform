@@ -3,7 +3,8 @@
 // table.
 
 import { useEffect, useMemo, useState } from "react";
-import { ExploreRow, PlacementStats, SetData } from "../api/client";
+import { Link } from "react-router-dom";
+import { ExploreRow, PlacementStats, PlayerRef, SetData } from "../api/client";
 import { GameIcon } from "../assets/tft";
 
 export const pct = (n: number) => `${Math.round(n * 100)}%`;
@@ -18,6 +19,25 @@ export const QUEUE_NAMES: Record<number, string> = {
 };
 
 export const queueName = (id: number) => QUEUE_NAMES[id] ?? `Queue ${id}`;
+
+/**
+ * A player's Riot ID linking to their profile on region. Inside a clickable
+ * row the click stays on the link. Without a known Riot ID there's no profile
+ * URL, so it's plain text.
+ */
+export function PlayerName({ player, region }: { player: PlayerRef; region: string }) {
+  if (!player.gameName) return <span className="muted">unknown player</span>;
+  return (
+    <Link
+      to={`/players/${region}/${encodeURIComponent(player.gameName)}/${encodeURIComponent(player.tagLine ?? "")}`}
+      title={player.tagLine ? `${player.gameName}#${player.tagLine}` : player.gameName}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      {player.gameName}
+    </Link>
+  );
+}
 
 export function StatCells({ row: r, total }: { row: PlacementStats; total: number }) {
   return (

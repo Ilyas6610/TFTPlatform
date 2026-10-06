@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { PlayerMatchSummary, PlayerMatches, getPlayerMatches, staleSuffix } from "../api/client";
 import { GameIcon } from "../assets/tft";
 import { CURRENT_TFT_SET } from "../config";
-import { Names, avg, pct, queueName } from "./stats";
+import { Names, PlayerName, avg, pct, queueName } from "./stats";
 
 const PAGE = 20;
 // The server pages back at most this far (it mirrors matchHistoryMaxOffset).
@@ -12,7 +12,7 @@ const MAX_OFFSET = 500;
 // page at this interval so they appear as they're stored.
 const POLL_MS = 3000;
 
-function timeAgo(iso: string): string {
+export function timeAgo(iso: string): string {
   const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
   if (mins < 60) return `${Math.max(1, mins)}m ago`;
   const hours = Math.floor(mins / 60);
@@ -176,6 +176,11 @@ export function MatchHistory({
                     {queueName(m.queueId)}
                     {m.lp && <LPBadge change={m.lp} />}
                   </span>
+                  {m.partner && (
+                    <span className="muted history-partner">
+                      team #{m.team} with <PlayerName player={m.partner} region={region} />
+                    </span>
+                  )}
                   <span className="muted" title={new Date(m.gameDatetime).toLocaleString()}>
                     {timeAgo(m.gameDatetime)} · lvl {m.level}
                     {m.tftSetNumber && m.tftSetNumber !== CURRENT_TFT_SET ? ` · set ${m.tftSetNumber}` : ""}

@@ -193,3 +193,80 @@ func TestPlayerRankHistory(t *testing.T) {
 		t.Errorf("estimated = %+v, want an empty list (no games stored)", res.Estimated)
 	}
 }
+
+func TestPlayerStats_DoubleUpPartners(t *testing.T) {
+	s := &Server{Store: storetest.New(t)}
+	ctx := context.Background()
+	for _, p := range []string{"me", "pal", "foe1", "foe2"} {
+		if err := s.Store.UpsertAccountPUUIDOnly(ctx, p, "americas"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.Store.UpsertAccount(ctx, store.Account{PUUID: "named", GameName: "Named", TagLine: "NA1", RoutingRegion: "americas"}); err != nil {
+		t.Fatal(err)
+	}
+	// "pal" has no resolved Riot ID; the payload carries one.
+	payload := []byte(`{"info":{"participants":[{"puuid":"pal","riotIdGameName":"Pal","riotIdTagline":"EUW"}]}}`)
+	game := func(id string, queue int, at int64, places map[string]int) {
+		t.Helper()
+		parts := map[string]store.MatchParticipant{}
+		for p, pl := range places {
+			parts[p] = store.MatchParticipant{PUUID: p, Placement: pl, Level: 8, Units: []byte(`[]`), Traits: []byte(`[]`), RawParticipant: []byte(`{}`)}
+		}
+		if err := s.Store.InsertMatchWithParticipants(ctx, store.Match{
+			MatchID: id, RoutingRegion: "americas", GameDatetime: time.Unix(at, 0),
+			GameVersion: "x", TFTSetNumber: 18, QueueID: queue, TFTGameType: "pairs", RawPayload: payload,
+		}, parts); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Teammates are placement pairs: 1-2, 3-4, 5-6, 7-8.
+	game("NA1_1", 1160, 1000, map[string]int{"me": 1, "pal": 2, "foe1": 3, "foe2": 4})
+	game("NA1_2", 1160, 2000, map[string]int{"me": 4, "pal": 3, "foe1": 1, "foe2": 2})
+	game("NA1_3", 1160, 3000, map[string]int{"me": 6, "named": 5, "pal": 7})
+	// Ranked placements 1 and 2 aren't teammates.
+	game("NA1_4", 1100, 4000, map[string]int{"me": 1, "pal": 2})
+
+	get := func(path string) PlayerStatsResponse {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		NewRouter(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("got %d: %s", rec.Code, rec.Body)
+		}
+		var res PlayerStatsResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+	res := get("/api/v1/players/me/stats?set=18")
+	if len(res.Partners) != 2 {
+		t.Fatalf("partners = %+v, want pal and named", res.Partners)
+	}
+	pal, named := res.Partners[0], res.Partners[1]
+	if pal.PUUID != "pal" || pal.Games != 2 || pal.AvgTeamPlacement != 1.5 || pal.Top2Rate != 1 || pal.WinRate != 0.5 ||
+		pal.GameName != "Pal" || pal.TagLine != "EUW" || !pal.LastPlayed.Equal(time.Unix(2000, 0)) {
+		t.Errorf("pal = %+v, want 2 games, team 1 and 2, name from the payload", pal)
+	}
+	if named.PUUID != "named" || named.Games != 1 || named.AvgTeamPlacement != 3 || named.Top2Rate != 0 || named.GameName != "Named" {
+		t.Errorf("named = %+v, want 1 game as team 3, name from accounts", named)
+	}
+	if res := get("/api/v1/players/me/stats?set=18&queue=1100"); len(res.Partners) != 0 {
+		t.Errorf("ranked-only partners = %+v, want none", res.Partners)
+	}
+
+	_, page := getMatches(t, s, "/api/v1/players/me/matches")
+	var got []string
+	for _, m := range page.Matches {
+		p := "-"
+		if m.Partner != nil {
+			p = fmt.Sprintf("%s:%s#%s team %d", m.Partner.PUUID, m.Partner.GameName, m.Partner.TagLine, m.Team)
+		}
+		got = append(got, p)
+	}
+	want := []string{"-", "named:Named#NA1 team 3", "pal:Pal#EUW team 2", "pal:Pal#EUW team 1"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("history partners = %v, want %v", got, want)
+	}
+}

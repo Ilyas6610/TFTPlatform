@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  DoubleUpPartner,
   ExploreRow,
   MetaComp,
   PlayerMatchSummary,
@@ -10,8 +11,9 @@ import {
 } from "../api/client";
 import { GameIcon } from "../assets/tft";
 import { CompName } from "./CompName";
+import { timeAgo } from "./MatchHistory";
 import { SetBackfill } from "./SetBackfill";
-import { Names, avg, pct, placementTone, queueName } from "./stats";
+import { Names, PlayerName, avg, pct, placementTone, queueName } from "./stats";
 
 // Breakdown rows from fewer games than this are shown but dimmed: one lucky
 // game says little about a unit.
@@ -222,6 +224,7 @@ export function PlayerStats({
                   </table>
                 </div>
               )}
+              {stats.partners.length > 0 && <Partners partners={stats.partners} region={region} />}
             </div>
           </>
         )}
@@ -297,6 +300,58 @@ export function PlayerStats({
 
 // Rows shown before "Show all".
 const PREVIEW_ROWS = 6;
+
+/** Team placement tone, on the same scale as placementTone (team 2.25 ≈ 4th, 2.75 ≈ 5th). */
+function teamTone(p: DoubleUpPartner): string {
+  if (p.games < 5) return "muted";
+  return p.avgTeamPlacement <= 2.25 ? "good" : p.avgTeamPlacement >= 2.75 ? "bad" : "";
+}
+
+/** Double Up teammates: games together, average team place (1-4) and top 2 rate. */
+function Partners({ partners, region }: { partners: DoubleUpPartner[]; region: string }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? partners : partners.slice(0, PREVIEW_ROWS);
+  return (
+    <div>
+      <div className="meta-section-title muted">Double Up partners</div>
+      <table className="compact partners">
+        <thead>
+          <tr className="muted">
+            <th />
+            <th className="num">games</th>
+            <th className="num" title="Average team placement (1-4)">
+              team
+            </th>
+            <th className="num" title="Team finished 1st or 2nd">
+              top 2
+            </th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {shown.map((p) => (
+            <tr key={p.puuid}>
+              <td>
+                <PlayerName player={p} region={region} />
+              </td>
+              <td className="num">{p.games}</td>
+              <td className={`num ${teamTone(p)}`}>{avg(p.avgTeamPlacement)}</td>
+              <td className="num">{pct(p.top2Rate)}</td>
+              <td className="muted" title={new Date(p.lastPlayed).toLocaleString()}>
+                {timeAgo(p.lastPlayed)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {partners.length > PREVIEW_ROWS && (
+        <button type="button" className="show-more" onClick={() => setAll(!all)}>
+          {all ? "Show less" : `Show all ${partners.length}`}
+        </button>
+      )}
+    </div>
+  );
+}
 
 /** Trait tier rows merged into one row per trait (a board has one tier per trait). */
 function byTrait(rows: ExploreRow[]): ExploreRow[] {

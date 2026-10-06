@@ -18,6 +18,8 @@ const (
 	playerStatsRows = 15
 	// playerMaxComps bounds the player's own comps.
 	playerMaxComps = 6
+	// playerMaxPartners bounds the Double Up partners listed.
+	playerMaxPartners = 20
 )
 
 // PlayerStatsResponse is a player's results in one set (and optional queue
@@ -39,6 +41,9 @@ type PlayerStatsResponse struct {
 	// Patches splits the games by patch, newest first (queue scope applies,
 	// level scope doesn't).
 	Patches []PatchStats `json:"patches"`
+	// Partners are the player's Double Up teammates in the set, most games
+	// first; empty when the queue scope leaves out Double Up.
+	Partners []store.Partner `json:"partners"`
 }
 
 // PatchStats is a player's results on one patch. LP is the known LP change
@@ -112,9 +117,18 @@ func (s *Server) handlePlayerStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	partners := []store.Partner{}
+	if len(f.Queues) == 0 || slices.Contains(f.Queues, store.DoubleUpQueue) {
+		if partners, err = s.Store.PlayerPartners(ctx, puuid, f.Set, playerMaxPartners); err != nil {
+			writeDBError(w, r, err)
+			return
+		}
+	}
+
 	writeJSON(w, http.StatusOK, PlayerStatsResponse{
 		Sets: sets, Summary: ex.Summary, Baseline: ex.Baseline, Queues: queues,
 		Units: ex.Units, Items: ex.Items, Traits: ex.Traits, Comps: playerComps, Patches: patches,
+		Partners: partners,
 	})
 }
 

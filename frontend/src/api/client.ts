@@ -63,6 +63,25 @@ export interface PlayerMatchSummary {
   // LP gained/lost, when rank snapshots bracket the game; games > 1 means
   // the change covers that many games (shown on the newest of them).
   lp?: { delta: number; games: number };
+  // Double Up only: the teammate and the team's placement (1-4).
+  partner?: PlayerRef;
+  team?: number;
+}
+
+/** A player by PUUID with the Riot ID we know (from Riot's match data when not resolved). */
+export interface PlayerRef {
+  puuid: string;
+  gameName?: string;
+  tagLine?: string;
+}
+
+/** A Double Up teammate and the team's results together. */
+export interface DoubleUpPartner extends PlayerRef {
+  games: number;
+  avgTeamPlacement: number; // 1-4
+  top2Rate: number;
+  winRate: number;
+  lastPlayed: string;
 }
 
 /** A rank snapshot with its place on one linear LP scale (100 per division, Master = 2800). */
@@ -155,6 +174,8 @@ export interface PlayerStats {
   comps: MetaComp[]; // the player's own comps (2+ games)
   // By patch, newest first; lp is the known change over lpGames ranked games.
   patches: (PlacementStats & { patch: string; lp: number; lpGames: number })[];
+  // Double Up teammates in the set, most games first (none when the queue scope leaves out Double Up).
+  partners: DoubleUpPartner[];
 }
 
 /** query: set and optional queue/level. */
