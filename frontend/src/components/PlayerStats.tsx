@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import {
   DoubleUpPartner,
   ExploreRow,
+  PlacementStats,
+  PlayerSessions,
   MetaComp,
   PlayerMatchSummary,
   PlayerStats as Stats,
@@ -224,6 +226,7 @@ export function PlayerStats({
                   </table>
                 </div>
               )}
+              {stats.sessions.sessions > 1 && <Sessions sessions={stats.sessions} />}
               {stats.partners.length > 0 && <Partners partners={stats.partners} region={region} />}
             </div>
           </>
@@ -300,6 +303,45 @@ export function PlayerStats({
 
 // Rows shown before "Show all".
 const PREVIEW_ROWS = 6;
+
+/** One sessions row; rows from few games are dimmed. */
+function SessionRow({ label, stats: r, split }: { label: string; stats: PlacementStats; split?: boolean }) {
+  if (r.boards === 0) return null;
+  return (
+    <tr className={`${r.boards < MIN_GAMES ? "muted" : ""}${split ? " sessions-split" : ""}`}>
+      <td>{label}</td>
+      <td className="num">{r.boards}</td>
+      <td className={`num ${placementTone(r)}`}>{avg(r.avgPlacement)}</td>
+      <td className="num">{pct(r.top4Rate)}</td>
+    </tr>
+  );
+}
+
+/**
+ * Session patterns: results by game number in a session and the game after
+ * bad ones. Sessions are split by 30-minute breaks between stored games, so
+ * unstored games can split one ("Load whole set" fills them in).
+ */
+function Sessions({ sessions: s }: { sessions: PlayerSessions }) {
+  return (
+    <div>
+      <div className="meta-section-title muted">Sessions</div>
+      <p className="muted sessions-summary">
+        {s.sessions} sessions · {s.avgGames.toFixed(1)} games on average · longest {s.longest}
+      </p>
+      <table className="compact">
+        <tbody>
+          {s.byPosition.map((p) => (
+            <SessionRow key={p.game} label={p.game >= 5 ? "Game 5+" : `Game ${p.game}`} stats={p} />
+          ))}
+          <SessionRow label="After a top 4" stats={s.afterTop4} split />
+          <SessionRow label="After a bottom 4" stats={s.afterBottom4} />
+          <SessionRow label="After two bottom 4s" stats={s.afterTwoBottom4} />
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 /** Team placement tone, on the same scale as placementTone (team 2.25 ≈ 4th, 2.75 ≈ 5th). */
 function teamTone(p: DoubleUpPartner): string {

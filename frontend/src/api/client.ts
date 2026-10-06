@@ -176,6 +176,19 @@ export interface PlayerStats {
   patches: (PlacementStats & { patch: string; lp: number; lpGames: number })[];
   // Double Up teammates in the set, most games first (none when the queue scope leaves out Double Up).
   partners: DoubleUpPartner[];
+  sessions: PlayerSessions;
+}
+
+/** Play sessions (games less than 30 minutes apart) in the set and queue scope. */
+export interface PlayerSessions {
+  sessions: number;
+  avgGames: number;
+  longest: number;
+  byPosition: (PlacementStats & { game: number })[]; // game 5 = 5th and later
+  // The next game in the same session after a top 4, a bottom 4, and two bottom 4s in a row.
+  afterTop4: PlacementStats;
+  afterBottom4: PlacementStats;
+  afterTwoBottom4: PlacementStats;
 }
 
 /** query: set and optional queue/level. */

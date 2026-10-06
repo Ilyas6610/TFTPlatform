@@ -9,6 +9,7 @@ import (
 
 	"tft-platform/internal/comps"
 	"tft-platform/internal/lp"
+	"tft-platform/internal/sessions"
 	"tft-platform/internal/setdata"
 	"tft-platform/internal/store"
 )
@@ -44,6 +45,9 @@ type PlayerStatsResponse struct {
 	// Partners are the player's Double Up teammates in the set, most games
 	// first; empty when the queue scope leaves out Double Up.
 	Partners []store.Partner `json:"partners"`
+	// Sessions are play sessions in the set and queue scope (level scope
+	// doesn't apply): results by game in session and after bad games.
+	Sessions sessions.Result `json:"sessions"`
 }
 
 // PatchStats is a player's results on one patch. LP is the known LP change
@@ -111,10 +115,21 @@ func (s *Server) handlePlayerStats(w http.ResponseWriter, r *http.Request) {
 		playerComps = []comps.Comp{}
 	}
 
-	patches, err := s.playerPatches(ctx, puuid, f)
+	games, err := s.Store.PlayerGamesSince(ctx, puuid, time.Time{})
 	if err != nil {
 		writeDBError(w, r, err)
 		return
+	}
+	patches, err := s.playerPatches(ctx, puuid, f, games)
+	if err != nil {
+		writeDBError(w, r, err)
+		return
+	}
+	var inScope []store.TimedGame
+	for _, g := range games {
+		if g.SetNumber == f.Set && (len(f.Queues) == 0 || slices.Contains(f.Queues, g.QueueID)) {
+			inScope = append(inScope, g)
+		}
 	}
 
 	partners := []store.Partner{}
@@ -128,17 +143,14 @@ func (s *Server) handlePlayerStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, PlayerStatsResponse{
 		Sets: sets, Summary: ex.Summary, Baseline: ex.Baseline, Queues: queues,
 		Units: ex.Units, Items: ex.Items, Traits: ex.Traits, Comps: playerComps, Patches: patches,
-		Partners: partners,
+		Partners: partners, Sessions: sessions.Analyze(inScope),
 	})
 }
 
-// playerPatches groups the player's games in f's set and queues by patch,
-// with the LP change rank snapshots account for.
-func (s *Server) playerPatches(ctx context.Context, puuid string, f store.ExploreFilter) ([]PatchStats, error) {
-	games, err := s.Store.PlayerGamesSince(ctx, puuid, time.Time{})
-	if err != nil {
-		return nil, err
-	}
+// playerPatches groups the player's games (all of them, oldest first) in
+// f's set and queues by patch, with the LP change rank snapshots account
+// for.
+func (s *Server) playerPatches(ctx context.Context, puuid string, f store.ExploreFilter, games []store.TimedGame) ([]PatchStats, error) {
 	cal, err := s.Store.PatchCalendar(ctx)
 	if err != nil {
 		return nil, err

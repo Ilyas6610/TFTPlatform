@@ -1944,3 +1944,12 @@ table.partners td:first-child {
   gap: 2px;
   vertical-align: middle;
 }
+
+.sessions-summary {
+  margin: 0 0 4px;
+  font-size: 0.85rem;
+}
+
+.sessions-split td {
+  border-top: 2px solid var(--border);
+}
