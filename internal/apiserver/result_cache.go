@@ -9,11 +9,10 @@ import (
 )
 
 const (
-	// resultCacheTTL: cached results (meta builds and comps, set data and
-	// patch notes) are expensive to compute and change slowly — new
-	// matches arrive in crawl batches minutes apart, set data every few
-	// hours — so they're reused for a while instead of recomputed per
-	// request.
+	// resultCacheTTL: the default lifetime of cached results (set data and
+	// patch notes) — expensive to compute and slow to change, so they're
+	// reused for a while instead of recomputed per request. Stats computed
+	// from match data use Server.StatsCacheTTL instead.
 	resultCacheTTL = 5 * time.Minute
 	// resultCacheMaxEntries bounds memory: keys come from request
 	// parameters (set, queue combinations, levels, versions), so callers
@@ -33,6 +32,14 @@ type resultCache struct {
 	entries map[string]*resultCacheEntry
 	slots   chan struct{}    // computations in flight
 	now     func() time.Time // tests only
+	ttl     time.Duration    // how long a result is reused; 0 = resultCacheTTL
+}
+
+func (c *resultCache) lifetime() time.Duration {
+	if c.ttl > 0 {
+		return c.ttl
+	}
+	return resultCacheTTL
 }
 
 type resultCacheEntry struct {
@@ -62,7 +69,7 @@ func (c *resultCache) get(ctx context.Context, key string, compute func(context.
 		if e != nil {
 			select {
 			case <-e.ready:
-				if e.err != nil || now().Sub(e.at) >= resultCacheTTL {
+				if e.err != nil || now().Sub(e.at) >= c.lifetime() {
 					e = nil // failed or expired: recompute
 				}
 			default: // in flight: wait for it below
@@ -144,7 +151,7 @@ func (c *resultCache) evictLocked(now time.Time) {
 		default:
 			continue // in flight
 		}
-		if now.Sub(e.at) >= resultCacheTTL {
+		if now.Sub(e.at) >= c.lifetime() {
 			delete(c.entries, k)
 			continue
 		}

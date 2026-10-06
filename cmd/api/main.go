@@ -43,7 +43,7 @@ func main() {
 	limiter := riotapi.NewRateLimiter(cfg.RiotAppRateLimitPerSec, cfg.RiotAppRateLimitPer2Min)
 	riotClient := riotapi.NewClient(keySource, limiter)
 
-	server := &apiserver.Server{Riot: riotClient, Store: st}
+	server := &apiserver.Server{Riot: riotClient, Store: st, StatsCacheTTL: cfg.StatsCacheTTL}
 	handler := apiserver.NewRouter(server)
 
 	// Timeouts keep slow or idle clients from holding connections open.

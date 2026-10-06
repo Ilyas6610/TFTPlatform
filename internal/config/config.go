@@ -32,6 +32,10 @@ type Config struct {
 	// set's game data from CommunityDragon (see internal/setdata); 0
 	// disables it.
 	SetDataSyncInterval time.Duration
+
+	// StatsCacheTTL is how long the API server reuses stats computed from
+	// match data (meta, explorer) before querying Postgres again.
+	StatsCacheTTL time.Duration
 }
 
 func Load() (Config, error) {
@@ -43,8 +47,12 @@ func Load() (Config, error) {
 		RiotAppRateLimitPer2Min: getEnvInt("RIOT_APP_RATE_LIMIT_PER_2MIN", 100),
 		HTTPAddr:                getEnv("HTTP_ADDR", ":8080"),
 		SetDataSyncInterval:     getEnvDuration("SETDATA_SYNC_INTERVAL", 6*time.Hour),
+		StatsCacheTTL:           getEnvDuration("STATS_CACHE_TTL", 10*time.Minute),
 	}
 
+	if cfg.StatsCacheTTL <= 0 {
+		return Config{}, fmt.Errorf("STATS_CACHE_TTL must be a positive duration")
+	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
 	}

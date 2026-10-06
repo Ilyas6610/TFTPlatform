@@ -38,12 +38,23 @@ func (s *Server) handleExplore(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_filter", err.Error())
 		return
 	}
-	res, err := s.Store.Explore(r.Context(), f, exploreLimit)
+	res, err := s.stats.get(r.Context(), exploreCacheKey(f), func(ctx context.Context) (any, error) {
+		return s.Store.Explore(ctx, f, exploreLimit)
+	})
 	if err != nil {
 		writeDBError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+// exploreCacheKey identifies an explorer search: its scope plus every
+// condition, queues in any order.
+func exploreCacheKey(f store.ExploreFilter) string {
+	queues := slices.Clone(f.Queues)
+	slices.Sort(queues)
+	f.Queues = slices.Compact(queues)
+	return fmt.Sprintf("explore|%+v", f)
 }
 
 // handleExploreOptions serves GET /api/v1/explore/options?set=18: the
@@ -54,7 +65,9 @@ func (s *Server) handleExploreOptions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_set", fmt.Sprintf("set must be a number from 1 to %d", maxSetNumber))
 		return
 	}
-	opts, err := s.Store.ExploreOptions(r.Context(), set)
+	opts, err := s.stats.get(r.Context(), "options|"+strconv.Itoa(set), func(ctx context.Context) (any, error) {
+		return s.Store.ExploreOptions(ctx, set)
+	})
 	if err != nil {
 		writeDBError(w, r, err)
 		return

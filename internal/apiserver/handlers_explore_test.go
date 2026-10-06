@@ -162,3 +162,69 @@ func TestSetNumberIsBounded(t *testing.T) {
 		}
 	}
 }
+
+func exploreBoards(t *testing.T, h http.Handler, query string) int {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/explore?"+query, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("got %d: %s", rec.Code, rec.Body)
+	}
+	var res struct {
+		Summary struct{ Boards int } `json:"summary"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatal(err)
+	}
+	return res.Summary.Boards
+}
+
+func TestExplore_ResultIsCachedPerSearch(t *testing.T) {
+	s := &Server{Store: storetest.New(t)}
+	h := NewRouter(s)
+	seedBoards(t, s.Store, "NA1_1", [][]string{{"A", "B"}, {"A"}})
+
+	if n := exploreBoards(t, h, "set=18&queue=1100&unit=A"); n != 2 {
+		t.Fatalf("got %d boards, want 2", n)
+	}
+	seedBoards(t, s.Store, "NA1_2", [][]string{{"A"}})
+	if n := exploreBoards(t, h, "set=18&queue=1100&unit=A"); n != 2 {
+		t.Errorf("got %d boards, want the cached 2", n)
+	}
+	// A different search isn't served from that entry.
+	if n := exploreBoards(t, h, "set=18&queue=1100&unit=B"); n != 1 {
+		t.Errorf("unit B: got %d boards, want 1", n)
+	}
+}
+
+func TestExplore_CacheLifetimeIsConfigurable(t *testing.T) {
+	s := &Server{Store: storetest.New(t), StatsCacheTTL: 100 * time.Millisecond}
+	h := NewRouter(s)
+	if s.stats.lifetime() != 100*time.Millisecond || s.meta.lifetime() != 100*time.Millisecond {
+		t.Fatalf("lifetimes %v %v", s.stats.lifetime(), s.meta.lifetime())
+	}
+	seedBoards(t, s.Store, "NA1_1", [][]string{{"A"}})
+	if n := exploreBoards(t, h, "set=18&queue=1100&unit=A"); n != 1 {
+		t.Fatalf("got %d, want 1", n)
+	}
+	seedBoards(t, s.Store, "NA1_2", [][]string{{"A"}})
+	time.Sleep(150 * time.Millisecond)
+	if n := exploreBoards(t, h, "set=18&queue=1100&unit=A"); n != 2 {
+		t.Errorf("got %d after the TTL, want a fresh 2", n)
+	}
+
+	def := &Server{}
+	NewRouter(def)
+	if def.stats.lifetime() != DefaultStatsCacheTTL || DefaultStatsCacheTTL != 10*time.Minute {
+		t.Errorf("default lifetime %v, want 10m", def.stats.lifetime())
+	}
+}
+
+func TestExploreCacheKey_QueueOrderDoesNotMatter(t *testing.T) {
+	a := exploreCacheKey(store.ExploreFilter{Set: 18, Queues: []int{1100, 1090}})
+	b := exploreCacheKey(store.ExploreFilter{Set: 18, Queues: []int{1090, 1100, 1100}})
+	c := exploreCacheKey(store.ExploreFilter{Set: 18, Queues: []int{1100}})
+	if a != b || a == c {
+		t.Errorf("keys %q %q %q", a, b, c)
+	}
+}

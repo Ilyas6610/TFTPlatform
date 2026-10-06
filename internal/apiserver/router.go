@@ -2,6 +2,8 @@ package apiserver
 
 import (
 	"net/http"
+	"sync"
+	"time"
 
 	"tft-platform/internal/riotapi"
 	"tft-platform/internal/setdata"
@@ -21,13 +23,32 @@ type Server struct {
 
 	leaderboard leaderboardSync
 	jobs        backgroundJobs
-	meta        resultCache
-	sets        resultCache
+	// StatsCacheTTL is how long stats computed from match data (meta,
+	// explorer, set options) are reused before the database is queried
+	// again; 0 means DefaultStatsCacheTTL. New matches arrive in crawl
+	// batches, so a slightly old figure costs little and saves heavy scans.
+	StatsCacheTTL time.Duration
+
+	cacheInit   sync.Once
+	meta        resultCache // meta builds and comps, advisor inputs
+	stats       resultCache // explorer, explorer options, precomputed meta tables
+	sets        resultCache // set data, patch notes, planner codes
 	live        liveFetches
 	plannerFail failureMemo
 }
 
+// DefaultStatsCacheTTL is the default for Server.StatsCacheTTL.
+const DefaultStatsCacheTTL = 10 * time.Minute
+
 func NewRouter(s *Server) http.Handler {
+	// Tests build a router per request, so set the lifetimes only once.
+	s.cacheInit.Do(func() {
+		ttl := s.StatsCacheTTL
+		if ttl <= 0 {
+			ttl = DefaultStatsCacheTTL
+		}
+		s.meta.ttl, s.stats.ttl = ttl, ttl
+	})
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/players/{region}/{name}/{tag}", s.handlePlayerProfile)
 	mux.HandleFunc("GET /api/v1/players/{puuid}/matches", s.handlePlayerMatches)
