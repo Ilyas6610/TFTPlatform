@@ -26,7 +26,10 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	st, err := store.New(ctx, cfg.DatabaseURL)
+	st, err := store.NewWithOptions(ctx, cfg.DatabaseURL, store.Options{
+		StatementTimeout: cfg.DBStatementTimeout,
+		MaxConns:         int32(cfg.DBMaxConns),
+	})
 	if err != nil {
 		log.Fatalf("store: %v", err)
 	}

@@ -33,6 +33,14 @@ type Config struct {
 	// disables it.
 	SetDataSyncInterval time.Duration
 
+	// DBStatementTimeout and DBMaxConns tune the API server's Postgres pool
+	// (other binaries keep pgx's defaults): a statement running longer than
+	// the timeout is cancelled so a slow query can't hold a connection for
+	// good, and the pool is capped so analytics can't open more than the
+	// database can serve.
+	DBStatementTimeout time.Duration
+	DBMaxConns         int
+
 	// StatsCacheTTL is how long the API server reuses stats computed from
 	// match data (meta, explorer) before querying Postgres again.
 	StatsCacheTTL time.Duration
@@ -53,6 +61,8 @@ func Load() (Config, error) {
 		HTTPAddr:                getEnv("HTTP_ADDR", ":8080"),
 		SetDataSyncInterval:     getEnvDuration("SETDATA_SYNC_INTERVAL", 6*time.Hour),
 		StatsCacheTTL:           getEnvDuration("STATS_CACHE_TTL", 10*time.Minute),
+		DBStatementTimeout:      getEnvDuration("DB_STATEMENT_TIMEOUT", 20*time.Second),
+		DBMaxConns:              getEnvInt("DB_MAX_CONNS", 10),
 		RedisURL:                getEnv("REDIS_URL", ""),
 	}
 

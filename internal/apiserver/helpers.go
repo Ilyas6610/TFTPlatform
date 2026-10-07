@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"tft-platform/internal/riotapi"
 )
 
@@ -22,9 +24,17 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 }
 
 // writeDBError logs a database failure and answers with a generic 500, so
-// table names and connection details stay out of responses.
+// table names and connection details stay out of responses. A query the
+// statement timeout cancelled (the database is busy, not broken) is a 503
+// with Retry-After instead.
 func writeDBError(w http.ResponseWriter, r *http.Request, err error) {
 	log.Printf("%s %s: %v", r.Method, r.URL.Path, err)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "57014" { // query_canceled
+		w.Header().Set("Retry-After", "10")
+		writeError(w, http.StatusServiceUnavailable, "db_busy", "the database is busy; try again shortly")
+		return
+	}
 	writeError(w, http.StatusInternalServerError, "db_error", "database error")
 }
 

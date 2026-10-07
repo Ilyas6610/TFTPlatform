@@ -32,7 +32,7 @@ Running a binary requires env config (see `internal/config/config.go`):
 ```bash
 DATABASE_URL="postgres://tft:tft@localhost:5432/tft" RIOT_API_KEY_FILE="deploy/.secrets/riot-api-key.txt" go run ./cmd/api
 ```
-Other env vars: `RIOT_API_KEY` (fallback when no key file), `RIOT_APP_RATE_LIMIT_PER_SEC` (default 20), `RIOT_APP_RATE_LIMIT_PER_2MIN` (default 100), `HTTP_ADDR` (default `:8080`), `SETDATA_SYNC_INTERVAL` (default `6h`, `0` disables the API server's set data sync), `STATS_CACHE_TTL` (default `10m`; how long the API reuses stats computed from match data before querying Postgres again; must be positive), `REDIS_URL` (optional `redis://` URL for the shared stats cache below).
+Other env vars: `RIOT_API_KEY` (fallback when no key file), `RIOT_APP_RATE_LIMIT_PER_SEC` (default 20), `RIOT_APP_RATE_LIMIT_PER_2MIN` (default 100), `HTTP_ADDR` (default `:8080`), `SETDATA_SYNC_INTERVAL` (default `6h`, `0` disables the API server's set data sync), `DB_STATEMENT_TIMEOUT` (default `20s`; the API's Postgres pool cancels any statement running longer, answered as 503 `db_busy` with `Retry-After`; riotsync, the aggregator and ingestcli keep no timeout) and `DB_MAX_CONNS` (default 10, the API's pool size), `STATS_CACHE_TTL` (default `10m`; how long the API reuses stats computed from match data before querying Postgres again; must be positive), `REDIS_URL` (optional `redis://` URL for the shared stats cache below).
 
 Personal Riot API keys expire every 24h — refresh `deploy/.secrets/riot-api-key.txt` (gitignored) before ingesting.
 
