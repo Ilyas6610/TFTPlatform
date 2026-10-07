@@ -22,9 +22,13 @@ export const queueName = (id: number) => QUEUE_NAMES[id] ?? `Queue ${id}`;
 
 /** Where a lobby rating comes from, for its tooltip. */
 export function lobbyTitle(l: LobbyStrength) {
+  const unknown = l.opponents - l.known;
   return (
     `Average Ranked standing of ${l.known} of ${l.opponents} opponents` +
-    (l.current > 0 ? `; ${l.current} by today's ladder (no rank recorded near the game)` : "")
+    (l.current > 0 ? `; ${l.current} by today's ladder (no rank recorded near the game)` : "") +
+    (unknown > 0
+      ? `. ${unknown} unranked here: usually below Master, so the lobby was likely weaker than this average`
+      : "")
   );
 }
 

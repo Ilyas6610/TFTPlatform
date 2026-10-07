@@ -417,4 +417,9 @@ func TestLobbyStrength(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("bad id: got %d", rec.Code)
 	}
+	rec = httptest.NewRecorder()
+	NewRouter(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/matches/NA1_99999/lobby", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("unstored match: got %d, want 404", rec.Code)
+	}
 }

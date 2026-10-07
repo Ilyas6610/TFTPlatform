@@ -1,6 +1,7 @@
 package apiserver
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"tft-platform/internal/lobby"
 	"tft-platform/internal/lp"
 	"tft-platform/internal/riotapi"
+	"tft-platform/internal/store"
 )
 
 // handleMatchDetail serves GET /api/v1/matches/{matchId}. Postgres is
@@ -130,7 +132,7 @@ type MatchLobbyResponse struct {
 
 // handleMatchLobby serves GET /api/v1/matches/{matchId}/lobby: each stored
 // participant's Ranked standing around the game (store.LobbyPlayers) and
-// their average. It never calls Riot; an unstored match has none.
+// their average. It never calls Riot; an unstored match is 404.
 func (s *Server) handleMatchLobby(w http.ResponseWriter, r *http.Request) {
 	matchID := r.PathValue("matchId")
 	if !validMatchID(matchID) {
@@ -140,6 +142,10 @@ func (s *Server) handleMatchLobby(w http.ResponseWriter, r *http.Request) {
 	players, err := s.Store.LobbyPlayers(r.Context(), []string{matchID})
 	if err != nil {
 		writeDBError(w, r, err)
+		return
+	}
+	if len(players) == 0 {
+		writeError(w, http.StatusNotFound, "not_found", "match not stored")
 		return
 	}
 	resp := MatchLobbyResponse{Players: []MatchLobbyPlayer{}, Total: len(players)}
@@ -157,7 +163,7 @@ func (s *Server) handleMatchLobby(w http.ResponseWriter, r *http.Request) {
 	}
 	if resp.Known > 0 {
 		resp.Average = sum / resp.Known
-		cutoffs, err := s.Store.LadderCutoffs(r.Context(), platformOfMatch(matchID))
+		cutoffs, err := s.ladderCutoffs(r.Context(), platformOfMatch(matchID))
 		if err != nil {
 			writeDBError(w, r, err)
 			return
@@ -172,4 +178,13 @@ func (s *Server) handleMatchLobby(w http.ResponseWriter, r *http.Request) {
 func platformOfMatch(matchID string) string {
 	prefix, _, _ := strings.Cut(matchID, "_")
 	return strings.ToLower(prefix)
+}
+
+// ladderCutoffs is platform's current apex tier cutoffs, cached like the
+// other ladder-derived stats: the same for every request until the ladder
+// refreshes, but a percentile over the whole ladder to compute.
+func (s *Server) ladderCutoffs(ctx context.Context, platform string) (store.ApexCutoffs, error) {
+	return cached(ctx, s, &s.stats, "cutoffs|"+platform, func(ctx context.Context) (store.ApexCutoffs, error) {
+		return s.Store.LadderCutoffs(ctx, platform)
+	})
 }

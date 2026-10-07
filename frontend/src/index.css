@@ -1665,8 +1665,7 @@ tr.dim {
   font-size: 1.15rem;
 }
 
-.history-partner,
-.history-lobby {
+.history-partner {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

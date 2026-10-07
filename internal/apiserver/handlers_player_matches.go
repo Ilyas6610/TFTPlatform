@@ -240,7 +240,7 @@ func (s *Server) decorateMatches(ctx context.Context, puuid string, matches []st
 		platform := platformOfMatch(id)
 		c, ok := cutoffs[platform]
 		if !ok {
-			if c, err = s.Store.LadderCutoffs(ctx, platform); err != nil {
+			if c, err = s.ladderCutoffs(ctx, platform); err != nil {
 				return nil, nil, err
 			}
 			cutoffs[platform] = c

@@ -201,6 +201,7 @@ export function MatchHistory({
                   {m.lobby && (
                     <span className="muted history-lobby" title={lobbyTitle(m.lobby)}>
                       lobby ≈ {lobbyText(m.lobby.value, m.lobby.tier).replace(/ LP$/, "")}
+                      {m.lobby.known < m.lobby.opponents && ` · ${m.lobby.known}/${m.lobby.opponents}`}
                     </span>
                   )}
                   <span className="muted" title={new Date(m.gameDatetime).toLocaleString()}>

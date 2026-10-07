@@ -77,7 +77,15 @@ export default function MatchDetailPage() {
           {new Date(match.info.game_datetime).toLocaleString()} &middot; source: {match.source}
         </p>
         {lobby && lobby.known > 0 && (
-          <p className="muted" title="Average Ranked standing of the players around this game, where recorded">
+          <p
+            className="muted"
+            title={
+              "Average Ranked standing of the ranked players around this game" +
+              (lobby.known < lobby.total
+                ? ". Unranked players are usually below Master, so the lobby was likely weaker than this average"
+                : "")
+            }
+          >
             Lobby ≈ {lobbyText(lobby.average, lobby.averageTier)} ({lobby.known} of {lobby.total} players ranked)
           </p>
         )}
