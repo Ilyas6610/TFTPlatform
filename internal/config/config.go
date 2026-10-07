@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -51,60 +52,81 @@ type Config struct {
 	RedisURL string
 }
 
+// Load reads the configuration. A malformed value (RIOT_APP_RATE_LIMIT_PER_2MIN=1OO)
+// is an error, not a silent fallback to the default: a typo in a rate limit
+// shouldn't go unnoticed. An empty value counts as unset.
 func Load() (Config, error) {
+	var e envReader
 	cfg := Config{
-		DatabaseURL:             getEnv("DATABASE_URL", ""),
-		RiotAPIKeyFile:          getEnv("RIOT_API_KEY_FILE", ""),
-		RiotAPIKey:              getEnv("RIOT_API_KEY", ""),
-		RiotAppRateLimitPerSec:  getEnvInt("RIOT_APP_RATE_LIMIT_PER_SEC", 20),
-		RiotAppRateLimitPer2Min: getEnvInt("RIOT_APP_RATE_LIMIT_PER_2MIN", 100),
-		HTTPAddr:                getEnv("HTTP_ADDR", ":8080"),
-		SetDataSyncInterval:     getEnvDuration("SETDATA_SYNC_INTERVAL", 6*time.Hour),
-		StatsCacheTTL:           getEnvDuration("STATS_CACHE_TTL", 10*time.Minute),
-		DBStatementTimeout:      getEnvDuration("DB_STATEMENT_TIMEOUT", 20*time.Second),
-		DBMaxConns:              getEnvInt("DB_MAX_CONNS", 10),
-		RedisURL:                getEnv("REDIS_URL", ""),
+		DatabaseURL:             e.str("DATABASE_URL", ""),
+		RiotAPIKeyFile:          e.str("RIOT_API_KEY_FILE", ""),
+		RiotAPIKey:              e.str("RIOT_API_KEY", ""),
+		RiotAppRateLimitPerSec:  e.int("RIOT_APP_RATE_LIMIT_PER_SEC", 20),
+		RiotAppRateLimitPer2Min: e.int("RIOT_APP_RATE_LIMIT_PER_2MIN", 100),
+		HTTPAddr:                e.str("HTTP_ADDR", ":8080"),
+		SetDataSyncInterval:     e.duration("SETDATA_SYNC_INTERVAL", 6*time.Hour),
+		StatsCacheTTL:           e.duration("STATS_CACHE_TTL", 10*time.Minute),
+		DBStatementTimeout:      e.duration("DB_STATEMENT_TIMEOUT", 20*time.Second),
+		DBMaxConns:              e.int("DB_MAX_CONNS", 10),
+		RedisURL:                e.str("REDIS_URL", ""),
+	}
+	if len(e.errs) > 0 {
+		return Config{}, fmt.Errorf("invalid configuration: %s", strings.Join(e.errs, "; "))
 	}
 
-	if cfg.StatsCacheTTL <= 0 {
+	switch {
+	case cfg.RiotAppRateLimitPerSec <= 0:
+		return Config{}, fmt.Errorf("RIOT_APP_RATE_LIMIT_PER_SEC must be positive")
+	case cfg.RiotAppRateLimitPer2Min <= 0:
+		return Config{}, fmt.Errorf("RIOT_APP_RATE_LIMIT_PER_2MIN must be positive")
+	case cfg.SetDataSyncInterval < 0:
+		return Config{}, fmt.Errorf("SETDATA_SYNC_INTERVAL must not be negative (0 disables the sync)")
+	case cfg.StatsCacheTTL <= 0:
 		return Config{}, fmt.Errorf("STATS_CACHE_TTL must be a positive duration")
-	}
-	if cfg.DatabaseURL == "" {
+	case cfg.DBStatementTimeout < 0:
+		return Config{}, fmt.Errorf("DB_STATEMENT_TIMEOUT must not be negative")
+	case cfg.DBMaxConns <= 0:
+		return Config{}, fmt.Errorf("DB_MAX_CONNS must be positive")
+	case cfg.DatabaseURL == "":
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
-	}
-	if cfg.RiotAPIKeyFile == "" && cfg.RiotAPIKey == "" {
+	case cfg.RiotAPIKeyFile == "" && cfg.RiotAPIKey == "":
 		return Config{}, fmt.Errorf("one of RIOT_API_KEY_FILE or RIOT_API_KEY is required")
 	}
-
 	return cfg, nil
 }
 
-func getEnv(key, def string) string {
+// envReader reads typed environment variables, collecting every malformed
+// value so startup reports them all at once.
+type envReader struct{ errs []string }
+
+func (e *envReader) str(key, def string) string {
 	if v, ok := os.LookupEnv(key); ok {
 		return v
 	}
 	return def
 }
 
-func getEnvInt(key string, def int) int {
-	v, ok := os.LookupEnv(key)
-	if !ok {
+func (e *envReader) int(key string, def int) int {
+	v := os.Getenv(key)
+	if v == "" {
 		return def
 	}
 	n, err := strconv.Atoi(v)
 	if err != nil {
+		e.errs = append(e.errs, fmt.Sprintf("%s=%q is not an integer", key, v))
 		return def
 	}
 	return n
 }
 
-func getEnvDuration(key string, def time.Duration) time.Duration {
-	v, ok := os.LookupEnv(key)
-	if !ok {
+func (e *envReader) duration(key string, def time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
 		return def
 	}
 	d, err := time.ParseDuration(v)
 	if err != nil {
+		e.errs = append(e.errs, fmt.Sprintf("%s=%q is not a duration like 30s or 10m", key, v))
 		return def
 	}
 	return d
