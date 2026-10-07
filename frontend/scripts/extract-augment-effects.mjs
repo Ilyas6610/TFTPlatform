@@ -229,7 +229,15 @@ function parseAugment(a, itemsByName, unitCosts) {
     });
     take(/(a|an|\d+|two)\s+Reforgers?/gi, (m) => (res.components += 1.5 * count(m[1])));
     take(/(a|an|\d+|two)\s+(?:Magnetic|Golden Item)\s+Removers?/gi, () => (res.components += 1));
-    take(/(a|an|\d+)\s+(?:Lesser\s+)?Champion Duplicators?/gi, (m) => (res.gold += 4 * count(m[1])));
+    // Champion Duplicators copy a unit (the Lesser one: 3-cost or less; the plain one is taken as 4-cost or less).
+    take(/(a|an|\d+|two)\s+(Lesser\s+)?Champion Duplicators?/gi, (m) =>
+      (res.duplicators ??= []).push({ n: count(m[1]), maxCost: m[2] ? 3 : 4 }),
+    );
+    if (/^gain another after \d+ player combats/i.test(s) && res.duplicators?.length) {
+      res.duplicators[res.duplicators.length - 1].n += 1;
+      hit = true;
+    }
+    if (/^this item allows you to copy/i.test(s)) hit = true; // the duplicator's own description
     take(/(?:gain|get)\s+(a|an|\d+|two|three)\s+(?:random\s+)?(?:(\d)-star\s+)?(\d)-cost\s+(?:non-Tank\s+|Tank\s+|\w+\s+)?champions?/gi, (m) =>
       res.units.push({ n: count(m[1]), cost: Number(m[3]), star: m[2] ? Number(m[2]) : 1 }),
     );
@@ -241,6 +249,31 @@ function parseAugment(a, itemsByName, unitCosts) {
     const bp = s.match(/Gain (\d+) gold of random champions/i);
     if (bp) {
       res.units.push({ n: Number(bp[1]) / 3, cost: 3, star: 1 }); // gold's worth of champions
+    }
+
+    const bench = s.match(/(\d+) rightmost bench slots transform into random champions of the same cost/i);
+    if (bench) {
+      res.benchTransform = { slots: Number(bench[1]) };
+      hit = true;
+    }
+    const copiesOf = s.match(/Gain (\d+) copies of a random (\d)-cost champion/i);
+    if (copiesOf) {
+      res.units.push({ n: Number(copiesOf[1]), cost: Number(copiesOf[2]), star: 1 });
+      hit = true;
+    }
+    const eachCost = s.match(/Gain a copy of each (\d)-cost champion/i);
+    if (eachCost) {
+      res.allOfCost = Number(eachCost[1]);
+      hit = true;
+    }
+    if (/gain another copy of them at the start of each round/i.test(s)) {
+      const last = res.units[res.units.length - 1];
+      if (last) {
+        (recurring.copies ??= {}).perRound = 1;
+        recurring.copies.cost = last.cost;
+        recurring.copies.n = 1; // "another copy of them": one a round
+      }
+      hit = true;
     }
 
     // named items the set knows ("Gain a Rabadon's Deathcap")
@@ -286,13 +319,14 @@ function parseAugment(a, itemsByName, unitCosts) {
   }
 
   const resourceTotal =
-    res.gold + res.xp + res.rerolls + res.components + res.completed + res.artifacts + res.emblems + res.units.length + res.named.length;
+    res.gold + res.xp + res.rerolls + res.components + res.completed + res.artifacts + res.emblems + res.units.length + res.named.length +
+    (res.duplicators?.length ?? 0) + (res.benchTransform ? 1 : 0) + (res.allOfCost ? 1 : 0);
   const hasResources = resourceTotal > 0 || Object.keys(recurring).length > 0;
   const out = {};
   if (effects.length) out.effects = effects;
   if (hasResources) {
     const r = { ...res };
-    for (const k of Object.keys(r)) if (Array.isArray(r[k]) ? r[k].length === 0 : r[k] === 0) delete r[k];
+    for (const k of Object.keys(r)) if (Array.isArray(r[k]) ? r[k].length === 0 : r[k] === 0 || r[k] === undefined) delete r[k];
     out.resources = r;
     if (Object.keys(recurring).length) out.recurring = recurring;
   }

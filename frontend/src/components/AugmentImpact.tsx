@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { SetData } from "../api/client";
 import { GameIcon } from "../assets/tft";
 import { AUGMENT_SLOTS, augmentTier, availableAt } from "../planner/augmentStages";
+import { SHOP } from "../planner/augmentPlan";
 import { ASSUMPTIONS, AugmentScore, Confidence, rankAugments } from "../planner/augmentScore";
 import { Board } from "../planner/board";
 import { Names } from "./stats";
@@ -115,6 +116,11 @@ export function AugmentImpact({
             What a board can use is limited: it takes about {ASSUMPTIONS.targetValuePerSlot} gold of value per level slot, so gold, XP and units are worth less on a
             nearly full board; items are limited by the free slots on {ASSUMPTIONS.itemCarries} carries; XP is worth less at level 8 and up. That is why the ranking
             changes with the board.
+          </li>
+          <li>
+            Copies: a board of cheap carries (1-3 cost, not yet 3★) wants copies, so free rerolls, Champion Duplicators, random champions and Pandora's Bench are priced by the
+            shop odds (a copy of a specific unit costs its price plus the rerolls it takes at your level: {SHOP.slots} slots, {SHOP.rerollGold} gold each); a board of 4-5 cost
+            carries values them much less. Copies of filler units count at {SHOP.fillerWeight * 100}%.
           </li>
           <li>The board's value is its units' gold cost plus {ASSUMPTIONS.ge.itemOnBoard} per item. Early gold is worth a little more.</li>
           <li>Traits, positioning beyond front and back rows, opponents and ability numbers aren't modelled.</li>

@@ -1631,19 +1631,37 @@
   },
   "DA_HeroicGrabBag": {
    "resources": {
-    "gold": 12
+    "gold": 4,
+    "duplicators": [
+     {
+      "n": 2,
+      "maxCost": 3
+     }
+    ]
    },
    "confidence": "high"
   },
   "DA_HeroicGrabBagPlus": {
    "resources": {
-    "gold": 16
+    "gold": 8,
+    "duplicators": [
+     {
+      "n": 2,
+      "maxCost": 3
+     }
+    ]
    },
    "confidence": "high"
   },
   "DA_HeroicGrabBagPlusPlus": {
    "resources": {
-    "gold": 22
+    "gold": 14,
+    "duplicators": [
+     {
+      "n": 2,
+      "maxCost": 3
+     }
+    ]
    },
    "confidence": "high"
   },
@@ -2081,8 +2099,13 @@
   },
   "DA_MaxBuild": {
    "resources": {
-    "gold": 2,
-    "rerolls": 11.5
+    "rerolls": 11.5,
+    "duplicators": [
+     {
+      "n": 1,
+      "maxCost": 4
+     }
+    ]
    },
    "confidence": "high",
    "conditional": [
@@ -2096,10 +2119,10 @@
    "confidence": "high"
   },
   "DA_MissedConnections": {
-   "confidence": "none",
-   "unparsed": [
-    "Gain a copy of each 1-cost champion."
-   ]
+   "resources": {
+    "allOfCost": 1
+   },
+   "confidence": "high"
   },
   "DA_MoneyHungry_NotBroken": {
    "resources": {
@@ -2270,12 +2293,17 @@
   },
   "DA_OneBuffTwoBuff": {
    "resources": {
-    "gold": 4,
     "named": [
      {
       "name": "Red Buff",
       "n": 1,
       "kind": "completed"
+     }
+    ],
+    "duplicators": [
+     {
+      "n": 1,
+      "maxCost": 4
      }
     ]
    },
@@ -2301,12 +2329,12 @@
   },
   "DA_PandorasBench": {
    "resources": {
-    "gold": 4
+    "gold": 4,
+    "benchTransform": {
+     "slots": 3
+    }
    },
-   "confidence": "medium",
-   "unparsed": [
-    "At the start of every round, champions on the 3 rightmost bench slots transform into random champions of the same cost."
-   ]
+   "confidence": "high"
   },
   "DA_PandorasItemsI": {
    "resources": {
@@ -3009,13 +3037,14 @@
   },
   "DA_TeamBuilding": {
    "resources": {
-    "gold": 4
+    "duplicators": [
+     {
+      "n": 2,
+      "maxCost": 3
+     }
+    ]
    },
-   "confidence": "low",
-   "unparsed": [
-    "Gain another after 5 player combats.",
-    "This item allows you to copy a 3-cost or less champion."
-   ]
+   "confidence": "high"
   },
   "DA_TheGoldenDragon": {
    "effects": [
@@ -3409,7 +3438,12 @@
   },
   "DA_18_WeightTheWorth": {
    "resources": {
-    "gold": 4
+    "duplicators": [
+     {
+      "n": 1,
+      "maxCost": 3
+     }
+    ]
    },
    "confidence": "medium",
    "unparsed": [
@@ -3438,17 +3472,33 @@
      }
     ]
    },
-   "confidence": "medium",
-   "unparsed": [
-    "Gain another copy of them at the start of each round for the rest of the game."
-   ]
+   "recurring": {
+    "copies": {
+     "perRound": 1,
+     "cost": 1,
+     "n": 1
+    }
+   },
+   "confidence": "high"
   },
   "DA_WorththeWaitII": {
-   "confidence": "none",
-   "unparsed": [
-    "Gain 2 copies of a random 2-cost champion.",
-    "Gain another copy of them at the start of each round for the rest of the game."
-   ]
+   "resources": {
+    "units": [
+     {
+      "n": 2,
+      "cost": 2,
+      "star": 1
+     }
+    ]
+   },
+   "recurring": {
+    "copies": {
+     "perRound": 1,
+     "cost": 2,
+     "n": 1
+    }
+   },
+   "confidence": "high"
   },
   "DA_WovenMagic": {
    "resources": {

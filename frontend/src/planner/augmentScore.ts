@@ -25,6 +25,7 @@
 
 import { SetAugment, SetData, SetUnit } from "../api/client";
 import raw from "./augmentEffects.data.json";
+import { Plan, SHOP, buildPlan, copyPrice, hitChance } from "./augmentPlan";
 import { Board, COLS, PlacedUnit, ROWS, computeTraits } from "./board";
 
 export type Confidence = "high" | "medium" | "low" | "none";
@@ -57,6 +58,12 @@ export interface Resources {
   emblems?: number;
   units?: { n: number; cost: number; star: number; fixed?: boolean; name?: string }[];
   named?: { name: string; n: number; kind: string }[];
+  /** Champion Duplicators: each copies a unit of up to maxCost. */
+  duplicators?: { n: number; maxCost: number }[];
+  /** The rightmost bench slots turn into random champions of the same cost every round. */
+  benchTransform?: { slots: number };
+  /** A copy of every champion of this cost. */
+  allOfCost?: number;
 }
 
 export interface Recurring {
@@ -64,6 +71,8 @@ export interface Recurring {
   xp?: { perStage?: number; rounds?: number };
   rerolls?: { perRound?: number; perStage?: number };
   components?: { rounds?: number };
+  /** Another copy of the champion(s) gained, every round. */
+  copies?: { perRound?: number; cost?: number; n?: number };
 }
 
 export interface AugmentEffects {
@@ -116,6 +125,10 @@ export const ASSUMPTIONS = {
   /** Impact is a share of the board's value, but of at least this share of a full board's, so a one-unit board doesn't read as +700%. */
   impactFloor: 0.6,
   roomFloor: 8,
+  /** Share of the copies a board still wants (to reach its goal stars) that it can realistically add. */
+  upgradeShare: 0.5,
+  /** Share of the rounds left in which the re-rolled bench slots hold spare units of the cost you want (a copy of a target on the bench would itself be transformed away). */
+  benchUseShare: 0.4,
   /** Carries that can use items, and items each can hold. */
   itemCarries: 3,
   itemsPerCarry: 3,
@@ -382,8 +395,11 @@ export function boardRoom(board: Board, data: SetData): Room {
   const held = board.units.reduce((n, u) => n + u.items.length, 0);
   const slots = Math.max(0, A.itemCarries * A.itemsPerCarry - held);
   const xpLevel = Math.max(6, Math.min(10, board.level));
+  // A board of cheap units still has star-ups to buy: the copies it wants, at what they cost to roll, half of which it will get.
+  const plan = buildPlan(board, data);
+  const upgrades = plan.targets.reduce((sum, t) => sum + t.remaining * copyPrice(t.cost, plan), 0) * A.upgradeShare;
   return {
-    units: Math.max(A.roomFloor, target - value),
+    units: Math.max(A.roomFloor, target - value) + upgrades,
     items: Math.max(0, slots) * A.ge.completed,
     xp: A.xpUsefulByLevel[xpLevel] ?? 1,
   };
@@ -392,7 +408,7 @@ export function boardRoom(board: Board, data: SetData): Room {
 /** Value of `ge` to something that can only take `room` more: close to ge when there is plenty of room, capped by the room when there isn't. */
 const saturate = (ge: number, room: number) => (ge <= 0 ? 0 : room <= 0 ? 0 : room * (1 - Math.exp(-ge / room)));
 
-function resourceParts(res: Resources, rec: Recurring | undefined, stage: string, room: Room): Part[] {
+function resourceParts(res: Resources, rec: Recurring | undefined, stage: string, room: Room, plan: Plan, data: SetData): Part[] {
   const { ge, usefulness: use } = ASSUMPTIONS;
   const f = stageFactors(stage);
   const parts: Part[] = [];
@@ -406,22 +422,90 @@ function resourceParts(res: Resources, rec: Recurring | undefined, stage: string
   if (res.xp) add(`${res.xp} XP`, res.xp * ge.xp * use.xp * f.early * room.xp, room.xp < 1 ? "XP is worth less at this level" : undefined);
   if (rec?.xp?.perStage) add(`${rec.xp.perStage} XP a stage`, rec.xp.perStage * f.stages * use.xp * room.xp);
   if (rec?.xp?.rounds && res.xp) add(`${res.xp} XP for ${rec.xp.rounds} more rounds`, res.xp * rec.xp.rounds * use.xp * room.xp);
-  if (res.rerolls) add(`${res.rerolls} rerolls`, res.rerolls * ge.reroll * use.reroll);
-  if (rec?.rerolls?.perRound) add(`${rec.rerolls.perRound} reroll a round`, rec.rerolls.perRound * f.rounds * ge.reroll * use.reroll * 0.5, "half of the rounds you'd use them");
-  if (rec?.rerolls?.perStage) add(`${rec.rerolls.perStage} rerolls a stage`, rec.rerolls.perStage * f.stages * ge.reroll * use.reroll);
+  // A free reroll saves its gold only if the board would roll: a board of cheap units that want copies rolls a lot.
+  const roll = SHOP.rerollGold * plan.rollIntent * use.reroll;
+  const rollNote = `${(plan.rollIntent * 100).toFixed(0)}% of its gold: ${plan.lowCostShare >= 0.5 ? "a board of cheap units wants to roll" : "this board rolls little"}`;
+  if (res.rerolls) add(`${fmt(res.rerolls)} rerolls`, res.rerolls * roll, rollNote);
+  if (rec?.rerolls?.perRound) add(`${rec.rerolls.perRound} reroll a round`, rec.rerolls.perRound * f.rounds * roll * 0.5, "half of the rounds you'd use them");
+  if (rec?.rerolls?.perStage) add(`${rec.rerolls.perStage} rerolls a stage`, rec.rerolls.perStage * f.stages * roll);
   if (res.components) add(`${fmt(res.components)} components`, res.components * ge.component * use.item, undefined, "items");
   if (rec?.components?.rounds && res.components) add(`components for ${rec.components.rounds} more rounds`, res.components * rec.components.rounds * ge.component * use.item, undefined, "items");
   if (res.completed) add(`${fmt(res.completed)} completed items`, res.completed * ge.completed * use.item, undefined, "items");
   if (res.artifacts) add(`${fmt(res.artifacts)} artifacts`, res.artifacts * ge.artifact * use.item, undefined, "items");
   if (res.emblems) add(`${res.emblems} emblems`, res.emblems * ge.emblem * use.item, undefined, "items");
   for (const n of res.named ?? []) add(`${n.n} × ${n.name}`, n.n * itemGE(n.kind) * use.item, undefined, "items");
+  // Champions: worth their gold, and more when they are copies the board still needs.
+  const nameOfUnit = (id: string) => data.units.find((u) => u.apiName === id)?.name ?? id;
+  const evUnit = (cost: number, star: number, name?: string, extraCopies = 0): { ge: number; note: string } => {
+    const nCopies = copies3(star) + extraCopies;
+    const price = copyPrice(cost, plan);
+    const same = plan.targets.filter((t) => t.cost === cost);
+    let hit = hitChance(cost, plan);
+    let wanted = same.length ? same.reduce((a, t) => a + t.remaining * t.weight, 0) / same.length : 0;
+    if (name) {
+      const t = same.find((x) => nameOfUnit(x.id).replace(/\s*\(.*\)$/, "") === name);
+      hit = t ? 1 : 0;
+      wanted = t ? t.remaining * t.weight : 0;
+    }
+    // Only the copies the unit still needs are worth rolling for; the rest are worth their gold.
+    const useful = Math.min(nCopies, wanted);
+    const gotHit = useful * price + (nCopies - useful) * cost * use.unit;
+    const miss = nCopies * cost * use.unit; // not a unit the board wants: bench or sell
+    return {
+      ge: hit * gotHit + (1 - hit) * miss,
+      note: hit > 0 ? `${Math.round(hit * 100)}% a copy the board wants (~${price.toFixed(0)} gold each to roll, it needs ${wanted.toFixed(0)} more)` : "no unit of that cost on the board still wants copies",
+    };
+  };
   for (const u of res.units ?? []) {
     const label = u.name ? u.name : `${u.n} × ${u.cost}-cost`;
-    add(`${label}${u.star > 1 ? ` (${u.star}★)` : ""}`, u.n * u.cost * 3 ** (u.star - 1) * use.unit);
+    const ev = evUnit(u.cost, u.star, u.name);
+    add(`${label}${u.star > 1 ? ` (${u.star}★)` : ""}`, u.n * ev.ge, ev.note);
+  }
+  if (res.allOfCost) {
+    const n = plan.unitsOfCost[res.allOfCost] ?? 0;
+    const wantedHere = plan.targets.filter((t) => t.cost === res.allOfCost);
+    const hits = wantedHere.reduce((a, t) => a + t.weight, 0);
+    add(`a copy of each ${res.allOfCost}-cost (${n})`, (n - hits) * res.allOfCost * use.unit + hits * copyPrice(res.allOfCost, plan), `${wantedHere.length} of them are units the board wants`);
+  }
+  if (rec?.copies?.perRound && rec.copies.cost) {
+    // One champion, drawn once: a copy every round for the rounds left.
+    const extra = rec.copies.perRound * f.rounds;
+    const ev = evUnit(rec.copies.cost, 1, undefined, extra);
+    const base = evUnit(rec.copies.cost, 1);
+    add(`another copy each round`, ev.ge - base.ge, `${f.rounds} rounds left; ${ev.note}`);
+  }
+  // Duplicators copy one unit each: give every one to the most expensive copy the board still wants.
+  for (const d of res.duplicators ?? []) {
+    const wanted = plan.targets
+      .filter((t) => t.cost <= d.maxCost)
+      .map((t) => ({ t, price: copyPrice(t.cost, plan) * t.weight }))
+      .sort((a, b) => b.price - a.price);
+    let left = d.n;
+    let value = 0;
+    const used: string[] = [];
+    for (const w of wanted) {
+      const take = Math.min(left, w.t.remaining);
+      value += take * w.price;
+      if (take > 0) used.push(nameOfUnit(w.t.id));
+      left -= take;
+      if (left <= 0) break;
+    }
+    value += left * 2 * use.unit; // nothing left to copy: a spare cheap copy
+    add(`${d.n} duplicator${d.n > 1 ? "s" : ""} (units up to ${d.maxCost}-cost)`, value, used.length ? `copies of ${[...new Set(used)].join(", ")}` : `no unit up to ${d.maxCost}-cost still wants copies`);
+  }
+  // Pandora's Bench: the rightmost bench slots become random champions of the same cost every round: free bench rerolls.
+  if (res.benchTransform && plan.targets.length) {
+    const valuable = plan.targets.filter((t) => t.weight >= 1);
+    const cheapest = Math.min(...(valuable.length ? valuable : plan.targets).map((t) => t.cost));
+    const hit = hitChance(cheapest, plan);
+    const perRound = res.benchTransform.slots * hit;
+    const rounds = f.rounds * ASSUMPTIONS.benchUseShare; // the bench isn't full of spare units of that cost every round
+    add(`bench slots re-rolled every round`, perRound * rounds * copyPrice(cheapest, plan), `${perRound.toFixed(2)} copies a round of your ${cheapest}-cost targets over ~${rounds.toFixed(0)} rounds`);
   }
   return parts;
 }
 
+const copies3 = (star: number) => 3 ** (star - 1);
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
 // -------------------------------------------------------------------- score
@@ -509,7 +593,7 @@ export function scoreAugment(
 
   if (fx.resources || fx.recurring) {
     const room = boardRoom(board, data);
-    const rp = resourceParts(fx.resources ?? {}, fx.recurring, stage, room);
+    const rp = resourceParts(fx.resources ?? {}, fx.recurring, stage, room, buildPlan(board, data), data);
     parts.push(...rp);
     // A board can only use so much: limit each side to the room it has left and show the difference.
     for (const [side, roomGE] of [["units", room.units], ["items", room.items]] as const) {
