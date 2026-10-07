@@ -38,3 +38,22 @@ type ErrNotFound struct {
 func (e *ErrNotFound) Error() string {
 	return fmt.Sprintf("riot api: %s not found", e.Resource)
 }
+
+// ErrUnavailable is returned when Riot itself can't answer after the client's
+// retries: a 5xx response or a network failure (timeout, DNS, connection
+// reset). It says nothing about the request, so callers working through many
+// players treat it as "stop for now" rather than as one player's fault. The
+// underlying error (a net.Error, say) is available through errors.Unwrap.
+type ErrUnavailable struct {
+	Detail string
+	Err    error
+}
+
+func (e *ErrUnavailable) Error() string {
+	if e.Err != nil {
+		return fmt.Sprintf("%s: %v", e.Detail, e.Err)
+	}
+	return e.Detail
+}
+
+func (e *ErrUnavailable) Unwrap() error { return e.Err }

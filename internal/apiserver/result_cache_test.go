@@ -193,3 +193,65 @@ func TestResultCache_PanicReleasesSlot(t *testing.T) {
 		t.Errorf("got %v, %v; want a fresh computation", v, err)
 	}
 }
+
+// A computation that fails after running a long time (the statement timeout)
+// isn't retried by every visitor's miss: it's answered with the same error
+// for a minute, so it can't keep a compute slot and the database busy.
+func TestResultCache_SlowFailureIsRememberedBriefly(t *testing.T) {
+	now := time.Unix(0, 0)
+	c := &resultCache{now: func() time.Time { return now }}
+	boom := errors.New("canceling statement due to statement timeout")
+	calls := 0
+	failSlowly := true
+	compute := func(context.Context) (any, error) {
+		calls++
+		if failSlowly {
+			now = now.Add(resultCacheSlowFailure + time.Second) // the query ran that long
+			return nil, boom
+		}
+		return "ok", nil
+	}
+	get := func() (any, error) { return c.get(context.Background(), "k", compute) }
+
+	if _, err := get(); !errors.Is(err, boom) {
+		t.Fatalf("first call: %v", err)
+	}
+	for i := 0; i < 5; i++ {
+		if _, err := get(); !errors.Is(err, boom) {
+			t.Fatalf("repeat %d: %v, want the remembered error", i, err)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("computed %d times within the memory window, want 1", calls)
+	}
+
+	now = now.Add(resultCacheFailureTTL / 2)
+	if get(); calls != 1 {
+		t.Errorf("recomputed after half the window (%d calls)", calls)
+	}
+
+	// Once the window is over the computation is tried again, and a success
+	// replaces the failure.
+	now = now.Add(resultCacheFailureTTL)
+	failSlowly = false
+	if v, err := get(); err != nil || v != "ok" || calls != 2 {
+		t.Errorf("after the window: %v, %v, %d calls; want a fresh success", v, err, calls)
+	}
+}
+
+func TestResultCache_QuickFailureIsRetriedAtOnce(t *testing.T) {
+	now := time.Unix(0, 0)
+	c := &resultCache{now: func() time.Time { return now }}
+	calls := 0
+	compute := func(context.Context) (any, error) {
+		calls++
+		now = now.Add(100 * time.Millisecond)
+		return nil, errors.New("connection reset")
+	}
+	for i := 0; i < 3; i++ {
+		c.get(context.Background(), "k", compute)
+	}
+	if calls != 3 {
+		t.Errorf("a quick failure was remembered: %d calls, want 3", calls)
+	}
+}

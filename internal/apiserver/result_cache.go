@@ -23,11 +23,23 @@ const (
 	// Each is a heavy query, and callers choose the key, so without a cap
 	// a client cycling through scopes could run many in parallel.
 	resultCacheMaxComputes = 2
+	// A computation that fails after at least resultCacheSlowFailure (a query
+	// the statement timeout cancelled, say) is remembered for
+	// resultCacheFailureTTL and answered with the same error, instead of
+	// every visitor's miss running it again for as long: once the data
+	// outgrows a computation, it would otherwise keep a compute slot and the
+	// database busy for nothing. Quick failures (a blip) are retried at once.
+	resultCacheSlowFailure = 5 * time.Second
+	resultCacheFailureTTL  = time.Minute
+	// Computations taking at least this long are logged, so growth shows
+	// before it turns into the failure above.
+	resultCacheLogSlow = time.Second
 )
 
 // resultCache memoizes expensive results by key for resultCacheTTL.
 // Concurrent misses for one key share a single computation. Errors are not
-// cached. The zero value is ready to use.
+// cached, except a slow failure, which is remembered briefly (see
+// resultCacheSlowFailure). The zero value is ready to use.
 type resultCache struct {
 	mu      sync.Mutex
 	entries map[string]*resultCacheEntry
@@ -55,6 +67,8 @@ type resultCacheEntry struct {
 	// a computation slot freed up: nothing was computed, so waiters retry
 	// rather than inherit that caller's cancellation.
 	abandoned bool
+	// slowFail marks an error worth remembering for resultCacheFailureTTL.
+	slowFail bool
 }
 
 func (c *resultCache) get(ctx context.Context, key string, compute func(context.Context) (any, error)) (any, error) {
@@ -73,7 +87,13 @@ func (c *resultCache) get(ctx context.Context, key string, compute func(context.
 		if e != nil {
 			select {
 			case <-e.ready:
-				if e.err != nil || now().Sub(e.at) >= c.lifetime() {
+				if e.err != nil {
+					// A slow failure is answered again for a while; any other
+					// error means compute afresh.
+					if !e.slowFail || now().Sub(e.at) >= resultCacheFailureTTL {
+						e = nil
+					}
+				} else if now().Sub(e.at) >= c.lifetime() {
 					e = nil // failed or expired: recompute
 				}
 			default: // in flight: wait for it below
@@ -124,6 +144,7 @@ func (c *resultCache) compute(ctx context.Context, key string, e *resultCacheEnt
 	// Detached from the request: a caller hanging up mustn't fail a
 	// computation that other waiters share. A panic is turned into an error
 	// so the slot is released and waiters are answered.
+	started := now()
 	func() {
 		defer func() {
 			<-c.slots
@@ -135,8 +156,16 @@ func (c *resultCache) compute(ctx context.Context, key string, e *resultCacheEnt
 		e.val, e.err = compute(context.WithoutCancel(ctx))
 	}()
 	e.at = now()
+	took := e.at.Sub(started)
+	if took >= resultCacheLogSlow {
+		log.Printf("result cache %s: computed in %s (err: %v)", key, took.Round(time.Millisecond), e.err)
+	}
 	if e.err != nil {
-		drop()
+		if took >= resultCacheSlowFailure {
+			e.slowFail = true // kept: see resultCacheSlowFailure
+		} else {
+			drop()
+		}
 	}
 	return e.val, e.err
 }
