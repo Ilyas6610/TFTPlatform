@@ -30,10 +30,12 @@ func (s *Store) UpsertAccount(ctx context.Context, a Account) error {
 	// A Riot ID can move to another account (a name freed by one player and
 	// taken by another); any other account still holding it is stale and
 	// would violate idx_accounts_riot_id, so its copy is cleared first (as
-	// SetAccountRiotID does).
+	// SetAccountRiotID does). Riot IDs match case-insensitively, as lookups do
+	// (idx_accounts_riot_id_lower), so a stale "foo#NA1" goes when "Foo#NA1"
+	// arrives.
 	if _, err := tx.Exec(ctx, `
 		UPDATE accounts SET game_name = NULL, tag_line = NULL, updated_at = now()
-		WHERE game_name = $1 AND tag_line = $2 AND puuid <> $3
+		WHERE lower(game_name) = lower($1) AND lower(tag_line) = lower($2) AND puuid <> $3
 	`, a.GameName, a.TagLine, a.PUUID); err != nil {
 		return err
 	}
@@ -79,7 +81,7 @@ func (s *Store) SetAccountRiotID(ctx context.Context, puuid, gameName, tagLine s
 
 	if _, err := tx.Exec(ctx, `
 		UPDATE accounts SET game_name = NULL, tag_line = NULL, updated_at = now()
-		WHERE game_name = $1 AND tag_line = $2 AND puuid <> $3
+		WHERE lower(game_name) = lower($1) AND lower(tag_line) = lower($2) AND puuid <> $3
 	`, gameName, tagLine, puuid); err != nil {
 		return err
 	}

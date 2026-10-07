@@ -93,3 +93,39 @@ func TestUpsertAccount_TakesIDFromStaleHolder(t *testing.T) {
 		t.Fatalf("refresh: %v", err)
 	}
 }
+
+// Lookups ignore case, so a stale "alice#na1" must go when "Alice#NA1" is
+// claimed by another PUUID (it used to survive: only the exact spelling was
+// cleared, and GetAccountByRiotID could then see two rows).
+func TestUpsertAccount_ClearsStaleHolderCaseInsensitively(t *testing.T) {
+	st := storetest.New(t)
+	ctx := context.Background()
+	if err := st.UpsertAccount(ctx, store.Account{PUUID: "old", GameName: "alice", TagLine: "na1", RoutingRegion: "americas"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertAccount(ctx, store.Account{PUUID: "new", GameName: "Alice", TagLine: "NA1", RoutingRegion: "americas"}); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := st.Pool.QueryRow(ctx, `SELECT count(*) FROM accounts WHERE lower(game_name) = 'alice' AND lower(tag_line) = 'na1'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("%d accounts hold alice#na1, want 1", n)
+	}
+	got, err := st.GetAccountByRiotID(ctx, "alice", "na1")
+	if err != nil || got == nil || got.PUUID != "new" {
+		t.Errorf("lookup = %+v, %v; want the new holder", got, err)
+	}
+
+	// SetAccountRiotID (the name resolver) clears the same way.
+	if err := st.UpsertAccountPUUIDOnly(ctx, "third", "americas"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetAccountRiotID(ctx, "third", "ALICE", "Na1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Pool.QueryRow(ctx, `SELECT count(*) FROM accounts WHERE lower(game_name) = 'alice' AND lower(tag_line) = 'na1'`).Scan(&n); err != nil || n != 1 {
+		t.Errorf("after SetAccountRiotID: %d holders (%v), want 1", n, err)
+	}
+}
