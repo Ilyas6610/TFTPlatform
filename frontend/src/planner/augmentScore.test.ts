@@ -125,24 +125,88 @@ describe("augment score: resources", () => {
     expect(early.ge!).toBeGreaterThan(late.ge! * 1.4);
   });
 
+  // What a part is worth before the board's room limits it.
+  const raw = (r: ReturnType<typeof scoreAugment>) => r.parts.filter((p) => !p.label.startsWith("less:")).reduce((a, p) => a + p.ge, 0);
+
   it("prices items, units and rerolls with the table", () => {
     const items = scoreAugment(aug("X"), basic, data, "3-2", fx({ resources: { components: 2, completed: 1 } }));
-    expect(items.ge!).toBeCloseTo((2 * ASSUMPTIONS.ge.component + ASSUMPTIONS.ge.completed) * ASSUMPTIONS.usefulness.item, 6);
+    expect(raw(items)).toBeCloseTo((2 * ASSUMPTIONS.ge.component + ASSUMPTIONS.ge.completed) * ASSUMPTIONS.usefulness.item, 6);
     const units = scoreAugment(aug("X"), basic, data, "3-2", fx({ resources: { units: [{ n: 1, cost: 3, star: 2 }] } }));
-    expect(units.ge!).toBeCloseTo(3 * 3 * ASSUMPTIONS.usefulness.unit, 6);
+    expect(raw(units)).toBeCloseTo(3 * 3 * ASSUMPTIONS.usefulness.unit, 6);
   });
 
   it("expresses the total as a share of the board's value", () => {
     const r = scoreAugment(aug("X"), basic, data, "3-2", gold);
-    expect(r.impact!).toBeCloseTo(r.ge! / boardValue(basic, data), 9);
+    const denominator = Math.max(boardValue(basic, data), ASSUMPTIONS.impactFloor * basic.level * ASSUMPTIONS.targetValuePerSlot);
+    expect(r.impact!).toBeCloseTo(r.ge! / denominator, 9);
     // Tank 2★ (2 x 3) + Carry 2★ (4 x 3) + two items.
     expect(boardValue(basic, data)).toBe(2 * 3 + 4 * 3 + 2 * ASSUMPTIONS.ge.itemOnBoard);
   });
 
   it("combines stat and resource effects into one breakdown", () => {
     const both = scoreAugment(aug("X"), basic, data, "3-2", fx({ effects: [{ kind: "stat", scope: "team", stat: "health", pct: 0.1 }], resources: { gold: 10 } }));
-    expect(both.parts.length).toBe(2);
+    expect(both.parts.length).toBeGreaterThanOrEqual(2);
+    expect(both.parts.some((p) => p.lift !== undefined)).toBe(true);
     expect(both.ge!).toBeCloseTo(both.parts.reduce((a, p) => a + p.ge, 0), 9);
+  });
+});
+
+// The point of the estimate: the same augment is worth different amounts on different boards.
+describe("augment score: depends on the board", () => {
+  const fullBoard = board(
+    [
+      placed("Tank", 0, ["A", "B", "C"], 3),
+      placed("Tank", 1, ["A", "B", "C"], 3),
+      placed("Carry", 21, ["A", "B", "C"], 3),
+      placed("Carry", 22, ["A", "B", "C"], 3),
+      placed("Carry", 23, [], 3),
+      placed("Tank", 2, [], 3),
+      placed("Carry", 24, [], 3),
+      placed("Tank", 3, [], 3),
+      placed("Carry", 25, [], 3),
+    ],
+    9,
+  );
+  const sparse = board([placed("Tank", 0, [], 1)], 8);
+
+  it("values the same gold less on a board with little room left", () => {
+    const gold = fx({ resources: { gold: 30 } });
+    const onSparse = scoreAugment(aug("X"), sparse, data, "3-2", gold);
+    const onFull = scoreAugment(aug("X"), fullBoard, data, "3-2", gold);
+    expect(onFull.ge!).toBeLessThan(onSparse.ge!);
+    expect(onFull.caveats.join(" ")).toMatch(/limited by how much more value/);
+  });
+
+  it("values items by the free item slots, not just their price", () => {
+    const items = fx({ resources: { completed: 3 } });
+    const open = scoreAugment(aug("X"), board([placed("Carry", 21, [], 2), placed("Tank", 0, [], 2), placed("Carry", 22, [], 2)], 8), data, "3-2", items);
+    const loaded = scoreAugment(aug("X"), board([placed("Carry", 21, ["A", "B", "C"], 2), placed("Tank", 0, ["A", "B", "C"], 2), placed("Carry", 22, ["A", "B", "C"], 2)], 8), data, "3-2", items);
+    expect(loaded.ge!).toBeLessThan(open.ge!);
+    expect(loaded.caveats.join(" ")).toMatch(/item slots/);
+  });
+
+  it("values XP less the higher the level", () => {
+    const xp = fx({ resources: { xp: 10 } });
+    const at = (level: number) => scoreAugment(aug("X"), board(basic.units, level), data, "3-2", xp).ge!;
+    expect(at(6)).toBeGreaterThan(at(8));
+    expect(at(8)).toBeGreaterThan(at(9));
+    expect(at(10)).toBe(0);
+  });
+
+  it("no longer ranks the same augments first on every board", () => {
+    const effects: Record<string, AugmentEffects> = {
+      Economy: { confidence: "high", resources: { gold: 25, xp: 10 } },
+      Stats: { confidence: "high", effects: [{ kind: "stat", scope: "team", stat: "health", pct: 0.3 }, { kind: "stat", scope: "team", stat: "damageAmp", pct: 0.15 }] },
+    };
+    const offered = ["Economy", "Stats"].map((n) => ({ apiName: n, name: n, tier: 2, desc: "", values: {} })) as never;
+    const first = (b: Board) => rankAugments(offered, b, data, "3-2", effects)[0].apiName;
+    expect(first(sparse)).toBe("Economy");
+    expect(first(fullBoard)).toBe("Stats");
+  });
+
+  it("keeps a one-unit board's impact sane (no +700%)", () => {
+    const r = scoreAugment(aug("X"), board([placed("Tank", 0, [], 1)], 4), data, "3-2", fx({ resources: { gold: 30 } }));
+    expect(r.impact!).toBeLessThan(1.2);
   });
 });
 

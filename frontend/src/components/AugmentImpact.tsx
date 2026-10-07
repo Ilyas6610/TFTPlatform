@@ -111,6 +111,11 @@ export function AugmentImpact({
             artifact {ASSUMPTIONS.ge.artifact}, an emblem {ASSUMPTIONS.ge.emblem}; a unit costs its cost × 1, 3 or 9 by star. Only {ASSUMPTIONS.usefulness.gold * 100}% of
             gold, {ASSUMPTIONS.usefulness.item * 100}% of items and {ASSUMPTIONS.usefulness.unit * 100}% of units turn into board value.
           </li>
+          <li>
+            What a board can use is limited: it takes about {ASSUMPTIONS.targetValuePerSlot} gold of value per level slot, so gold, XP and units are worth less on a
+            nearly full board; items are limited by the free slots on {ASSUMPTIONS.itemCarries} carries; XP is worth less at level 8 and up. That is why the ranking
+            changes with the board.
+          </li>
           <li>The board's value is its units' gold cost plus {ASSUMPTIONS.ge.itemOnBoard} per item. Early gold is worth a little more.</li>
           <li>Traits, positioning beyond front and back rows, opponents and ability numbers aren't modelled.</li>
         </ul>

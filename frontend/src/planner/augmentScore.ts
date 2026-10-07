@@ -107,12 +107,28 @@ export const ASSUMPTIONS = {
   /** Stages left after the stage an augment is picked at, and rounds per stage, for recurring gains. */
   stagesLeft: { "2-1": 5, "3-2": 4, "4-2": 3 } as Record<string, number>,
   roundsPerStage: 6,
+  /**
+   * How much more value a board can take. A level-L board holds about L units
+   * worth this much each (a 2-star 4-cost is 12); resources beyond the room
+   * left up to that, and the item slots still free, are worth less and less.
+   */
+  targetValuePerSlot: 13,
+  /** Impact is a share of the board's value, but of at least this share of a full board's, so a one-unit board doesn't read as +700%. */
+  impactFloor: 0.6,
+  roomFloor: 8,
+  /** Carries that can use items, and items each can hold. */
+  itemCarries: 3,
+  itemsPerCarry: 3,
+  /** XP matters less the higher the level (level 9 and 10 have little left to buy). */
+  xpUsefulByLevel: { 6: 1, 7: 1, 8: 0.6, 9: 0.2, 10: 0 } as Record<number, number>,
   /** Gold early is worth more (interest, earlier levels): +this per stage left. */
   earlyBonusPerStage: 0.06,
 };
 
 export interface Part {
   label: string;
+  /** Which of the board's limits applies to it: units/economy, items, or none (a stat bonus). */
+  side?: "units" | "items";
   /** Gold-equivalents this part adds. */
   ge: number;
   /** For stat parts: the lift in team power, as a fraction. */
@@ -349,29 +365,56 @@ function itemGE(kind: string): number {
   }
 }
 
-function resourceParts(res: Resources, rec: Recurring | undefined, stage: string): Part[] {
+export interface Room {
+  /** Gold-equivalents of units/upgrades the board can still take at its level. */
+  units: number;
+  /** Gold-equivalents of items the carries can still hold. */
+  items: number;
+  /** Share of XP that is still worth something at this level. */
+  xp: number;
+}
+
+/** What the board can still use: the same gold is worth more to a board with room for it. */
+export function boardRoom(board: Board, data: SetData): Room {
+  const A = ASSUMPTIONS;
+  const value = boardValue(board, data);
+  const target = board.level * A.targetValuePerSlot;
+  const held = board.units.reduce((n, u) => n + u.items.length, 0);
+  const slots = Math.max(0, A.itemCarries * A.itemsPerCarry - held);
+  const xpLevel = Math.max(6, Math.min(10, board.level));
+  return {
+    units: Math.max(A.roomFloor, target - value),
+    items: Math.max(0, slots) * A.ge.completed,
+    xp: A.xpUsefulByLevel[xpLevel] ?? 1,
+  };
+}
+
+/** Value of `ge` to something that can only take `room` more: close to ge when there is plenty of room, capped by the room when there isn't. */
+const saturate = (ge: number, room: number) => (ge <= 0 ? 0 : room <= 0 ? 0 : room * (1 - Math.exp(-ge / room)));
+
+function resourceParts(res: Resources, rec: Recurring | undefined, stage: string, room: Room): Part[] {
   const { ge, usefulness: use } = ASSUMPTIONS;
   const f = stageFactors(stage);
   const parts: Part[] = [];
-  const add = (label: string, value: number, note?: string) => {
-    if (value !== 0) parts.push({ label, ge: value, note });
+  const add = (label: string, value: number, note?: string, side: Part["side"] = "units") => {
+    if (value !== 0) parts.push({ label, ge: value, note, side });
   };
 
   if (res.gold) add(`${res.gold} gold`, res.gold * ge.gold * use.gold * f.early, "early gold compounds (interest, earlier levels)");
   if (rec?.gold?.perRound) add(`${rec.gold.perRound} gold a round`, rec.gold.perRound * f.rounds * use.gold, `${f.rounds} rounds left`);
   if (rec?.gold?.perStage) add(`${rec.gold.perStage} gold a stage`, rec.gold.perStage * f.stages * use.gold, `${f.stages} stages left`);
-  if (res.xp) add(`${res.xp} XP`, res.xp * ge.xp * use.xp * f.early);
-  if (rec?.xp?.perStage) add(`${rec.xp.perStage} XP a stage`, rec.xp.perStage * f.stages * use.xp);
-  if (rec?.xp?.rounds && res.xp) add(`${res.xp} XP for ${rec.xp.rounds} more rounds`, res.xp * rec.xp.rounds * use.xp);
+  if (res.xp) add(`${res.xp} XP`, res.xp * ge.xp * use.xp * f.early * room.xp, room.xp < 1 ? "XP is worth less at this level" : undefined);
+  if (rec?.xp?.perStage) add(`${rec.xp.perStage} XP a stage`, rec.xp.perStage * f.stages * use.xp * room.xp);
+  if (rec?.xp?.rounds && res.xp) add(`${res.xp} XP for ${rec.xp.rounds} more rounds`, res.xp * rec.xp.rounds * use.xp * room.xp);
   if (res.rerolls) add(`${res.rerolls} rerolls`, res.rerolls * ge.reroll * use.reroll);
   if (rec?.rerolls?.perRound) add(`${rec.rerolls.perRound} reroll a round`, rec.rerolls.perRound * f.rounds * ge.reroll * use.reroll * 0.5, "half of the rounds you'd use them");
   if (rec?.rerolls?.perStage) add(`${rec.rerolls.perStage} rerolls a stage`, rec.rerolls.perStage * f.stages * ge.reroll * use.reroll);
-  if (res.components) add(`${fmt(res.components)} components`, res.components * ge.component * use.item);
-  if (rec?.components?.rounds && res.components) add(`components for ${rec.components.rounds} more rounds`, res.components * rec.components.rounds * ge.component * use.item);
-  if (res.completed) add(`${fmt(res.completed)} completed items`, res.completed * ge.completed * use.item);
-  if (res.artifacts) add(`${fmt(res.artifacts)} artifacts`, res.artifacts * ge.artifact * use.item);
-  if (res.emblems) add(`${res.emblems} emblems`, res.emblems * ge.emblem * use.item);
-  for (const n of res.named ?? []) add(`${n.n} × ${n.name}`, n.n * itemGE(n.kind) * use.item);
+  if (res.components) add(`${fmt(res.components)} components`, res.components * ge.component * use.item, undefined, "items");
+  if (rec?.components?.rounds && res.components) add(`components for ${rec.components.rounds} more rounds`, res.components * rec.components.rounds * ge.component * use.item, undefined, "items");
+  if (res.completed) add(`${fmt(res.completed)} completed items`, res.completed * ge.completed * use.item, undefined, "items");
+  if (res.artifacts) add(`${fmt(res.artifacts)} artifacts`, res.artifacts * ge.artifact * use.item, undefined, "items");
+  if (res.emblems) add(`${res.emblems} emblems`, res.emblems * ge.emblem * use.item, undefined, "items");
+  for (const n of res.named ?? []) add(`${n.n} × ${n.name}`, n.n * itemGE(n.kind) * use.item, undefined, "items");
   for (const u of res.units ?? []) {
     const label = u.name ? u.name : `${u.n} × ${u.cost}-cost`;
     add(`${label}${u.star > 1 ? ` (${u.star}★)` : ""}`, u.n * u.cost * 3 ** (u.star - 1) * use.unit);
@@ -464,7 +507,25 @@ export function scoreAugment(
     }
   }
 
-  if (fx.resources || fx.recurring) parts.push(...resourceParts(fx.resources ?? {}, fx.recurring, stage));
+  if (fx.resources || fx.recurring) {
+    const room = boardRoom(board, data);
+    const rp = resourceParts(fx.resources ?? {}, fx.recurring, stage, room);
+    parts.push(...rp);
+    // A board can only use so much: limit each side to the room it has left and show the difference.
+    for (const [side, roomGE] of [["units", room.units], ["items", room.items]] as const) {
+      const sum = rp.filter((p) => p.side === side).reduce((a, p) => a + p.ge, 0);
+      if (sum <= 0) continue;
+      const usable = saturate(sum, roomGE);
+      if (sum - usable > 0.05 * sum) {
+        parts.push({
+          label: side === "items" ? "less: your carries have few free item slots" : "less: this board has little room left to use it",
+          ge: usable - sum,
+          note: `usable ${usable.toFixed(1)} of ${sum.toFixed(1)}`,
+        });
+        caveats.push(side === "items" ? "limited by the item slots still free on the board" : "limited by how much more value this board can take at its level");
+      }
+    }
+  }
 
   if (fx.unparsed?.length) {
     caveats.push(...fx.unparsed.map((t) => `not counted: ${t}`));
@@ -474,7 +535,7 @@ export function scoreAugment(
   return {
     ...base,
     ge,
-    impact: value > 0 ? ge / value : null,
+    impact: value > 0 ? ge / Math.max(value, ASSUMPTIONS.impactFloor * board.level * ASSUMPTIONS.targetValuePerSlot) : null,
     statLift,
     confidence: parts.length === 0 ? "none" : confidence,
     parts,
