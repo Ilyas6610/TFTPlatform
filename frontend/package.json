@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "assets": "node scripts/fetch-assets.mjs",
     "test": "vitest run",
-    "augment-stages": "node scripts/fetch-augment-stages.mjs"
+    "augment-stages": "node scripts/fetch-augment-stages.mjs",
+    "augment-effects": "node scripts/extract-augment-effects.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

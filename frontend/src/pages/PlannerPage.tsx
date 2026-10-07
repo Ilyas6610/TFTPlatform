@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ApiError, PlannerCodes, SetData, SetItem, getPlannerCodes, getSetData } from "../api/client";
 import { GameIcon } from "../assets/tft";
+import { AugmentImpact } from "../components/AugmentImpact";
 import { Picker, PickerOption } from "../components/Picker";
 import { ItemGrid, UnitGrid } from "../components/PickTables";
 import { Names, TIER_STYLE, buildNames } from "../components/stats";
@@ -408,6 +409,10 @@ export default function PlannerPage() {
               })}
             </div>
           </div>
+
+          {data && (
+            <AugmentImpact board={board} data={data} names={names} onPick={(slot, a) => update((b) => setAugment(b, slot, a))} />
+          )}
 
           <div className="panel">
             <h3>Traits</h3>

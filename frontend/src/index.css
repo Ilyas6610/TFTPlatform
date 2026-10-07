@@ -2535,3 +2535,116 @@ table.partners td:first-child {
 .rank-badges + .profile-update {
   margin-left: 0;
 }
+
+/* Augment impact (prototype) */
+.augment-impact .chip {
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted, #8b92a5);
+  vertical-align: middle;
+}
+
+.augment-impact-note {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+}
+
+.augment-impact-list {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+}
+
+.augment-impact-row summary {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) minmax(40px, 90px) 54px 52px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.augment-impact-row summary::-webkit-details-marker {
+  display: none;
+}
+
+.augment-impact-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.augment-impact-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.augment-impact-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.augment-impact-bar span.neg {
+  background: #c0504d;
+}
+
+.augment-impact-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.augment-impact-conf {
+  font-size: 0.72rem;
+  text-align: center;
+  border-radius: 4px;
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+}
+
+.augment-impact-conf.conf-high {
+  color: #5fbf8a;
+}
+
+.augment-impact-conf.conf-medium {
+  color: #d9b44a;
+}
+
+.augment-impact-conf.conf-low {
+  color: #c0504d;
+}
+
+.augment-impact-detail {
+  padding: 4px 0 10px 36px;
+  font-size: 0.88rem;
+}
+
+.augment-impact-detail table {
+  width: 100%;
+}
+
+.augment-impact-detail .num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.augment-impact-unscored,
+.augment-impact-assumptions {
+  margin-top: 8px;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 600px) {
+  .augment-impact-row summary {
+    grid-template-columns: 28px minmax(0, 1fr) 54px 48px;
+  }
+  .augment-impact-bar {
+    display: none;
+  }
+}
