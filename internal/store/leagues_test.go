@@ -79,14 +79,84 @@ func TestWriteLeagueSnapshot_PartialDoesNotPrune(t *testing.T) {
 	}
 }
 
-func TestWriteLeagueSnapshot_QueuePriorityOnlyIncreases(t *testing.T) {
+func queuePriorities(t *testing.T, st *store.Store) map[string]int16 {
+	t.Helper()
+	batch, err := st.NextQueueBatch(context.Background(), 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]int16{}
+	for _, q := range batch {
+		out[q.PUUID] = q.Priority
+	}
+	return out
+}
+
+func TestWriteLeagueSnapshot_QueuePriorityFollowsTheLadder(t *testing.T) {
 	st := storetest.New(t)
 	ctx := context.Background()
 
-	if err := st.WriteLeagueSnapshot(ctx, "na1", []store.SnapshotEntry{entry("a", "CHALLENGER", 1000, 30)}, true); err != nil {
+	if err := st.WriteLeagueSnapshot(ctx, "na1", []store.SnapshotEntry{
+		entry("a", "CHALLENGER", 1000, 30),
+		entry("b", "CHALLENGER", 900, 30),
+	}, true); err != nil {
 		t.Fatal(err)
 	}
+	// a is demoted to Master; b drops out of the ladder altogether.
 	if err := st.WriteLeagueSnapshot(ctx, "na1", []store.SnapshotEntry{entry("a", "MASTER", 10, 10)}, true); err != nil {
+		t.Fatal(err)
+	}
+	if got := queuePriorities(t, st); got["a"] != 10 || got["b"] != 0 || len(got) != 2 {
+		t.Errorf("want a at 10 (demoted) and b at 0 (left the ladder), got %v", got)
+	}
+
+	// Viewing a profile (priority 0) never lowers a ladder player.
+	if err := st.EnqueuePUUID(ctx, "a", "na1", "americas", 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := queuePriorities(t, st); got["a"] != 10 {
+		t.Errorf("a profile view lowered a's priority to %d", got["a"])
+	}
+}
+
+func TestWriteLeagueSnapshot_PartialSnapshotKeepsOtherPriorities(t *testing.T) {
+	st := storetest.New(t)
+	ctx := context.Background()
+	if err := st.WriteLeagueSnapshot(ctx, "na1", []store.SnapshotEntry{
+		entry("a", "CHALLENGER", 1000, 30),
+		entry("b", "MASTER", 100, 10),
+	}, true); err != nil {
+		t.Fatal(err)
+	}
+	// A partial snapshot (rate-limited partway) mustn't demote what it didn't fetch.
+	if err := st.WriteLeagueSnapshot(ctx, "na1", []store.SnapshotEntry{entry("a", "CHALLENGER", 1100, 30)}, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := queuePriorities(t, st); got["a"] != 30 || got["b"] != 10 {
+		t.Errorf("want a at 30 and b at 10, got %v", got)
+	}
+}
+
+// Everyone gets a turn: the stalest player goes first, and a top-tier player
+// who was just crawled waits behind lower tiers that haven't been.
+func TestNextQueueBatch_StalestFirstThenPriority(t *testing.T) {
+	st := storetest.New(t)
+	ctx := context.Background()
+	if err := st.WriteLeagueSnapshot(ctx, "na1", []store.SnapshotEntry{
+		entry("chal", "CHALLENGER", 1000, 30),
+		entry("gm", "GRANDMASTER", 700, 20),
+		entry("master", "MASTER", 100, 10),
+		entry("master2", "MASTER", 90, 10),
+	}, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.EnqueuePUUID(ctx, "chal", "na1", "americas", 30); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.MarkCrawled(ctx, "chal", "NA1_1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.MarkCrawled(ctx, "master2", "NA1_2"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -94,8 +164,14 @@ func TestWriteLeagueSnapshot_QueuePriorityOnlyIncreases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(batch) != 1 || batch[0].Priority != 30 {
-		t.Errorf("expected a single queue entry at priority 30, got %+v", batch)
+	var order []string
+	for _, q := range batch {
+		order = append(order, q.PUUID)
+	}
+	// Never crawled first (gm before master by priority), then by when they
+	// were last crawled: chal first, then master2.
+	if want := []string{"gm", "master", "chal", "master2"}; !slices.Equal(order, want) {
+		t.Errorf("order = %v, want %v", order, want)
 	}
 }
 

@@ -214,7 +214,7 @@ func TestPlayerMatches_OlderPageFetchedFromRiot(t *testing.T) {
 
 func TestPlayerMatches_RejectsBadOffset(t *testing.T) {
 	s := &Server{}
-	for _, q := range []string{"offset=-1", "offset=x", "offset=501"} {
+	for _, q := range []string{"offset=-1", "offset=x", "offset=501", "offset=1", "offset=19", "offset=21", "offset=520"} {
 		if code, _ := getMatches(t, s, "/api/v1/players/me/matches?"+q); code != http.StatusBadRequest {
 			t.Errorf("%s: got %d, want 400", q, code)
 		}
@@ -245,4 +245,38 @@ func TestPlayerMatches_RefreshSyncsSoonerThanAPlainView(t *testing.T) {
 		t.Errorf("a refresh should start a sync, got %+v", resp)
 	}
 	waitForJob(t, s, matchSyncKey("me"))
+}
+
+// Older pages are whole pages at multiples of 20: limit can't multiply the
+// Riot jobs a client starts for one player (it used to be part of the work
+// each distinct (offset, limit) pair did).
+func TestPlayerMatches_OlderPagesIgnoreLimit(t *testing.T) {
+	s, riot := newMatchServer(t)
+	ids := make([]string, 0, 25)
+	for i := 25; i >= 1; i-- {
+		id := fmt.Sprintf("NA1_%d", i)
+		ids = append(ids, id)
+		riot.matches[id] = matchJSON(id, int64(i)*1000, "me")
+	}
+	riot.matchIDs["me"] = ids
+	getMatches(t, s, meMatches)
+	waitForJob(t, s, matchSyncKey("me"))
+
+	_, short := getMatches(t, s, meMatches+"&limit=5")
+	if len(short.Matches) != 5 {
+		t.Errorf("limit=5 on the first page: got %d games", len(short.Matches))
+	}
+	_, long := getMatches(t, s, meMatches+"&limit=100")
+	if len(long.Matches) != matchHistoryPageSize {
+		t.Errorf("limit=100 is capped to a page: got %d games", len(long.Matches))
+	}
+	// Whatever limit an older page is asked with, it's the same job.
+	getMatches(t, s, meMatches+"&offset=20&limit=1")
+	getMatches(t, s, meMatches+"&offset=20&limit=100")
+	getMatches(t, s, meMatches+"&offset=20")
+	waitForJob(t, s, olderMatchesKey("me", 20))
+	_, older := getMatches(t, s, meMatches+"&offset=20&limit=1")
+	if len(older.Matches) != 5 {
+		t.Errorf("older page: got %d games, want the page's 5 (limit ignored)", len(older.Matches))
+	}
 }

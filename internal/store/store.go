@@ -7,6 +7,8 @@ package store
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -15,8 +17,34 @@ type Store struct {
 	Pool *pgxpool.Pool
 }
 
+// Options tunes the connection pool; the zero value keeps pgx's defaults
+// (no statement timeout, max(4, NumCPU) connections).
+type Options struct {
+	// StatementTimeout makes Postgres cancel any statement running longer
+	// than this, so a slow query can't hold a pool connection indefinitely
+	// (the API serves public analytics queries from one shared pool).
+	StatementTimeout time.Duration
+	// MaxConns caps pool connections.
+	MaxConns int32
+}
+
 func New(ctx context.Context, databaseURL string) (*Store, error) {
-	pool, err := pgxpool.New(ctx, databaseURL)
+	return NewWithOptions(ctx, databaseURL, Options{})
+}
+
+// NewWithOptions is New with pool settings.
+func NewWithOptions(ctx context.Context, databaseURL string, opts Options) (*Store, error) {
+	cfg, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse database url: %w", err)
+	}
+	if opts.StatementTimeout > 0 {
+		cfg.ConnConfig.RuntimeParams["statement_timeout"] = strconv.FormatInt(opts.StatementTimeout.Milliseconds(), 10)
+	}
+	if opts.MaxConns > 0 {
+		cfg.MaxConns = opts.MaxConns
+	}
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("connect to postgres: %w", err)
 	}

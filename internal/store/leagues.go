@@ -64,7 +64,7 @@ func (s *Store) WriteLeagueSnapshot(ctx context.Context, platform string, entrie
 			INSERT INTO ingest_puuid_queue (puuid, platform_region, routing_region, priority)
 			VALUES ($1, $2, $3, $4)
 			ON CONFLICT (puuid) DO UPDATE SET
-				priority = GREATEST(ingest_puuid_queue.priority, EXCLUDED.priority)
+				priority = EXCLUDED.priority
 		`, e.PUUID, platform, e.RoutingRegion, e.Priority)
 	}
 	// The ladder doubles as rank history for apex players: one statement
@@ -85,6 +85,14 @@ func (s *Store) WriteLeagueSnapshot(ctx context.Context, platform string, entrie
 	`, platform)
 	if complete {
 		batch.Queue(`DELETE FROM league_entries WHERE platform_region = $1 AND fetched_at < now()`, platform)
+		// Priority follows the current ladder in both directions: a player
+		// who left it (and isn't in it any more) loses their apex priority
+		// instead of keeping it for good.
+		batch.Queue(`
+			UPDATE ingest_puuid_queue q SET priority = 0
+			WHERE q.platform_region = $1 AND q.priority > 0
+				AND NOT EXISTS (SELECT 1 FROM league_entries le WHERE le.puuid = q.puuid AND le.platform_region = $1)
+		`, platform)
 	}
 	if err := tx.SendBatch(ctx, batch).Close(); err != nil {
 		return err

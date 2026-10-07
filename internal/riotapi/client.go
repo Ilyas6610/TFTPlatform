@@ -77,7 +77,7 @@ func (c *Client) do(ctx context.Context, methodKey, url string, out interface{})
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
-			lastErr = fmt.Errorf("riot api request failed: %w", err)
+			lastErr = &ErrUnavailable{Detail: "riot api request failed", Err: err}
 			if attempt < maxAttempts {
 				time.Sleep(backoff(attempt))
 				continue
@@ -119,9 +119,12 @@ func (c *Client) do(ctx context.Context, methodKey, url string, out interface{})
 
 		default:
 			if resp.StatusCode >= 500 && attempt < maxAttempts {
-				lastErr = fmt.Errorf("riot api server error %d (%s): %s", resp.StatusCode, methodKey, errorBody(body))
+				lastErr = &ErrUnavailable{Detail: fmt.Sprintf("riot api server error %d (%s): %s", resp.StatusCode, methodKey, errorBody(body))}
 				time.Sleep(backoff(attempt))
 				continue
+			}
+			if resp.StatusCode >= 500 {
+				return &ErrUnavailable{Detail: fmt.Sprintf("riot api server error %d (%s): %s", resp.StatusCode, methodKey, errorBody(body))}
 			}
 			return fmt.Errorf("riot api unexpected status %d (%s): %s", resp.StatusCode, methodKey, errorBody(body))
 		}

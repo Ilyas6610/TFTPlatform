@@ -73,9 +73,10 @@ func TestPlayerBackfill(t *testing.T) {
 	if st.State != "done" || st.Found != 30 || st.Missing != 30 || st.Fetched != 30 {
 		t.Fatalf("finished: %+v, want done with 30 found and fetched", st)
 	}
-	_, page := getMatches(t, s, "/api/v1/players/me/matches?limit=100")
-	if len(page.Matches) != 31 {
-		t.Errorf("%d games stored, want 30 + the seed", len(page.Matches))
+	_, page1 := getMatches(t, s, "/api/v1/players/me/matches")
+	_, page2 := getMatches(t, s, "/api/v1/players/me/matches?offset=20")
+	if n := len(page1.Matches) + len(page2.Matches); n != 31 {
+		t.Errorf("%d games stored, want 30 + the seed", n)
 	}
 	// Another player's load waits out the server-wide gap.
 	if code, _ := backfillCall(t, s, http.MethodPost, "other"); code != http.StatusConflict {

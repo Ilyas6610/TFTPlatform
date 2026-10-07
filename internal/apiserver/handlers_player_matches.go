@@ -32,6 +32,11 @@ const (
 	// matchHistoryMaxOffset bounds paging back through a history (Riot keeps
 	// about a thousand recent match ids; a profile rarely needs more).
 	matchHistoryMaxOffset = 500
+	// matchHistoryPageSize is the history's page: pages are 20 games, at
+	// offsets that are multiples of 20 (what the frontend asks for), so a
+	// player has 25 pages to fetch from Riot rather than a job per
+	// (offset, limit) combination.
+	matchHistoryPageSize = 20
 )
 
 type PlayerMatchesResponse struct {
@@ -95,20 +100,23 @@ func (s *Server) handlePlayerMatches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := 20
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = n
-		}
-	}
 	offset := 0
 	if v := r.URL.Query().Get("offset"); v != "" {
 		n, err := strconv.Atoi(v)
-		if err != nil || n < 0 || n > matchHistoryMaxOffset {
-			writeError(w, http.StatusBadRequest, "invalid_offset", "offset must be 0 to "+strconv.Itoa(matchHistoryMaxOffset))
+		if err != nil || n < 0 || n > matchHistoryMaxOffset || n%matchHistoryPageSize != 0 {
+			writeError(w, http.StatusBadRequest, "invalid_offset",
+				"offset must be a multiple of "+strconv.Itoa(matchHistoryPageSize)+" from 0 to "+strconv.Itoa(matchHistoryMaxOffset))
 			return
 		}
 		offset = n
+	}
+	// limit can only shorten the first page; an older page is always whole,
+	// since the Riot fetch behind it is one page of ids.
+	limit := matchHistoryPageSize
+	if v := r.URL.Query().Get("limit"); v != "" && offset == 0 {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n < matchHistoryPageSize {
+			limit = n
+		}
 	}
 
 	matches, err := s.Store.PlayerMatches(ctx, puuid, offset, limit)

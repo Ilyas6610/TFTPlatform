@@ -2,6 +2,8 @@ package riotapi
 
 import (
 	"context"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -117,5 +119,48 @@ func TestClient_Do_400NeverRetries(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&calls); got != 1 {
 		t.Errorf("expected exactly 1 call (400 must never be retried), got %d", got)
+	}
+}
+
+// Once the retries are used up, a server error or a network failure is
+// ErrUnavailable: Riot can't answer, whatever was asked.
+func TestClient_Do_ServerErrorsAndNetworkFailuresAreUnavailable(t *testing.T) {
+	t.Run("5xx", func(t *testing.T) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}))
+		defer srv.Close()
+		err := testClient().do(context.Background(), "test.method", srv.URL, nil)
+		var unavailable *ErrUnavailable
+		if !errors.As(err, &unavailable) {
+			t.Fatalf("a persistent 503 should be ErrUnavailable, got %T %v", err, err)
+		}
+	})
+	t.Run("network", func(t *testing.T) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		url := srv.URL
+		srv.Close() // nothing listens any more
+		err := testClient().do(context.Background(), "test.method", url, nil)
+		var unavailable *ErrUnavailable
+		var netErr net.Error
+		if !errors.As(err, &unavailable) || !errors.As(err, &netErr) {
+			t.Fatalf("a connection failure should be ErrUnavailable wrapping a net.Error, got %T %v", err, err)
+		}
+	})
+}
+
+// A 4xx that isn't a key, rate or not-found problem is the request's fault,
+// not Riot being down.
+func TestClient_Do_BadRequestIsNotUnavailable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer srv.Close()
+	err := testClient().do(context.Background(), "test.method", srv.URL, nil)
+	var unavailable *ErrUnavailable
+	if err == nil || errors.As(err, &unavailable) {
+		t.Errorf("400 must not be ErrUnavailable: %v", err)
 	}
 }
