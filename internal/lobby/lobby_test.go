@@ -55,29 +55,3 @@ func TestFor(t *testing.T) {
 		t.Errorf("D = %+v (the teammate must not count)", d)
 	}
 }
-
-func TestThirds(t *testing.T) {
-	if Thirds(make([]Game, MinGames-1)) != nil {
-		t.Error("too few games should give nil")
-	}
-	// Lobbies 1..9: placements get worse as lobbies get tougher.
-	var games []Game
-	for i := 9; i >= 1; i-- { // unsorted input
-		games = append(games, Game{Lobby: i * 100, Placement: (i + 2) / 3 * 2})
-	}
-	th := Thirds(games)
-	if len(th) != 3 {
-		t.Fatalf("got %+v", th)
-	}
-	want := []struct {
-		label         string
-		lobby, lo, hi int
-		avg           float64
-	}{{"easiest", 200, 100, 300, 2}, {"middle", 500, 400, 600, 4}, {"toughest", 800, 700, 900, 6}}
-	for i, w := range want {
-		g := th[i]
-		if g.Label != w.label || g.Lobby != w.lobby || g.MinLobby != w.lo || g.MaxLobby != w.hi || g.AvgPlacement != w.avg || g.Boards != 3 {
-			t.Errorf("third %d = %+v, want %+v", i, g, w)
-		}
-	}
-}

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"tft-platform/internal/comps"
-	"tft-platform/internal/lobby"
 	"tft-platform/internal/lp"
 	"tft-platform/internal/sessions"
 	"tft-platform/internal/setdata"
@@ -49,11 +48,6 @@ type PlayerStatsResponse struct {
 	// Sessions are play sessions in the set and queue scope (level scope
 	// doesn't apply): results by game in session and after bad games.
 	Sessions sessions.Result `json:"sessions"`
-	// Lobbies splits the scope's games with a rated lobby (LobbyGames of
-	// them) into the player's easiest, middle and toughest thirds; empty
-	// under lobby.MinGames.
-	Lobbies    []lobby.Third `json:"lobbies"`
-	LobbyGames int           `json:"lobbyGames"`
 }
 
 // PatchStats is a player's results on one patch. LP is the known LP change
@@ -154,17 +148,10 @@ func (s *Server) handlePlayerStats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	thirds, lobbyGames, err := s.playerLobbies(ctx, puuid, inScope)
-	if err != nil {
-		writeDBError(w, r, err)
-		return
-	}
-
 	writeJSON(w, http.StatusOK, PlayerStatsResponse{
 		Sets: sets, Summary: ex.Summary, Baseline: ex.Baseline, Queues: queues,
 		Units: ex.Units, Items: ex.Items, Traits: ex.Traits, Comps: playerComps, Patches: patches,
 		Partners: partners, Sessions: sessions.Analyze(inScope),
-		Lobbies: thirds, LobbyGames: lobbyGames,
 	})
 }
 
@@ -279,29 +266,4 @@ func (s *Server) handlePlayerRankHistory(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)
-}
-
-// playerLobbies rates the lobby of each game (in scope) and splits the rated
-// ones into thirds by strength.
-func (s *Server) playerLobbies(ctx context.Context, puuid string, games []store.TimedGame) ([]lobby.Third, int, error) {
-	ids := make([]string, len(games))
-	for i, g := range games {
-		ids[i] = g.MatchID
-	}
-	players, err := s.Store.LobbyPlayers(ctx, ids)
-	if err != nil {
-		return nil, 0, err
-	}
-	rated := lobby.For(players, puuid)
-	var rows []lobby.Game
-	for _, g := range games {
-		if l, ok := rated[g.MatchID]; ok {
-			rows = append(rows, lobby.Game{Lobby: l.Value, Placement: g.Placement})
-		}
-	}
-	thirds := lobby.Thirds(rows)
-	if thirds == nil {
-		thirds = []lobby.Third{}
-	}
-	return thirds, len(rows), nil
 }

@@ -77,14 +77,6 @@ export interface LobbyStrength {
   opponents: number;
 }
 
-/** A player's results in a third of their games, ranked by lobby strength. */
-export interface LobbyThird extends PlacementStats {
-  label: "easiest" | "middle" | "toughest";
-  lobby: number;
-  minLobby: number;
-  maxLobby: number;
-}
-
 /** A player by PUUID with the Riot ID we know (from Riot's match data when not resolved). */
 export interface PlayerRef {
   puuid: string;
@@ -198,8 +190,6 @@ export interface PlayerStats {
   // Double Up teammates in the set, most games first (none when the queue scope leaves out Double Up).
   partners: DoubleUpPartner[];
   sessions: PlayerSessions;
-  lobbies: LobbyThird[]; // empty under 9 rated games
-  lobbyGames: number; // games with a rated lobby
 }
 
 /** Play sessions (games less than 30 minutes apart) in the set and queue scope. */
@@ -286,19 +276,10 @@ export function getMatch(matchId: string) {
   return get<MatchDetail>(`/api/v1/matches/${encodeURIComponent(matchId)}`);
 }
 
-/** A participant's Ranked standing around a game (current = today's ladder, not near the game). */
-export interface MatchLobbyPlayer {
-  puuid: string;
-  tier: string;
-  rank?: string;
-  leaguePoints: number;
-  value: number;
-  current: boolean;
-}
-
+/** A game's lobby strength: the average Ranked standing (RankPoint scale) of the participants whose rank is known. */
 export interface MatchLobby {
-  players: MatchLobbyPlayer[]; // only those with a known rank
-  average: number; // over them; 0 when none
+  average: number; // 0 when none is known
+  known: number;
   total: number;
 }
 

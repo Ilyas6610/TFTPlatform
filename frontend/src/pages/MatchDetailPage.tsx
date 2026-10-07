@@ -1,16 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import {
-  ApiError,
-  MatchDetail,
-  MatchLobby,
-  MatchLobbyPlayer,
-  MatchParticipant,
-  getMatch,
-  getMatchLobby,
-} from "../api/client";
+import { ApiError, MatchDetail, MatchLobby, MatchParticipant, getMatch, getMatchLobby } from "../api/client";
 import { GameIcon } from "../assets/tft";
-import { rankText, valueText } from "../components/LPChart";
+import { valueText } from "../components/LPChart";
 
 const DOUBLE_UP = 1160;
 
@@ -33,7 +25,7 @@ export default function MatchDetailPage() {
   const [match, setMatch] = useState<MatchDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Participants' ranks around the game; loaded after the match, from
+  // The lobby's average rank around the game; loaded after the match, from
   // stored data only (a just-fetched match has its rows by then).
   const [lobby, setLobby] = useState<MatchLobby | null>(null);
 
@@ -65,7 +57,6 @@ export default function MatchDetailPage() {
   const participants = [...match.info.participants].sort((a, b) => a.placement - b.placement);
   // Match ids are prefixed with their platform, e.g. "NA1_5654662880".
   const platform = match.metadata.match_id.split("_")[0].toLowerCase();
-  const ranks = new Map(lobby?.players.map((r) => [r.puuid, r]) ?? []);
 
   return (
     <div>
@@ -75,9 +66,9 @@ export default function MatchDetailPage() {
           Set {match.info.tft_set_number} &middot; {match.info.tft_game_type} &middot;{" "}
           {new Date(match.info.game_datetime).toLocaleString()} &middot; source: {match.source}
         </p>
-        {lobby && lobby.players.length > 0 && (
-          <p className="muted" title="Ranked standing of each player around this game, where recorded">
-            Lobby ≈ {valueText(lobby.average)} ({lobby.players.length} of {lobby.total} players ranked)
+        {lobby && lobby.known > 0 && (
+          <p className="muted" title="Average Ranked standing of the players around this game, where recorded">
+            Lobby ≈ {valueText(lobby.average)} ({lobby.known} of {lobby.total} players ranked)
           </p>
         )}
       </div>
@@ -89,16 +80,16 @@ export default function MatchDetailPage() {
                 <span className={`placement placement-${i * 2 + 1}`}>#{i + 1}</span> Team
               </div>
               {team.map((p) => (
-                <Participant key={p.puuid} p={p} platform={platform} rank={ranks.get(p.puuid)} />
+                <Participant key={p.puuid} p={p} platform={platform} />
               ))}
             </div>
           ))
-        : participants.map((p) => <Participant key={p.puuid} p={p} platform={platform} rank={ranks.get(p.puuid)} />)}
+        : participants.map((p) => <Participant key={p.puuid} p={p} platform={platform} />)}
     </div>
   );
 }
 
-function Participant({ p, platform, rank }: { p: MatchParticipant; platform: string; rank?: MatchLobbyPlayer }) {
+function Participant({ p, platform }: { p: MatchParticipant; platform: string }) {
   return (
     <div className="panel">
       <h3 className="participant-header">
@@ -112,17 +103,6 @@ function Participant({ p, platform, rank }: { p: MatchParticipant; platform: str
           </Link>
         ) : (
           <span className="muted">Unknown player</span>
-        )}
-        {rank && (
-          <span
-            className="muted participant-rank"
-            title={
-              rank.current ? "Today's ladder rank (none recorded near this game)" : "Ranked standing around this game"
-            }
-          >
-            {rankText({ tier: rank.tier, rank: rank.rank ?? "", leaguePoints: rank.leaguePoints })}
-            {rank.current ? " (now)" : ""}
-          </span>
         )}
         <span className="muted participant-level">Level {p.level}</span>
       </h3>

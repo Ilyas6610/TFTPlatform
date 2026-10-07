@@ -338,8 +338,7 @@ func TestLobbyStrength(t *testing.T) {
 	s := &Server{Store: storetest.New(t)}
 	ctx := context.Background()
 	// Nine ranked games; in game i every opponent is Master with i*100 LP
-	// (a snapshot just after it), and "me" places better the tougher the
-	// lobby: 8, 7, 6, 5, 4, 3, 2, 1, 1.
+	// (a snapshot just after it).
 	mine := []int{8, 7, 6, 5, 4, 3, 2, 1, 1}
 	for i := 1; i <= 9; i++ {
 		parts := map[string]store.MatchParticipant{}
@@ -380,27 +379,12 @@ func TestLobbyStrength(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	NewRouter(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/players/me/stats?set=18", nil))
-	var res PlayerStatsResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil || rec.Code != http.StatusOK {
-		t.Fatalf("%d %v %s", rec.Code, err, rec.Body)
-	}
-	if res.LobbyGames != 9 || len(res.Lobbies) != 3 {
-		t.Fatalf("lobbies = %d games, %+v", res.LobbyGames, res.Lobbies)
-	}
-	// Easiest third: Master 100-300 LP, placed 8, 7, 6. Toughest: 700-900 LP, placed 2, 1, 1.
-	if e, h := res.Lobbies[0], res.Lobbies[2]; e.Label != "easiest" || e.MinLobby != 2900 || e.MaxLobby != 3100 || e.AvgPlacement != 7 ||
-		h.Label != "toughest" || h.MinLobby != 3500 || h.AvgPlacement != 4.0/3 {
-		t.Errorf("thirds = %+v", res.Lobbies)
-	}
-
-	rec = httptest.NewRecorder()
 	NewRouter(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/matches/NA1_5/lobby", nil))
 	var lob MatchLobbyResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &lob); err != nil || rec.Code != http.StatusOK {
 		t.Fatalf("%d %v %s", rec.Code, err, rec.Body)
 	}
-	if lob.Total != 8 || len(lob.Players) != 7 || lob.Average != 3300 {
+	if lob.Total != 8 || lob.Known != 7 || lob.Average != 3300 {
 		t.Errorf("match lobby = %+v, want 7 of 8 known at Master 500", lob)
 	}
 	rec = httptest.NewRecorder()
