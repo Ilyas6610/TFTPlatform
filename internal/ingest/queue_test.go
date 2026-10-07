@@ -2,10 +2,13 @@ package ingest_test
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"tft-platform/internal/ingest"
+	"tft-platform/internal/riotapi"
 	"tft-platform/internal/riotapi/riotapitest"
 	"tft-platform/internal/store"
 	"tft-platform/internal/store/storetest"
@@ -155,5 +158,35 @@ func TestCrawlQueue_ExpiredKeyEndsTheRun(t *testing.T) {
 	}
 	if _, failures, _ := queueState(t, st, "p"); failures != 0 {
 		t.Errorf("a key problem isn't the player's fault: failures=%d", failures)
+	}
+}
+
+// Riot being down isn't any one player's fault: the run ends and nobody is
+// backed off, so the queue is whole again as soon as Riot is.
+func TestCrawlQueue_RiotOutageEndsTheRunWithoutBackingOffPlayers(t *testing.T) {
+	st := storetest.New(t)
+	riot := newFakeRiot()
+	client := riotapitest.NewClient(t, riot)
+	ctx := context.Background()
+	enqueue(t, st, "first", 30)
+	enqueue(t, st, "second", 20)
+	riot.status["first/ids"] = 503
+	riot.status["second/ids"] = 503
+
+	_, err := ingest.CrawlQueue(ctx, client, st, 10, 20, 50)
+	var unavailable *riotapi.ErrUnavailable
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("an outage should end the run with ErrUnavailable, got %v", err)
+	}
+	for _, p := range []string{"first", "second"} {
+		if crawled, failures, next := queueState(t, st, p); crawled || failures != 0 || next != nil {
+			t.Errorf("%s: crawled=%v failures=%d next=%v; an outage must leave players untouched", p, crawled, failures, next)
+		}
+	}
+	// Only the first player was tried before the run ended.
+	for _, path := range riot.requestPaths() {
+		if strings.Contains(path, "second") {
+			t.Errorf("the run went on to the next player: %s", path)
+		}
 	}
 }

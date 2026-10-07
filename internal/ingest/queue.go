@@ -51,11 +51,15 @@ func CrawlQueue(ctx context.Context, riot *riotapi.Client, st *store.Store, maxP
 		result.PUUIDsCrawled++
 
 		if err != nil {
-			// A key that needs rotating or a cancelled run ends the batch;
-			// anything else is this player's problem: back off from them and
+			// A key that needs rotating, Riot being down (5xx, network) or a
+			// cancelled run ends the batch: none of those is this player's
+			// fault, and backing off every player an outage touches would
+			// leave much of the queue waiting long after Riot is back.
+			// Anything else is this player's problem: back off from them and
 			// carry on, so one bad PUUID can't block the whole queue.
 			var keyExpired *riotapi.ErrKeyExpired
-			if errors.As(err, &keyExpired) || ctx.Err() != nil {
+			var unavailable *riotapi.ErrUnavailable
+			if errors.As(err, &keyExpired) || errors.As(err, &unavailable) || ctx.Err() != nil {
 				return result, fmt.Errorf("crawl %s: %w", q.PUUID, err)
 			}
 			if merr := st.MarkCrawlFailed(ctx, q.PUUID, err.Error()); merr != nil {

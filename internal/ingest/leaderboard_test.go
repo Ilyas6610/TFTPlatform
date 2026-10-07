@@ -73,6 +73,12 @@ func (f *fakeRiot) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotFound)
 }
 
+func (f *fakeRiot) requestPaths() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.requests...)
+}
+
 func (f *fakeRiot) requestCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
