@@ -70,27 +70,23 @@ func Load() (Config, error) {
 		DBMaxConns:              e.int("DB_MAX_CONNS", 10),
 		RedisURL:                e.str("REDIS_URL", ""),
 	}
+
+	// Range problems are reported together with the malformed values.
+	problem := func(bad bool, msg string) {
+		if bad {
+			e.errs = append(e.errs, msg)
+		}
+	}
+	problem(cfg.RiotAppRateLimitPerSec <= 0, "RIOT_APP_RATE_LIMIT_PER_SEC must be positive")
+	problem(cfg.RiotAppRateLimitPer2Min <= 0, "RIOT_APP_RATE_LIMIT_PER_2MIN must be positive")
+	problem(cfg.SetDataSyncInterval < 0, "SETDATA_SYNC_INTERVAL must not be negative (0 disables the sync)")
+	problem(cfg.StatsCacheTTL <= 0, "STATS_CACHE_TTL must be a positive duration")
+	problem(cfg.DBStatementTimeout < 0, "DB_STATEMENT_TIMEOUT must not be negative")
+	problem(cfg.DBMaxConns <= 0, "DB_MAX_CONNS must be positive")
+	problem(cfg.DatabaseURL == "", "DATABASE_URL is required")
+	problem(cfg.RiotAPIKeyFile == "" && cfg.RiotAPIKey == "", "one of RIOT_API_KEY_FILE or RIOT_API_KEY is required")
 	if len(e.errs) > 0 {
 		return Config{}, fmt.Errorf("invalid configuration: %s", strings.Join(e.errs, "; "))
-	}
-
-	switch {
-	case cfg.RiotAppRateLimitPerSec <= 0:
-		return Config{}, fmt.Errorf("RIOT_APP_RATE_LIMIT_PER_SEC must be positive")
-	case cfg.RiotAppRateLimitPer2Min <= 0:
-		return Config{}, fmt.Errorf("RIOT_APP_RATE_LIMIT_PER_2MIN must be positive")
-	case cfg.SetDataSyncInterval < 0:
-		return Config{}, fmt.Errorf("SETDATA_SYNC_INTERVAL must not be negative (0 disables the sync)")
-	case cfg.StatsCacheTTL <= 0:
-		return Config{}, fmt.Errorf("STATS_CACHE_TTL must be a positive duration")
-	case cfg.DBStatementTimeout < 0:
-		return Config{}, fmt.Errorf("DB_STATEMENT_TIMEOUT must not be negative")
-	case cfg.DBMaxConns <= 0:
-		return Config{}, fmt.Errorf("DB_MAX_CONNS must be positive")
-	case cfg.DatabaseURL == "":
-		return Config{}, fmt.Errorf("DATABASE_URL is required")
-	case cfg.RiotAPIKeyFile == "" && cfg.RiotAPIKey == "":
-		return Config{}, fmt.Errorf("one of RIOT_API_KEY_FILE or RIOT_API_KEY is required")
 	}
 	return cfg, nil
 }

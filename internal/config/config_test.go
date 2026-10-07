@@ -108,3 +108,21 @@ func TestLoad_RequiredSettings(t *testing.T) {
 		t.Error("a Riot key is required")
 	}
 }
+
+// Range problems are reported with the malformed values, not one at a time.
+func TestLoad_ReportsEveryProblemTogether(t *testing.T) {
+	env := valid()
+	env["RIOT_APP_RATE_LIMIT_PER_2MIN"] = "1OO" // malformed
+	env["DB_MAX_CONNS"] = "0"                   // out of range
+	env["STATS_CACHE_TTL"] = "0s"               // out of range
+	setEnv(t, env)
+	_, err := Load()
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	for _, name := range []string{"RIOT_APP_RATE_LIMIT_PER_2MIN", "DB_MAX_CONNS", "STATS_CACHE_TTL"} {
+		if !strings.Contains(err.Error(), name) {
+			t.Errorf("%s missing from %q", name, err)
+		}
+	}
+}
