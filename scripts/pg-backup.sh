@@ -4,12 +4,16 @@
 # libpq variables (PGHOST, PGUSER, PGPASSWORD, PGDATABASE).
 #
 #   scripts/pg-backup.sh          one dump, then exit
-#   scripts/pg-backup.sh --loop   a dump every BACKUP_INTERVAL_SECONDS (default a day);
-#                                 a failed dump is logged and retried next round
+#   scripts/pg-backup.sh --loop   a dump every BACKUP_INTERVAL_SECONDS (default a day), counted
+#                                 from the newest dump so restarts don't add extras;
+#                                 a failed dump is logged and retried after 5 minutes
 #
 # Restore with scripts/pg-restore.sh. Keep a copy off the host too: a dump
 # next to the database doesn't survive losing the machine.
 set -euo pipefail
+# Dumps are private to their owner (the database's contents, even if derived
+# from public Riot data, aren't for anyone with host access to read).
+umask 077
 
 dir="${BACKUP_DIR:-/backups}"
 keep="${BACKUP_KEEP:-7}"
@@ -33,10 +37,36 @@ backup_once() {
   echo "pg-backup: wrote $final ($(du -h -- "$final" | cut -f1)), keeping $keep"
 }
 
+# Seconds until the next dump is due: the interval since the newest one, so a
+# container that restarts in a loop doesn't write a dump per restart and
+# rotate older good days out.
+wait_for_next() {
+  local newest age
+  newest="$(ls -1t -- "$dir"/tft-*.dump 2>/dev/null | head -n 1 || true)"
+  if [ -z "$newest" ]; then
+    echo 0
+    return
+  fi
+  age=$(( $(date +%s) - $(stat -c %Y -- "$newest") ))
+  if [ "$age" -lt "$interval" ]; then
+    echo $(( interval - age ))
+  else
+    echo 0
+  fi
+}
+
 if [ "${1:-}" = "--loop" ]; then
+  retry=$(( interval < 300 ? interval : 300 ))
   while true; do
-    backup_once || echo "pg-backup: dump failed; retrying in ${interval}s" >&2
-    sleep "$interval"
+    wait="$(wait_for_next)"
+    if [ "$wait" -gt 0 ]; then
+      echo "pg-backup: newest dump is recent; next in ${wait}s"
+      sleep "$wait"
+    fi
+    if ! backup_once; then
+      echo "pg-backup: dump failed; retrying in ${retry}s" >&2
+      sleep "$retry"
+    fi
   done
 else
   backup_once
