@@ -384,8 +384,13 @@ func TestLobbyStrength(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &lob); err != nil || rec.Code != http.StatusOK {
 		t.Fatalf("%d %v %s", rec.Code, err, rec.Body)
 	}
-	if lob.Total != 8 || lob.Known != 7 || lob.Average != 3300 {
+	if lob.Total != 8 || lob.Known != 7 || len(lob.Players) != 7 || lob.Average != 3300 {
 		t.Errorf("match lobby = %+v, want 7 of 8 known at Master 500", lob)
+	}
+	for _, p := range lob.Players {
+		if p.PUUID == "me" || p.Tier != "MASTER" || p.LeaguePoints != 500 || p.Value != 3300 || p.Current {
+			t.Errorf("player %+v, want an opponent at Master 500 from a snapshot near the game", p)
+		}
 	}
 	rec = httptest.NewRecorder()
 	NewRouter(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/matches/bad/lobby", nil))

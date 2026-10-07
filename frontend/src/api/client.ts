@@ -276,8 +276,19 @@ export function getMatch(matchId: string) {
   return get<MatchDetail>(`/api/v1/matches/${encodeURIComponent(matchId)}`);
 }
 
-/** A game's lobby strength: the average Ranked standing (RankPoint scale) of the participants whose rank is known. */
+/** A participant's Ranked standing around a game (current = today's ladder, not near the game). */
+export interface MatchLobbyPlayer {
+  puuid: string;
+  tier: string;
+  rank?: string;
+  leaguePoints: number;
+  value: number;
+  current: boolean;
+}
+
+/** Each ranked participant's standing and the lobby's average (RankPoint scale) over them. */
 export interface MatchLobby {
+  players: MatchLobbyPlayer[]; // only those with a known rank
   average: number; // 0 when none is known
   known: number;
   total: number;

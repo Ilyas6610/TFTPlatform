@@ -105,17 +105,28 @@ func writeRawJSONWithSource(w http.ResponseWriter, raw []byte, source string) {
 	json.NewEncoder(w).Encode(body)
 }
 
-// MatchLobbyResponse is a game's lobby strength: the average Ranked
-// standing (lp.Value) of the participants whose rank is known.
-type MatchLobbyResponse struct {
-	Average int `json:"average"` // 0 when none is known
-	Known   int `json:"known"`   // participants with a known rank
-	Total   int `json:"total"`   // participants stored
+// MatchLobbyPlayer is a participant's Ranked standing around the game.
+type MatchLobbyPlayer struct {
+	PUUID        string `json:"puuid"`
+	Tier         string `json:"tier"`
+	Rank         string `json:"rank,omitempty"`
+	LeaguePoints int    `json:"leaguePoints"`
+	Value        int    `json:"value"`   // lp.Value
+	Current      bool   `json:"current"` // today's ladder rank, not one near the game
 }
 
-// handleMatchLobby serves GET /api/v1/matches/{matchId}/lobby: the average
-// Ranked standing of the stored participants around the game
-// (store.LobbyPlayers). It never calls Riot; an unstored match has none.
+// MatchLobbyResponse is each ranked participant's standing and the lobby's
+// average (lp.Value) over them.
+type MatchLobbyResponse struct {
+	Players []MatchLobbyPlayer `json:"players"` // only those with a known rank
+	Average int                `json:"average"` // 0 when none is known
+	Known   int                `json:"known"`   // len(Players)
+	Total   int                `json:"total"`   // participants stored
+}
+
+// handleMatchLobby serves GET /api/v1/matches/{matchId}/lobby: each stored
+// participant's Ranked standing around the game (store.LobbyPlayers) and
+// their average. It never calls Riot; an unstored match has none.
 func (s *Server) handleMatchLobby(w http.ResponseWriter, r *http.Request) {
 	matchID := r.PathValue("matchId")
 	if !validMatchID(matchID) {
@@ -127,13 +138,18 @@ func (s *Server) handleMatchLobby(w http.ResponseWriter, r *http.Request) {
 		writeDBError(w, r, err)
 		return
 	}
-	resp := MatchLobbyResponse{Total: len(players)}
+	resp := MatchLobbyResponse{Players: []MatchLobbyPlayer{}, Total: len(players)}
 	sum := 0
 	for _, p := range players {
-		if p.Rank != nil {
-			sum += lp.Value(*p.Rank)
-			resp.Known++
+		if p.Rank == nil {
+			continue
 		}
+		v := lp.Value(*p.Rank)
+		sum += v
+		resp.Known++
+		resp.Players = append(resp.Players, MatchLobbyPlayer{
+			PUUID: p.PUUID, Tier: p.Rank.Tier, Rank: p.Rank.Rank, LeaguePoints: p.Rank.LeaguePoints, Value: v, Current: p.Current,
+		})
 	}
 	if resp.Known > 0 {
 		resp.Average = sum / resp.Known
