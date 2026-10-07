@@ -1,0 +1,90 @@
+// Package lobby rates how strong a player's opponents were in a game, from
+// the opponents' Ranked standings around it (store.LobbyPlayers). Pure
+// logic.
+package lobby
+
+import (
+	"tft-platform/internal/lp"
+	"tft-platform/internal/store"
+)
+
+// doubleUpQueue: teammates (a consecutive placement pair) aren't opponents.
+const doubleUpQueue = 1160
+
+// Strength is a player's lobby in one game: the average Ranked standing of
+// the opponents whose rank is known, on lp.Value's scale.
+type Strength struct {
+	Value int `json:"value"`
+	// Tier names an apex average by the platform's current cutoffs
+	// (TierOf): MASTER, GRANDMASTER or CHALLENGER; empty below Master.
+	Tier      string `json:"tier,omitempty"`
+	Known     int    `json:"known"`     // opponents with a known rank
+	Current   int    `json:"current"`   // of those, ranked by today's ladder rather than near the game
+	Opponents int    `json:"opponents"` // 7, or 6 in Double Up
+}
+
+// For rates puuid's lobby in each match of players (LobbyPlayers rows for
+// those matches). A match is left out when under half the opponents'
+// ranks are known: the average of a few would say little.
+func For(players []store.LobbyPlayer, puuid string) map[string]Strength {
+	byMatch := map[string][]store.LobbyPlayer{}
+	for _, p := range players {
+		byMatch[p.MatchID] = append(byMatch[p.MatchID], p)
+	}
+	out := map[string]Strength{}
+	for id, ps := range byMatch {
+		var me *store.LobbyPlayer
+		for i := range ps {
+			if ps[i].PUUID == puuid {
+				me = &ps[i]
+			}
+		}
+		if me == nil {
+			continue
+		}
+		var s Strength
+		sum := 0
+		for _, p := range ps {
+			if p.PUUID == puuid || (p.QueueID == doubleUpQueue && (p.Placement+1)/2 == (me.Placement+1)/2) {
+				continue
+			}
+			s.Opponents++
+			if p.Rank == nil {
+				continue
+			}
+			s.Known++
+			sum += lp.Value(*p.Rank)
+			if p.Current {
+				s.Current++
+			}
+		}
+		if s.Known == 0 || s.Known*2 < s.Opponents {
+			continue
+		}
+		s.Value = sum / s.Known
+		out[id] = s
+	}
+	return out
+}
+
+// masterValue is where Master starts on lp.Value's scale.
+const masterValue = 2800
+
+// TierOf names the apex tier a lobby average falls in, by the platform's
+// current cutoffs: Master, Grandmaster and Challenger share one LP ladder,
+// so only the cutoffs tell an average of 700 LP above Master apart as
+// Challenger on one platform and Grandmaster on another. Empty below
+// Master, and when the platform's cutoffs aren't known (nothing stored).
+func TierOf(value int, c store.ApexCutoffs) string {
+	if value < masterValue || (c.Grandmaster == 0 && c.Challenger == 0) {
+		return ""
+	}
+	lp := value - masterValue
+	switch {
+	case c.Challenger > 0 && lp >= c.Challenger:
+		return "CHALLENGER"
+	case c.Grandmaster > 0 && lp >= c.Grandmaster:
+		return "GRANDMASTER"
+	}
+	return "MASTER"
+}

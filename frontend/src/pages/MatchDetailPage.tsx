@@ -1,7 +1,16 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ApiError, MatchDetail, MatchParticipant, getMatch } from "../api/client";
+import {
+  ApiError,
+  MatchDetail,
+  MatchLobby,
+  MatchLobbyPlayer,
+  MatchParticipant,
+  getMatch,
+  getMatchLobby,
+} from "../api/client";
 import { GameIcon } from "../assets/tft";
+import { lobbyText, rankText } from "../components/LPChart";
 
 const DOUBLE_UP = 1160;
 
@@ -24,15 +33,30 @@ export default function MatchDetailPage() {
   const [match, setMatch] = useState<MatchDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Each player's rank around the game and the lobby's average; loaded
+  // after the match, from stored data only (a just-fetched match has its
+  // rows by then).
+  const [lobby, setLobby] = useState<MatchLobby | null>(null);
 
   useEffect(() => {
     if (!matchId) return;
+    let cancelled = false;
     setLoading(true);
     setError(null);
+    setLobby(null);
     getMatch(matchId)
-      .then(setMatch)
-      .catch((e: unknown) => setError(e instanceof ApiError ? e.message : "failed to load match"))
-      .finally(() => setLoading(false));
+      .then((m) => {
+        if (cancelled) return;
+        setMatch(m);
+        getMatchLobby(matchId)
+          .then((l) => !cancelled && setLobby(l))
+          .catch(() => {});
+      })
+      .catch((e: unknown) => !cancelled && setError(e instanceof ApiError ? e.message : "failed to load match"))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
   }, [matchId]);
 
   if (loading) return <p className="muted">Loading...</p>;
@@ -42,6 +66,7 @@ export default function MatchDetailPage() {
   const participants = [...match.info.participants].sort((a, b) => a.placement - b.placement);
   // Match ids are prefixed with their platform, e.g. "NA1_5654662880".
   const platform = match.metadata.match_id.split("_")[0].toLowerCase();
+  const ranks = new Map(lobby?.players.map((r) => [r.puuid, r]) ?? []);
 
   return (
     <div>
@@ -51,6 +76,19 @@ export default function MatchDetailPage() {
           Set {match.info.tft_set_number} &middot; {match.info.tft_game_type} &middot;{" "}
           {new Date(match.info.game_datetime).toLocaleString()} &middot; source: {match.source}
         </p>
+        {lobby && lobby.known > 0 && (
+          <p
+            className="muted"
+            title={
+              "Average Ranked standing of the ranked players around this game" +
+              (lobby.known < lobby.total
+                ? ". Unranked players are usually below Master, so the lobby was likely weaker than this average"
+                : "")
+            }
+          >
+            Lobby ≈ {lobbyText(lobby.average, lobby.averageTier)} ({lobby.known} of {lobby.total} players ranked)
+          </p>
+        )}
       </div>
 
       {match.info.queue_id === DOUBLE_UP
@@ -60,16 +98,16 @@ export default function MatchDetailPage() {
                 <span className={`placement placement-${i * 2 + 1}`}>#{i + 1}</span> Team
               </div>
               {team.map((p) => (
-                <Participant key={p.puuid} p={p} platform={platform} />
+                <Participant key={p.puuid} p={p} platform={platform} rank={ranks.get(p.puuid)} />
               ))}
             </div>
           ))
-        : participants.map((p) => <Participant key={p.puuid} p={p} platform={platform} />)}
+        : participants.map((p) => <Participant key={p.puuid} p={p} platform={platform} rank={ranks.get(p.puuid)} />)}
     </div>
   );
 }
 
-function Participant({ p, platform }: { p: MatchParticipant; platform: string }) {
+function Participant({ p, platform, rank }: { p: MatchParticipant; platform: string; rank?: MatchLobbyPlayer }) {
   return (
     <div className="panel">
       <h3 className="participant-header">
@@ -83,6 +121,17 @@ function Participant({ p, platform }: { p: MatchParticipant; platform: string })
           </Link>
         ) : (
           <span className="muted">Unknown player</span>
+        )}
+        {rank && (
+          <span
+            className="muted participant-rank"
+            title={
+              rank.current ? "Today's ladder rank (none recorded near this game)" : "Ranked standing around this game"
+            }
+          >
+            {rankText({ tier: rank.tier, rank: rank.rank ?? "", leaguePoints: rank.leaguePoints })}
+            {rank.current ? " (now)" : ""}
+          </span>
         )}
         <span className="muted participant-level">Level {p.level}</span>
       </h3>

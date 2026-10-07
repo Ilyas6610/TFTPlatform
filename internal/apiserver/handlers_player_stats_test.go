@@ -333,3 +333,93 @@ func TestPlayerStats_BaselineIsCachedPerScope(t *testing.T) {
 		t.Errorf("summary %d, baseline %d; want 1 live game and the cached baseline 3", got.Summary.Boards, got.Baseline.Boards)
 	}
 }
+
+func TestLobbyStrength(t *testing.T) {
+	s := &Server{Store: storetest.New(t)}
+	ctx := context.Background()
+	// Nine ranked games; in game i every opponent is Master with i*100 LP
+	// (a snapshot just after it).
+	mine := []int{8, 7, 6, 5, 4, 3, 2, 1, 1}
+	for i := 1; i <= 9; i++ {
+		parts := map[string]store.MatchParticipant{}
+		others := []int{}
+		for pl := 1; pl <= 8; pl++ {
+			if pl != mine[i-1] {
+				others = append(others, pl)
+			}
+		}
+		for j := 0; j < 8; j++ {
+			p, placement := "me", mine[i-1]
+			if j > 0 {
+				p, placement = fmt.Sprintf("p%d", j), others[j-1]
+			}
+			if err := s.Store.UpsertAccountPUUIDOnly(ctx, p, "americas"); err != nil {
+				t.Fatal(err)
+			}
+			parts[p] = store.MatchParticipant{PUUID: p, Placement: placement, Level: 8, Units: []byte(`[]`), Traits: []byte(`[]`), RawParticipant: []byte(`{}`)}
+		}
+		if err := s.Store.InsertMatchWithParticipants(ctx, store.Match{
+			MatchID: fmt.Sprintf("NA1_%d", i), RoutingRegion: "americas", GameDatetime: time.Unix(int64(i)*1000, 0),
+			GameVersion: "x", TFTSetNumber: 18, QueueID: 1100, TFTGameType: "standard", RawPayload: []byte(`{}`),
+		}, parts); err != nil {
+			t.Fatal(err)
+		}
+		// Each game's opponents have their own snapshot near it.
+		for j := 1; j < 8; j++ {
+			if _, err := s.Store.Pool.Exec(ctx, `INSERT INTO rank_snapshots (puuid, queue_type, tier, rank, league_points, wins, losses, fetched_at)
+				VALUES ($1, 'RANKED_TFT', 'MASTER', 'I', $2, 1, 1, $3)`, fmt.Sprintf("p%d", j), i*100, time.Unix(int64(i)*1000+60, 0)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	// na1's ladder (other players): Grandmaster from 200 LP, Challenger from 600.
+	for i := 0; i < 20; i++ {
+		for _, e := range []struct {
+			tier string
+			lp   int
+		}{{"GRANDMASTER", 200 + i}, {"CHALLENGER", 600 + i}} {
+			p := fmt.Sprintf("%s%d", e.tier, i)
+			if err := s.Store.UpsertAccountPUUIDOnly(ctx, p, "americas"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.Store.Pool.Exec(ctx, `INSERT INTO league_entries (puuid, platform_region, tier, rank, league_points, wins, losses)
+				VALUES ($1, 'na1', $2, 'I', $3, 1, 1)`, p, e.tier, e.lp); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	_, page := getMatches(t, s, "/api/v1/players/me/matches?limit=3")
+	if l := page.Matches[0].Lobby; l == nil || l.Value != 2800+900 || l.Tier != "CHALLENGER" || l.Known != 7 || l.Opponents != 7 || l.Current != 0 {
+		t.Errorf("newest game's lobby = %+v, want Challenger 900 LP from 7 of 7", l)
+	}
+	if l := page.Matches[2].Lobby; l == nil || l.Value != 2800+700 || l.Tier != "CHALLENGER" {
+		t.Errorf("third game's lobby = %+v", l)
+	}
+
+	rec := httptest.NewRecorder()
+	NewRouter(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/matches/NA1_5/lobby", nil))
+	var lob MatchLobbyResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &lob); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("%d %v %s", rec.Code, err, rec.Body)
+	}
+	if lob.Total != 8 || lob.Known != 7 || len(lob.Players) != 7 || lob.Average != 3300 || lob.AverageTier != "GRANDMASTER" {
+		t.Errorf("match lobby = %+v, want 7 of 8 known at 500 LP, Grandmaster by na1's cutoffs", lob)
+	}
+	for _, p := range lob.Players {
+		if p.PUUID == "me" || p.Tier != "MASTER" || p.LeaguePoints != 500 || p.Value != 3300 || p.Current {
+			t.Errorf("player %+v, want an opponent at Master 500 from a snapshot near the game", p)
+		}
+	}
+	rec = httptest.NewRecorder()
+	NewRouter(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/matches/bad/lobby", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("bad id: got %d", rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	NewRouter(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/matches/NA1_99999/lobby", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("unstored match: got %d, want 404", rec.Code)
+	}
+}

@@ -83,6 +83,7 @@ func NewRouter(s *Server) http.Handler {
 	mux.HandleFunc("GET /api/v1/players/{puuid}/backfill", s.handlePlayerBackfill)
 	mux.HandleFunc("POST /api/v1/players/{puuid}/backfill", s.handlePlayerBackfill)
 	mux.HandleFunc("GET /api/v1/matches/{matchId}", s.handleMatchDetail)
+	mux.HandleFunc("GET /api/v1/matches/{matchId}/lobby", s.handleMatchLobby)
 	mux.HandleFunc("GET /api/v1/leaderboard/{platform}", s.handleLeaderboard)
 	mux.HandleFunc("GET /api/v1/meta/units", s.handleMetaUnits)
 	mux.HandleFunc("GET /api/v1/meta/traits", s.handleMetaTraits)

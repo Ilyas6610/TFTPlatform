@@ -66,6 +66,16 @@ export interface PlayerMatchSummary {
   // Double Up only: the teammate and the team's placement (1-4).
   partner?: PlayerRef;
   team?: number;
+  lobby?: LobbyStrength;
+}
+
+/** How strong a game's opponents were: their average Ranked standing (value on RankPoint's scale). */
+export interface LobbyStrength {
+  value: number;
+  tier?: string; // apex tier of the average by the platform's current cutoffs; absent below Master or when unknown
+  known: number; // opponents with a known rank
+  current: number; // of those, ranked by today's ladder rather than near the game
+  opponents: number;
 }
 
 /** A player by PUUID with the Riot ID we know (from Riot's match data when not resolved). */
@@ -265,6 +275,29 @@ export interface MatchDetail {
 
 export function getMatch(matchId: string) {
   return get<MatchDetail>(`/api/v1/matches/${encodeURIComponent(matchId)}`);
+}
+
+/** A participant's Ranked standing around a game (current = today's ladder, not near the game). */
+export interface MatchLobbyPlayer {
+  puuid: string;
+  tier: string;
+  rank?: string;
+  leaguePoints: number;
+  value: number;
+  current: boolean;
+}
+
+/** Each ranked participant's standing and the lobby's average (RankPoint scale) over them. */
+export interface MatchLobby {
+  players: MatchLobbyPlayer[]; // only those with a known rank
+  average: number; // 0 when none is known
+  averageTier?: string; // apex tier of the average by the platform's current cutoffs
+  known: number;
+  total: number;
+}
+
+export function getMatchLobby(matchId: string) {
+  return get<MatchLobby>(`/api/v1/matches/${encodeURIComponent(matchId)}/lobby`);
 }
 
 export interface LeaderboardEntry {

@@ -15,10 +15,18 @@ export function rankText(p: { tier: string; rank: string; leaguePoints: number }
 }
 
 /** A linear LP value as a rank: "Diamond II 40 LP", or "Master+ 620 LP" (apex tiers share one ladder). */
-function valueText(v: number) {
+export function valueText(v: number) {
   if (v >= 2800) return `Master+ ${v - 2800} LP`;
   const tier = TIERS[Math.floor(v / 400)] ?? "IRON";
   return `${title(tier)} ${DIVISIONS[Math.floor((v % 400) / 100)]} ${v % 100} LP`;
+}
+
+/**
+ * A lobby's average rank: by its apex tier when the server named it from the
+ * platform's cutoffs ("Challenger 700 LP"), else like valueText.
+ */
+export function lobbyText(v: number, tier?: string) {
+  return tier && APEX.has(tier) ? `${title(tier)} ${v - 2800} LP` : valueText(v);
 }
 
 /** The division boundary a linear LP value sits on (multiples of 100 below Master). */

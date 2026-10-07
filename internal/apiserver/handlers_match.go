@@ -1,6 +1,7 @@
 package apiserver
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -8,7 +9,10 @@ import (
 	"strings"
 
 	"tft-platform/internal/ingest"
+	"tft-platform/internal/lobby"
+	"tft-platform/internal/lp"
 	"tft-platform/internal/riotapi"
+	"tft-platform/internal/store"
 )
 
 // handleMatchDetail serves GET /api/v1/matches/{matchId}. Postgres is
@@ -102,4 +106,85 @@ func writeRawJSONWithSource(w http.ResponseWriter, raw []byte, source string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(body)
+}
+
+// MatchLobbyPlayer is a participant's Ranked standing around the game.
+type MatchLobbyPlayer struct {
+	PUUID        string `json:"puuid"`
+	Tier         string `json:"tier"`
+	Rank         string `json:"rank,omitempty"`
+	LeaguePoints int    `json:"leaguePoints"`
+	Value        int    `json:"value"`   // lp.Value
+	Current      bool   `json:"current"` // today's ladder rank, not one near the game
+}
+
+// MatchLobbyResponse is each ranked participant's standing and the lobby's
+// average (lp.Value) over them.
+type MatchLobbyResponse struct {
+	Players []MatchLobbyPlayer `json:"players"` // only those with a known rank
+	Average int                `json:"average"` // 0 when none is known
+	// AverageTier names an apex average by the platform's current cutoffs
+	// (lobby.TierOf); empty below Master or when they aren't known.
+	AverageTier string `json:"averageTier,omitempty"`
+	Known       int    `json:"known"` // len(Players)
+	Total       int    `json:"total"` // participants stored
+}
+
+// handleMatchLobby serves GET /api/v1/matches/{matchId}/lobby: each stored
+// participant's Ranked standing around the game (store.LobbyPlayers) and
+// their average. It never calls Riot; an unstored match is 404.
+func (s *Server) handleMatchLobby(w http.ResponseWriter, r *http.Request) {
+	matchID := r.PathValue("matchId")
+	if !validMatchID(matchID) {
+		writeError(w, http.StatusBadRequest, "invalid_match_id", "match id must look like NA1_1234567890")
+		return
+	}
+	players, err := s.Store.LobbyPlayers(r.Context(), []string{matchID})
+	if err != nil {
+		writeDBError(w, r, err)
+		return
+	}
+	if len(players) == 0 {
+		writeError(w, http.StatusNotFound, "not_found", "match not stored")
+		return
+	}
+	resp := MatchLobbyResponse{Players: []MatchLobbyPlayer{}, Total: len(players)}
+	sum := 0
+	for _, p := range players {
+		if p.Rank == nil {
+			continue
+		}
+		v := lp.Value(*p.Rank)
+		sum += v
+		resp.Known++
+		resp.Players = append(resp.Players, MatchLobbyPlayer{
+			PUUID: p.PUUID, Tier: p.Rank.Tier, Rank: p.Rank.Rank, LeaguePoints: p.Rank.LeaguePoints, Value: v, Current: p.Current,
+		})
+	}
+	if resp.Known > 0 {
+		resp.Average = sum / resp.Known
+		cutoffs, err := s.ladderCutoffs(r.Context(), platformOfMatch(matchID))
+		if err != nil {
+			writeDBError(w, r, err)
+			return
+		}
+		resp.AverageTier = lobby.TierOf(resp.Average, cutoffs)
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// platformOfMatch is the platform a match id names: "NA1_123" -> "na1"
+// (ids are validated, so the prefix is there).
+func platformOfMatch(matchID string) string {
+	prefix, _, _ := strings.Cut(matchID, "_")
+	return strings.ToLower(prefix)
+}
+
+// ladderCutoffs is platform's current apex tier cutoffs, cached like the
+// other ladder-derived stats: the same for every request until the ladder
+// refreshes, but a percentile over the whole ladder to compute.
+func (s *Server) ladderCutoffs(ctx context.Context, platform string) (store.ApexCutoffs, error) {
+	return cached(ctx, s, &s.stats, "cutoffs|"+platform, func(ctx context.Context) (store.ApexCutoffs, error) {
+		return s.Store.LadderCutoffs(ctx, platform)
+	})
 }

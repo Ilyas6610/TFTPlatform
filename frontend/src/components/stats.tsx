@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ExploreRow, PlacementStats, PlayerRef, SetData } from "../api/client";
+import { ExploreRow, LobbyStrength, PlacementStats, PlayerRef, SetData } from "../api/client";
 import { GameIcon } from "../assets/tft";
 
 export const pct = (n: number) => `${Math.round(n * 100)}%`;
@@ -19,6 +19,18 @@ export const QUEUE_NAMES: Record<number, string> = {
 };
 
 export const queueName = (id: number) => QUEUE_NAMES[id] ?? `Queue ${id}`;
+
+/** Where a lobby rating comes from, for its tooltip. */
+export function lobbyTitle(l: LobbyStrength) {
+  const unknown = l.opponents - l.known;
+  return (
+    `Average Ranked standing of ${l.known} of ${l.opponents} opponents` +
+    (l.current > 0 ? `; ${l.current} by today's ladder (no rank recorded near the game)` : "") +
+    (unknown > 0
+      ? `. ${unknown} unranked here: usually below Master, so the lobby was likely weaker than this average`
+      : "")
+  );
+}
 
 /**
  * A player's Riot ID linking to their profile on region. Inside a clickable
