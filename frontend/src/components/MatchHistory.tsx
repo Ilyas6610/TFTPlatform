@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { PlayerMatchSummary, PlayerMatches, getPlayerMatches, staleSuffix } from "../api/client";
 import { GameIcon } from "../assets/tft";
 import { CURRENT_TFT_SET } from "../config";
-import { Names, PlayerName, avg, pct, queueName } from "./stats";
+import { valueText } from "./LPChart";
+import { Names, PlayerName, avg, lobbyTitle, pct, queueName } from "./stats";
 
 const PAGE = 20;
 // The server pages back at most this far (it mirrors matchHistoryMaxOffset).
@@ -195,6 +196,11 @@ export function MatchHistory({
                   {m.partner && (
                     <span className="muted history-partner">
                       team #{m.team} with <PlayerName player={m.partner} region={region} />
+                    </span>
+                  )}
+                  {m.lobby && (
+                    <span className="muted history-lobby" title={lobbyTitle(m.lobby)}>
+                      lobby ≈ {valueText(m.lobby.value).replace(/ LP$/, "")}
                     </span>
                   )}
                   <span className="muted" title={new Date(m.gameDatetime).toLocaleString()}>

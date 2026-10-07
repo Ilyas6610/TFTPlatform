@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   DoubleUpPartner,
   ExploreRow,
+  LobbyThird,
   PlacementStats,
   PlayerSessions,
   MetaComp,
@@ -13,6 +14,7 @@ import {
 } from "../api/client";
 import { GameIcon } from "../assets/tft";
 import { CompName } from "./CompName";
+import { valueText } from "./LPChart";
 import { timeAgo } from "./MatchHistory";
 import { SetBackfill } from "./SetBackfill";
 import { Names, PlayerName, avg, pct, placementTone, queueName } from "./stats";
@@ -226,6 +228,7 @@ export function PlayerStats({
                   </table>
                 </div>
               )}
+              {stats.lobbies.length > 0 && <Lobbies thirds={stats.lobbies} rated={stats.lobbyGames} total={s.boards} />}
               {stats.sessions.sessions > 1 && <Sessions sessions={stats.sessions} />}
               {stats.partners.length > 0 && <Partners partners={stats.partners} region={region} />}
             </div>
@@ -314,6 +317,38 @@ function SessionRow({ label, stats: r, split }: { label: string; stats: Placemen
       <td className={`num ${placementTone(r)}`}>{avg(r.avgPlacement)}</td>
       <td className="num">{pct(r.top4Rate)}</td>
     </tr>
+  );
+}
+
+/**
+ * Results by lobby strength: the player's rated games split into their
+ * easiest, middle and toughest thirds by the opponents' average Ranked
+ * standing (a ranking among their own lobbies, so it reads the same at any
+ * rank).
+ */
+function Lobbies({ thirds, rated, total }: { thirds: LobbyThird[]; rated: number; total: number }) {
+  return (
+    <div>
+      <div className="meta-section-title muted">By lobby</div>
+      <p className="muted sessions-summary" title="A game is rated when at least half its opponents' ranks are known">
+        {rated} of {total} games rated by opponents' rank
+      </p>
+      <table className="compact">
+        <tbody>
+          {thirds.map((t) => (
+            <tr key={t.label} title={`Lobbies from ${valueText(t.minLobby)} to ${valueText(t.maxLobby)}`}>
+              <td>
+                {t.label.charAt(0).toUpperCase() + t.label.slice(1)} third
+                <div className="muted lobby-range">≈ {valueText(t.lobby)}</div>
+              </td>
+              <td className="num">{t.boards}</td>
+              <td className={`num ${placementTone(t)}`}>{avg(t.avgPlacement)}</td>
+              <td className="num">{pct(t.top4Rate)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

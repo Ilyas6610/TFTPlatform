@@ -66,6 +66,23 @@ export interface PlayerMatchSummary {
   // Double Up only: the teammate and the team's placement (1-4).
   partner?: PlayerRef;
   team?: number;
+  lobby?: LobbyStrength;
+}
+
+/** How strong a game's opponents were: their average Ranked standing (value on RankPoint's scale). */
+export interface LobbyStrength {
+  value: number;
+  known: number; // opponents with a known rank
+  current: number; // of those, ranked by today's ladder rather than near the game
+  opponents: number;
+}
+
+/** A player's results in a third of their games, ranked by lobby strength. */
+export interface LobbyThird extends PlacementStats {
+  label: "easiest" | "middle" | "toughest";
+  lobby: number;
+  minLobby: number;
+  maxLobby: number;
 }
 
 /** A player by PUUID with the Riot ID we know (from Riot's match data when not resolved). */
@@ -181,6 +198,8 @@ export interface PlayerStats {
   // Double Up teammates in the set, most games first (none when the queue scope leaves out Double Up).
   partners: DoubleUpPartner[];
   sessions: PlayerSessions;
+  lobbies: LobbyThird[]; // empty under 9 rated games
+  lobbyGames: number; // games with a rated lobby
 }
 
 /** Play sessions (games less than 30 minutes apart) in the set and queue scope. */
@@ -265,6 +284,26 @@ export interface MatchDetail {
 
 export function getMatch(matchId: string) {
   return get<MatchDetail>(`/api/v1/matches/${encodeURIComponent(matchId)}`);
+}
+
+/** A participant's Ranked standing around a game (current = today's ladder, not near the game). */
+export interface MatchLobbyPlayer {
+  puuid: string;
+  tier: string;
+  rank?: string;
+  leaguePoints: number;
+  value: number;
+  current: boolean;
+}
+
+export interface MatchLobby {
+  players: MatchLobbyPlayer[]; // only those with a known rank
+  average: number; // over them; 0 when none
+  total: number;
+}
+
+export function getMatchLobby(matchId: string) {
+  return get<MatchLobby>(`/api/v1/matches/${encodeURIComponent(matchId)}/lobby`);
 }
 
 export interface LeaderboardEntry {

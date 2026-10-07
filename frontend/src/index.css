@@ -379,6 +379,11 @@ td a:hover {
   margin-bottom: 10px;
 }
 
+.participant-rank {
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+
 .participant-level {
   font-weight: 400;
   margin-left: auto;
@@ -1660,7 +1665,8 @@ tr.dim {
   font-size: 1.15rem;
 }
 
-.history-partner {
+.history-partner,
+.history-lobby {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1977,6 +1983,10 @@ table.partners td:first-child {
 .sessions-summary {
   margin: 0 0 4px;
   font-size: 0.85rem;
+}
+
+.lobby-range {
+  font-size: 0.78rem;
 }
 
 .sessions-split td {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"tft-platform/internal/ingest"
+	"tft-platform/internal/lobby"
 	"tft-platform/internal/lp"
 	"tft-platform/internal/riotapi"
 	"tft-platform/internal/setdata"
@@ -63,6 +64,9 @@ type PlayerMatchView struct {
 	store.PlayerMatch
 	Patch string     `json:"patch,omitempty"` // "18.3"
 	LP    *lp.Change `json:"lp,omitempty"`
+	// Lobby is how strong the opponents were (their Ranked standings around
+	// the game), when at least half of them are known.
+	Lobby *lobby.Strength `json:"lobby,omitempty"`
 }
 
 func matchSyncKey(puuid string) string {
@@ -194,7 +198,7 @@ func syncDue(r *http.Request, syncedAt *time.Time, resp *PlayerMatchesResponse) 
 	return syncedAt == nil || time.Since(*syncedAt) >= after
 }
 
-// decorateMatches adds each game's patch and LP change, and returns the
+// decorateMatches adds each game's patch, LP change and lobby strength, and returns the
 // player's latest rank per queue.
 func (s *Server) decorateMatches(ctx context.Context, puuid string, matches []store.PlayerMatch) ([]PlayerMatchView, []store.RankSnapshot, error) {
 	cal, err := s.Store.PatchCalendar(ctx)
@@ -214,11 +218,24 @@ func (s *Server) decorateMatches(ctx context.Context, puuid string, matches []st
 		changes = lp.Attribute(history, games)
 	}
 
+	ids := make([]string, len(matches))
+	for i, m := range matches {
+		ids[i] = m.MatchID
+	}
+	players, err := s.Store.LobbyPlayers(ctx, ids)
+	if err != nil {
+		return nil, nil, err
+	}
+	lobbies := lobby.For(players, puuid)
+
 	views := make([]PlayerMatchView, len(matches))
 	for i, m := range matches {
 		views[i] = PlayerMatchView{PlayerMatch: m, Patch: setdata.PatchOfGame(cal, m.TFTSetNumber, m.GameDatetime, m.GameVersion)}
 		if c, ok := changes[m.MatchID]; ok {
 			views[i].LP = &c
+		}
+		if l, ok := lobbies[m.MatchID]; ok {
+			views[i].Lobby = &l
 		}
 	}
 	return views, latestRanks(history), nil

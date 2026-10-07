@@ -333,3 +333,79 @@ func TestPlayerStats_BaselineIsCachedPerScope(t *testing.T) {
 		t.Errorf("summary %d, baseline %d; want 1 live game and the cached baseline 3", got.Summary.Boards, got.Baseline.Boards)
 	}
 }
+
+func TestLobbyStrength(t *testing.T) {
+	s := &Server{Store: storetest.New(t)}
+	ctx := context.Background()
+	// Nine ranked games; in game i every opponent is Master with i*100 LP
+	// (a snapshot just after it), and "me" places better the tougher the
+	// lobby: 8, 7, 6, 5, 4, 3, 2, 1, 1.
+	mine := []int{8, 7, 6, 5, 4, 3, 2, 1, 1}
+	for i := 1; i <= 9; i++ {
+		parts := map[string]store.MatchParticipant{}
+		others := []int{}
+		for pl := 1; pl <= 8; pl++ {
+			if pl != mine[i-1] {
+				others = append(others, pl)
+			}
+		}
+		for j := 0; j < 8; j++ {
+			p, placement := "me", mine[i-1]
+			if j > 0 {
+				p, placement = fmt.Sprintf("p%d", j), others[j-1]
+			}
+			if err := s.Store.UpsertAccountPUUIDOnly(ctx, p, "americas"); err != nil {
+				t.Fatal(err)
+			}
+			parts[p] = store.MatchParticipant{PUUID: p, Placement: placement, Level: 8, Units: []byte(`[]`), Traits: []byte(`[]`), RawParticipant: []byte(`{}`)}
+		}
+		if err := s.Store.InsertMatchWithParticipants(ctx, store.Match{
+			MatchID: fmt.Sprintf("NA1_%d", i), RoutingRegion: "americas", GameDatetime: time.Unix(int64(i)*1000, 0),
+			GameVersion: "x", TFTSetNumber: 18, QueueID: 1100, TFTGameType: "standard", RawPayload: []byte(`{}`),
+		}, parts); err != nil {
+			t.Fatal(err)
+		}
+		// Each game's opponents have their own snapshot near it.
+		for j := 1; j < 8; j++ {
+			if _, err := s.Store.Pool.Exec(ctx, `INSERT INTO rank_snapshots (puuid, queue_type, tier, rank, league_points, wins, losses, fetched_at)
+				VALUES ($1, 'RANKED_TFT', 'MASTER', 'I', $2, 1, 1, $3)`, fmt.Sprintf("p%d", j), i*100, time.Unix(int64(i)*1000+60, 0)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	_, page := getMatches(t, s, "/api/v1/players/me/matches?limit=3")
+	if l := page.Matches[0].Lobby; l == nil || l.Value != 2800+900 || l.Known != 7 || l.Opponents != 7 || l.Current != 0 {
+		t.Errorf("newest game's lobby = %+v, want Master 900 LP from 7 of 7", l)
+	}
+
+	rec := httptest.NewRecorder()
+	NewRouter(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/players/me/stats?set=18", nil))
+	var res PlayerStatsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("%d %v %s", rec.Code, err, rec.Body)
+	}
+	if res.LobbyGames != 9 || len(res.Lobbies) != 3 {
+		t.Fatalf("lobbies = %d games, %+v", res.LobbyGames, res.Lobbies)
+	}
+	// Easiest third: Master 100-300 LP, placed 8, 7, 6. Toughest: 700-900 LP, placed 2, 1, 1.
+	if e, h := res.Lobbies[0], res.Lobbies[2]; e.Label != "easiest" || e.MinLobby != 2900 || e.MaxLobby != 3100 || e.AvgPlacement != 7 ||
+		h.Label != "toughest" || h.MinLobby != 3500 || h.AvgPlacement != 4.0/3 {
+		t.Errorf("thirds = %+v", res.Lobbies)
+	}
+
+	rec = httptest.NewRecorder()
+	NewRouter(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/matches/NA1_5/lobby", nil))
+	var lob MatchLobbyResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &lob); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("%d %v %s", rec.Code, err, rec.Body)
+	}
+	if lob.Total != 8 || len(lob.Players) != 7 || lob.Average != 3300 {
+		t.Errorf("match lobby = %+v, want 7 of 8 known at Master 500", lob)
+	}
+	rec = httptest.NewRecorder()
+	NewRouter(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/matches/bad/lobby", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("bad id: got %d", rec.Code)
+	}
+}

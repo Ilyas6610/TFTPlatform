@@ -15,7 +15,7 @@ export function rankText(p: { tier: string; rank: string; leaguePoints: number }
 }
 
 /** A linear LP value as a rank: "Diamond II 40 LP", or "Master+ 620 LP" (apex tiers share one ladder). */
-function valueText(v: number) {
+export function valueText(v: number) {
   if (v >= 2800) return `Master+ ${v - 2800} LP`;
   const tier = TIERS[Math.floor(v / 400)] ?? "IRON";
   return `${title(tier)} ${DIVISIONS[Math.floor((v % 400) / 100)]} ${v % 100} LP`;
