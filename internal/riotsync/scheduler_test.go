@@ -46,7 +46,7 @@ func TestSchedulerPausesOnExpiredKey(t *testing.T) {
 
 func TestLoadConfigRejectsUnknownPlatform(t *testing.T) {
 	t.Setenv("RIOTSYNC_PLATFORMS", "na1,mars1")
-	if _, err := LoadConfig(); err == nil {
+	if _, err := LoadConfig(8, 40); err == nil {
 		t.Fatal("want error for unknown platform")
 	}
 }
@@ -96,20 +96,20 @@ func TestPauseForKeyExpiredStop(t *testing.T) {
 func TestLoadConfigRejectsUnparsableValues(t *testing.T) {
 	t.Setenv("RIOTSYNC_CRAWL_INTERVAL", "5min")
 	t.Setenv("RIOTSYNC_CRAWL_REQUESTS", "lots")
-	_, err := LoadConfig()
+	_, err := LoadConfig(8, 40)
 	if err == nil || !strings.Contains(err.Error(), "RIOTSYNC_CRAWL_INTERVAL") || !strings.Contains(err.Error(), "RIOTSYNC_CRAWL_REQUESTS") {
 		t.Fatalf("err = %v, want both bad values named", err)
 	}
 }
 
-func TestLoadConfigDefaultsLeaveHeadroomForAPI(t *testing.T) {
-	cfg, err := LoadConfig()
+func TestLoadConfigDefaultsToItsShare(t *testing.T) {
+	// The default split gives sync 40% of a personal key: 8/s, 40 per 2 min.
+	cfg, err := LoadConfig(8, 40)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Personal key: 20/s, 100 per 2 min, shared with the API server.
-	if cfg.RateLimitPerSec >= 20 || cfg.RateLimitPer2Min >= 100 {
-		t.Fatalf("defaults %d/s %d/2min leave no room for the API server", cfg.RateLimitPerSec, cfg.RateLimitPer2Min)
+	if cfg.RateLimitPerSec != 8 || cfg.RateLimitPer2Min != 40 {
+		t.Fatalf("defaults %d/s %d/2min, want the share 8/40", cfg.RateLimitPerSec, cfg.RateLimitPer2Min)
 	}
 	if cfg.CrawlRequests > cfg.RateLimitPer2Min {
 		t.Fatalf("one crawl batch (%d) exceeds the 2-minute cap (%d)", cfg.CrawlRequests, cfg.RateLimitPer2Min)
@@ -150,5 +150,16 @@ func TestThrottleWaitHonorsContext(t *testing.T) {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
 	if _, err := c.Do(req); err == nil {
 		t.Fatal("want the throttled request to fail when its context ends")
+	}
+}
+
+func TestLoadConfigRejectsMoreThanItsShare(t *testing.T) {
+	t.Setenv("RIOTSYNC_RATE_LIMIT_PER_2MIN", "50")
+	if _, err := LoadConfig(8, 40); err == nil || !strings.Contains(err.Error(), "RIOT_BUDGET_SPLIT") {
+		t.Fatalf("err = %v, want the share exceeded", err)
+	}
+	t.Setenv("RIOTSYNC_RATE_LIMIT_PER_2MIN", "30") // below the share is fine
+	if cfg, err := LoadConfig(8, 40); err != nil || cfg.RateLimitPer2Min != 30 {
+		t.Fatalf("%+v %v", cfg, err)
 	}
 }

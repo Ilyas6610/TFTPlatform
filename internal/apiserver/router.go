@@ -14,9 +14,22 @@ import (
 // (and its RateLimiter) is constructed at process startup and injected here —
 // handlers must never construct their own, so live-fetch traffic and the
 // ingestion pipeline can never jointly exceed Riot's rate limits.
+//
+// The three clients are views of that one client (riotapi.Client.WithBudget),
+// each drawing from its class's share of the key (RIOT_BUDGET_SPLIT):
+//   - Riot: background work a request triggers (history and rank syncs,
+//     older pages, ladder refreshes, name resolution); waits for its share.
+//   - RiotLive: lookups a request waits on (profile, match detail); when the
+//     on-demand share is used up it fails at once with
+//     riotapi.ErrBudgetExhausted, answered as 503 with Retry-After.
+//   - RiotBackfill: "Load whole set" loads, on their own share.
+//
+// RiotLive and RiotBackfill default to Riot when nil (tests).
 type Server struct {
-	Riot  *riotapi.Client
-	Store *store.Store
+	Riot         *riotapi.Client
+	RiotLive     *riotapi.Client
+	RiotBackfill *riotapi.Client
+	Store        *store.Store
 	// Source is where public game data is downloaded from (CommunityDragon);
 	// nil means the real one. Tests point it at a fake.
 	Source *setdata.Source
@@ -53,6 +66,25 @@ const exploreMaxComputes = 4
 
 // DefaultStatsCacheTTL is the default for Server.StatsCacheTTL.
 const DefaultStatsCacheTTL = 10 * time.Minute
+
+// LiveBudgetWait is how long a live lookup (RiotLive) may wait for the
+// on-demand share before answering 503: a short wait smooths a burst, a
+// long one would just hold the request.
+const LiveBudgetWait = 2 * time.Second
+
+func (s *Server) liveRiot() *riotapi.Client {
+	if s.RiotLive != nil {
+		return s.RiotLive
+	}
+	return s.Riot
+}
+
+func (s *Server) backfillRiot() *riotapi.Client {
+	if s.RiotBackfill != nil {
+		return s.RiotBackfill
+	}
+	return s.Riot
+}
 
 func NewRouter(s *Server) http.Handler {
 	// Tests build a router per request, so set the lifetimes only once.

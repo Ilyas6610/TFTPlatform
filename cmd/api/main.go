@@ -46,8 +46,22 @@ func main() {
 	// whatever ingestion is also running under the same key.
 	limiter := riotapi.NewRateLimiter(cfg.RiotAppRateLimitPerSec, cfg.RiotAppRateLimitPer2Min)
 	riotClient := riotapi.NewClient(keySource, limiter)
+	// Views of that client, each on its class's share of the key
+	// (RIOT_BUDGET_SPLIT): request-triggered work and live lookups share the
+	// on-demand budget (live lookups fail fast rather than wait long), and
+	// whole-set loads have their own.
+	onDemand := riotapi.NewBudget(cfg.Share(cfg.Budget.OnDemand))
+	backfill := riotapi.NewBudget(cfg.Share(cfg.Budget.Backfill))
+	log.Printf("riot budget: on-demand %d/s %d/2min, backfill %d/s %d/2min (split %+v)",
+		onDemand.PerSec, onDemand.Per2Min, backfill.PerSec, backfill.Per2Min, cfg.Budget)
 
-	server := &apiserver.Server{Riot: riotClient, Store: st, StatsCacheTTL: cfg.StatsCacheTTL}
+	server := &apiserver.Server{
+		Riot:          riotClient.WithBudget(onDemand, 0),
+		RiotLive:      riotClient.WithBudget(onDemand, apiserver.LiveBudgetWait),
+		RiotBackfill:  riotClient.WithBudget(backfill, 0),
+		Store:         st,
+		StatsCacheTTL: cfg.StatsCacheTTL,
+	}
 	if cfg.RedisURL != "" {
 		shared, err := rediscache.New(cfg.RedisURL)
 		if err != nil {

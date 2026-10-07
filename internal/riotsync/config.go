@@ -26,9 +26,9 @@ type Config struct {
 	NamesInterval     time.Duration // Riot ID backfill, per platform
 	AggregateInterval time.Duration // meta stats recompute (no Riot calls)
 
-	// RateLimitPerSec / RateLimitPer2Min cap riotsync's own Riot traffic,
-	// below the key's limits (20/s, 100/2min on a personal key) so the API
-	// server's live fetches, which share the key, always have headroom.
+	// RateLimitPerSec / RateLimitPer2Min cap riotsync's own Riot traffic at
+	// its share of the key (RIOT_BUDGET_SPLIT's sync class), so the API
+	// server's lookups and backfills, which share the key, keep theirs.
 	RateLimitPerSec  int
 	RateLimitPer2Min int
 
@@ -42,15 +42,19 @@ type Config struct {
 	KeyRetry time.Duration
 }
 
-func LoadConfig() (Config, error) {
+// LoadConfig reads riotsync's settings. maxPerSec and maxPer2Min are its
+// share of the key (config.Config.Share of the sync class): the default for
+// RIOTSYNC_RATE_LIMIT_PER_SEC/_PER_2MIN, and their ceiling, so an explicit
+// value can't take more than the split gives riotsync.
+func LoadConfig(maxPerSec, maxPer2Min int) (Config, error) {
 	var e envReader
 	cfg := Config{
 		SeedInterval:      e.duration("RIOTSYNC_SEED_INTERVAL", 6*time.Hour),
 		CrawlInterval:     e.duration("RIOTSYNC_CRAWL_INTERVAL", 5*time.Minute),
 		NamesInterval:     e.duration("RIOTSYNC_NAMES_INTERVAL", 10*time.Minute),
 		AggregateInterval: e.duration("RIOTSYNC_AGGREGATE_INTERVAL", time.Hour),
-		RateLimitPerSec:   e.int("RIOTSYNC_RATE_LIMIT_PER_SEC", 10),
-		RateLimitPer2Min:  e.int("RIOTSYNC_RATE_LIMIT_PER_2MIN", 50),
+		RateLimitPerSec:   e.int("RIOTSYNC_RATE_LIMIT_PER_SEC", maxPerSec),
+		RateLimitPer2Min:  e.int("RIOTSYNC_RATE_LIMIT_PER_2MIN", maxPer2Min),
 		CrawlPUUIDs:       e.int("RIOTSYNC_CRAWL_PUUIDS", 10),
 		CrawlIDsPerPUUID:  e.int("RIOTSYNC_CRAWL_IDS_PER_PUUID", 20),
 		CrawlRequests:     e.int("RIOTSYNC_CRAWL_REQUESTS", 40),
@@ -87,6 +91,10 @@ func LoadConfig() (Config, error) {
 		if v <= 0 {
 			return Config{}, fmt.Errorf("%s must be positive", name)
 		}
+	}
+	if cfg.RateLimitPerSec > maxPerSec || cfg.RateLimitPer2Min > maxPer2Min {
+		return Config{}, fmt.Errorf("RIOTSYNC_RATE_LIMIT_PER_SEC/_PER_2MIN (%d/%d) exceed riotsync's share of the key (%d/%d from RIOT_BUDGET_SPLIT); raise the sync share instead",
+			cfg.RateLimitPerSec, cfg.RateLimitPer2Min, maxPerSec, maxPer2Min)
 	}
 	return cfg, nil
 }
