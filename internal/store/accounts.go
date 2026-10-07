@@ -21,7 +21,23 @@ type Account struct {
 // live-fetch fallback (see internal/apiserver/handlers_profile.go), so a
 // cache miss on read becomes a cache hit for subsequent lookups.
 func (s *Store) UpsertAccount(ctx context.Context, a Account) error {
-	_, err := s.Pool.Exec(ctx, `
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// A Riot ID can move to another account (a name freed by one player and
+	// taken by another); any other account still holding it is stale and
+	// would violate idx_accounts_riot_id, so its copy is cleared first (as
+	// SetAccountRiotID does).
+	if _, err := tx.Exec(ctx, `
+		UPDATE accounts SET game_name = NULL, tag_line = NULL, updated_at = now()
+		WHERE game_name = $1 AND tag_line = $2 AND puuid <> $3
+	`, a.GameName, a.TagLine, a.PUUID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
 		INSERT INTO accounts (puuid, game_name, tag_line, routing_region, last_fetched_at, updated_at)
 		VALUES ($1, $2, $3, $4, now(), now())
 		ON CONFLICT (puuid) DO UPDATE SET
@@ -30,8 +46,10 @@ func (s *Store) UpsertAccount(ctx context.Context, a Account) error {
 			routing_region = EXCLUDED.routing_region,
 			last_fetched_at = now(),
 			updated_at = now()
-	`, a.PUUID, a.GameName, a.TagLine, a.RoutingRegion)
-	return err
+	`, a.PUUID, a.GameName, a.TagLine, a.RoutingRegion); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // UpsertAccountPUUIDOnly registers a PUUID discovered indirectly — e.g. as

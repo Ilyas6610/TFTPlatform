@@ -59,3 +59,37 @@ func TestSetAccountRiotID_TakesIDFromStaleHolder(t *testing.T) {
 		t.Errorf("expected old's name to be cleared, got %q", *oldName)
 	}
 }
+
+// A profile lookup that finds a Riot ID now belonging to another PUUID must
+// store it (it used to hit idx_accounts_riot_id and fail with a 500).
+func TestUpsertAccount_TakesIDFromStaleHolder(t *testing.T) {
+	st := storetest.New(t)
+	ctx := context.Background()
+
+	if err := st.UpsertAccount(ctx, store.Account{PUUID: "old", GameName: "Alice", TagLine: "NA1", RoutingRegion: "americas"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertAccount(ctx, store.Account{PUUID: "new", GameName: "Alice", TagLine: "NA1", RoutingRegion: "americas"}); err != nil {
+		t.Fatalf("expected the Riot ID to move to the new holder: %v", err)
+	}
+
+	got, err := st.GetAccountByRiotID(ctx, "Alice", "NA1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.PUUID != "new" {
+		t.Errorf("expected Alice#NA1 to belong to new, got %+v", got)
+	}
+	var oldName *string
+	if err := st.Pool.QueryRow(ctx, `SELECT game_name FROM accounts WHERE puuid = 'old'`).Scan(&oldName); err != nil {
+		t.Fatal(err)
+	}
+	if oldName != nil {
+		t.Errorf("expected old's name to be cleared, got %q", *oldName)
+	}
+
+	// Refreshing an account that keeps its ID still works.
+	if err := st.UpsertAccount(ctx, store.Account{PUUID: "new", GameName: "Alice", TagLine: "NA1", RoutingRegion: "americas"}); err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+}
