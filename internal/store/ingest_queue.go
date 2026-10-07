@@ -9,9 +9,11 @@ import (
 )
 
 // EnqueuePUUID adds or updates a PUUID's entry in the crawl queue. Priority
-// only ever increases (GREATEST) so re-seeding never downgrades a player
-// already queued at a higher priority from an earlier seed; last_crawled_at
-// is left untouched so an existing queue position's crawl progress isn't reset.
+// only ever increases here (GREATEST) so that viewing a profile (priority 0)
+// never downgrades a ladder player; the ladder itself sets priorities from
+// the current standings (WriteLeagueSnapshot), which can lower them.
+// last_crawled_at is left untouched so an existing queue position's crawl
+// progress isn't reset.
 func (s *Store) EnqueuePUUID(ctx context.Context, puuid, platformRegion, routingRegion string, priority int16) error {
 	_, err := s.Pool.Exec(ctx, `
 		INSERT INTO ingest_puuid_queue (puuid, platform_region, routing_region, priority)
@@ -29,17 +31,19 @@ type QueuedPUUID struct {
 	Priority       int16
 }
 
-// NextQueueBatch returns up to limit PUUIDs ordered by priority (highest
-// first), then by longest-since-crawled (never-crawled first) — the crawl
-// order that gives apex-tier players' matches priority for meta stats while
-// still making organic progress through everyone else. Players backing off
-// after a failed crawl (MarkCrawlFailed) are skipped until they're due.
+// NextQueueBatch returns up to limit PUUIDs ordered by longest-since-crawled
+// (never-crawled first), then by priority (highest first). Staleness comes
+// first so every queued player gets a turn: with priority first, the
+// top tier (Challenger) refilled every batch and Grandmaster, Master and
+// viewed players were never reached. Among players equally due, apex tiers
+// still go first. Players backing off after a failed crawl (MarkCrawlFailed)
+// are skipped until they're due.
 func (s *Store) NextQueueBatch(ctx context.Context, limit int) ([]QueuedPUUID, error) {
 	rows, err := s.Pool.Query(ctx, `
 		SELECT puuid, platform_region, routing_region, priority
 		FROM ingest_puuid_queue
 		WHERE next_attempt_at IS NULL OR next_attempt_at <= now()
-		ORDER BY priority DESC, last_crawled_at NULLS FIRST
+		ORDER BY last_crawled_at NULLS FIRST, priority DESC
 		LIMIT $1
 	`, limit)
 	if err != nil {

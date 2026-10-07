@@ -19,9 +19,8 @@ type CrawlQueueResult struct {
 	Stopped         string
 }
 
-// CrawlQueue pulls up to maxPUUIDs from the priority queue (highest
-// priority, then longest-since-crawled first — see
-// internal/store.NextQueueBatch) and crawls each in turn, capping total
+// CrawlQueue pulls up to maxPUUIDs from the crawl queue (longest-since-crawled
+// first, then highest priority — see internal/store.NextQueueBatch) and crawls each in turn, capping total
 // Riot API requests across the whole run at maxRequests. Each PUUID's match
 // writes are already transactional (see StoreMatch), so stopping between —
 // or even mid — PUUIDs never leaves partial data; the queue's
