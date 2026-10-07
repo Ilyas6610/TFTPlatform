@@ -1,4 +1,5 @@
 /deploy/.secrets/
+/deploy/backups/
 *.env
 .env.local
 

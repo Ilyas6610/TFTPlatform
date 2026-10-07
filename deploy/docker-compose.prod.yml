@@ -121,6 +121,33 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # Daily pg_dump of the database into BACKUP_DIR (default ./backups next to
+  # this file), keeping the newest BACKUP_KEEP. Rank snapshots are
+  # observations Riot doesn't keep, and re-crawling matches costs Riot quota,
+  # so a lost volume is expensive. Copy BACKUP_DIR off the host too, and test
+  # a restore with scripts/pg-restore.sh.
+  backup:
+    image: postgres:16
+    restart: unless-stopped
+    user: *backend-user
+    <<: *hardened
+    mem_limit: ${BACKUP_MEM_LIMIT:-256m}
+    command: ["/scripts/pg-backup.sh", "--loop"]
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-tft}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      PGDATABASE: ${POSTGRES_DB:-tft}
+      BACKUP_DIR: /backups
+      BACKUP_KEEP: ${BACKUP_KEEP:-7}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+    volumes:
+      - ../scripts/pg-backup.sh:/scripts/pg-backup.sh:ro
+      - ${BACKUP_DIR:-./backups}:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   frontend:
     build:
       context: ../frontend
