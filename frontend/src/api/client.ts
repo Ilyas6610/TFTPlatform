@@ -72,6 +72,7 @@ export interface PlayerMatchSummary {
 /** How strong a game's opponents were: their average Ranked standing (value on RankPoint's scale). */
 export interface LobbyStrength {
   value: number;
+  tier?: string; // apex tier of the average by the platform's current cutoffs; absent below Master or when unknown
   known: number; // opponents with a known rank
   current: number; // of those, ranked by today's ladder rather than near the game
   opponents: number;
@@ -290,6 +291,7 @@ export interface MatchLobbyPlayer {
 export interface MatchLobby {
   players: MatchLobbyPlayer[]; // only those with a known rank
   average: number; // 0 when none is known
+  averageTier?: string; // apex tier of the average by the platform's current cutoffs
   known: number;
   total: number;
 }

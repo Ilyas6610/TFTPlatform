@@ -14,10 +14,13 @@ const doubleUpQueue = 1160
 // Strength is a player's lobby in one game: the average Ranked standing of
 // the opponents whose rank is known, on lp.Value's scale.
 type Strength struct {
-	Value     int `json:"value"`
-	Known     int `json:"known"`     // opponents with a known rank
-	Current   int `json:"current"`   // of those, ranked by today's ladder rather than near the game
-	Opponents int `json:"opponents"` // 7, or 6 in Double Up
+	Value int `json:"value"`
+	// Tier names an apex average by the platform's current cutoffs
+	// (TierOf): MASTER, GRANDMASTER or CHALLENGER; empty below Master.
+	Tier      string `json:"tier,omitempty"`
+	Known     int    `json:"known"`     // opponents with a known rank
+	Current   int    `json:"current"`   // of those, ranked by today's ladder rather than near the game
+	Opponents int    `json:"opponents"` // 7, or 6 in Double Up
 }
 
 // For rates puuid's lobby in each match of players (LobbyPlayers rows for
@@ -62,4 +65,26 @@ func For(players []store.LobbyPlayer, puuid string) map[string]Strength {
 		out[id] = s
 	}
 	return out
+}
+
+// masterValue is where Master starts on lp.Value's scale.
+const masterValue = 2800
+
+// TierOf names the apex tier a lobby average falls in, by the platform's
+// current cutoffs: Master, Grandmaster and Challenger share one LP ladder,
+// so only the cutoffs tell an average of 700 LP above Master apart as
+// Challenger on one platform and Grandmaster on another. Empty below
+// Master, and when the platform's cutoffs aren't known (nothing stored).
+func TierOf(value int, c store.ApexCutoffs) string {
+	if value < masterValue || (c.Grandmaster == 0 && c.Challenger == 0) {
+		return ""
+	}
+	lp := value - masterValue
+	switch {
+	case c.Challenger > 0 && lp >= c.Challenger:
+		return "CHALLENGER"
+	case c.Grandmaster > 0 && lp >= c.Grandmaster:
+		return "GRANDMASTER"
+	}
+	return "MASTER"
 }

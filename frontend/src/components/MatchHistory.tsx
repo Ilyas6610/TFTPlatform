@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { PlayerMatchSummary, PlayerMatches, getPlayerMatches, staleSuffix } from "../api/client";
 import { GameIcon } from "../assets/tft";
 import { CURRENT_TFT_SET } from "../config";
-import { valueText } from "./LPChart";
+import { lobbyText } from "./LPChart";
 import { Names, PlayerName, avg, lobbyTitle, pct, queueName } from "./stats";
 
 const PAGE = 20;
@@ -200,7 +200,7 @@ export function MatchHistory({
                   )}
                   {m.lobby && (
                     <span className="muted history-lobby" title={lobbyTitle(m.lobby)}>
-                      lobby ≈ {valueText(m.lobby.value).replace(/ LP$/, "")}
+                      lobby ≈ {lobbyText(m.lobby.value, m.lobby.tier).replace(/ LP$/, "")}
                     </span>
                   )}
                   <span className="muted" title={new Date(m.gameDatetime).toLocaleString()}>

@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -76,5 +77,39 @@ func TestLobbyPlayers(t *testing.T) {
 	}
 	if empty, err := st.LobbyPlayers(ctx, nil); err != nil || len(empty) != 0 {
 		t.Errorf("no ids: %v %v", empty, err)
+	}
+}
+
+func TestLadderCutoffs(t *testing.T) {
+	st := storetest.New(t)
+	ctx := context.Background()
+	if c, err := st.LadderCutoffs(ctx, "na1"); err != nil || c != (store.ApexCutoffs{}) {
+		t.Fatalf("empty ladder: %+v %v", c, err)
+	}
+	add := func(puuid, platform, tier string, lp int) {
+		t.Helper()
+		if err := st.UpsertAccountPUUIDOnly(ctx, puuid, "americas"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.Pool.Exec(ctx, `INSERT INTO league_entries (puuid, platform_region, tier, rank, league_points, wins, losses)
+			VALUES ($1, $2, $3, 'I', $4, 1, 1)`, puuid, platform, tier, lp); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 20 Grandmasters at 200..390 LP, one of them having dropped to 50
+	// since the last tier update; 20 Challengers at 600..790.
+	for i := 0; i < 20; i++ {
+		add(fmt.Sprintf("gm%d", i), "na1", "GRANDMASTER", 200+i*10)
+		add(fmt.Sprintf("ch%d", i), "na1", "CHALLENGER", 600+i*10)
+	}
+	add("dropped", "na1", "GRANDMASTER", 50)
+	add("other", "euw1", "CHALLENGER", 900)
+	c, err := st.LadderCutoffs(ctx, "na1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The 5th percentile skips the one outlier.
+	if c.Grandmaster != 200 || c.Challenger != 600 {
+		t.Errorf("cutoffs = %+v, want 200 / 600", c)
 	}
 }

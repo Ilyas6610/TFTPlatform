@@ -373,9 +373,29 @@ func TestLobbyStrength(t *testing.T) {
 		}
 	}
 
+	// na1's ladder (other players): Grandmaster from 200 LP, Challenger from 600.
+	for i := 0; i < 20; i++ {
+		for _, e := range []struct {
+			tier string
+			lp   int
+		}{{"GRANDMASTER", 200 + i}, {"CHALLENGER", 600 + i}} {
+			p := fmt.Sprintf("%s%d", e.tier, i)
+			if err := s.Store.UpsertAccountPUUIDOnly(ctx, p, "americas"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.Store.Pool.Exec(ctx, `INSERT INTO league_entries (puuid, platform_region, tier, rank, league_points, wins, losses)
+				VALUES ($1, 'na1', $2, 'I', $3, 1, 1)`, p, e.tier, e.lp); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
 	_, page := getMatches(t, s, "/api/v1/players/me/matches?limit=3")
-	if l := page.Matches[0].Lobby; l == nil || l.Value != 2800+900 || l.Known != 7 || l.Opponents != 7 || l.Current != 0 {
-		t.Errorf("newest game's lobby = %+v, want Master 900 LP from 7 of 7", l)
+	if l := page.Matches[0].Lobby; l == nil || l.Value != 2800+900 || l.Tier != "CHALLENGER" || l.Known != 7 || l.Opponents != 7 || l.Current != 0 {
+		t.Errorf("newest game's lobby = %+v, want Challenger 900 LP from 7 of 7", l)
+	}
+	if l := page.Matches[2].Lobby; l == nil || l.Value != 2800+700 || l.Tier != "CHALLENGER" {
+		t.Errorf("third game's lobby = %+v", l)
 	}
 
 	rec := httptest.NewRecorder()
@@ -384,8 +404,8 @@ func TestLobbyStrength(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &lob); err != nil || rec.Code != http.StatusOK {
 		t.Fatalf("%d %v %s", rec.Code, err, rec.Body)
 	}
-	if lob.Total != 8 || lob.Known != 7 || len(lob.Players) != 7 || lob.Average != 3300 {
-		t.Errorf("match lobby = %+v, want 7 of 8 known at Master 500", lob)
+	if lob.Total != 8 || lob.Known != 7 || len(lob.Players) != 7 || lob.Average != 3300 || lob.AverageTier != "GRANDMASTER" {
+		t.Errorf("match lobby = %+v, want 7 of 8 known at 500 LP, Grandmaster by na1's cutoffs", lob)
 	}
 	for _, p := range lob.Players {
 		if p.PUUID == "me" || p.Tier != "MASTER" || p.LeaguePoints != 500 || p.Value != 3300 || p.Current {

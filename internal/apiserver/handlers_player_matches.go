@@ -227,6 +227,19 @@ func (s *Server) decorateMatches(ctx context.Context, puuid string, matches []st
 		return nil, nil, err
 	}
 	lobbies := lobby.For(players, puuid)
+	cutoffs := map[string]store.ApexCutoffs{} // per platform
+	for id, l := range lobbies {
+		platform := platformOfMatch(id)
+		c, ok := cutoffs[platform]
+		if !ok {
+			if c, err = s.Store.LadderCutoffs(ctx, platform); err != nil {
+				return nil, nil, err
+			}
+			cutoffs[platform] = c
+		}
+		l.Tier = lobby.TierOf(l.Value, c)
+		lobbies[id] = l
+	}
 
 	views := make([]PlayerMatchView, len(matches))
 	for i, m := range matches {

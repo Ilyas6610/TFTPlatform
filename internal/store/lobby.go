@@ -86,3 +86,31 @@ func (s *Store) LobbyPlayers(ctx context.Context, matchIDs []string) ([]LobbyPla
 	}
 	return out, rows.Err()
 }
+
+// ApexCutoffs are the LP above Master at which a platform's Grandmaster and
+// Challenger tiers start. They aren't fixed (each holds a set number of the
+// region's top players), so they're read from the stored ladder: the 5th
+// percentile of each tier's LP, which ignores the few players who lost LP
+// since Riot last reassigned tiers. Zero when the tier isn't stored.
+type ApexCutoffs struct {
+	Grandmaster int
+	Challenger  int
+}
+
+// LadderCutoffs returns platform's current ApexCutoffs.
+func (s *Store) LadderCutoffs(ctx context.Context, platform string) (ApexCutoffs, error) {
+	var c ApexCutoffs
+	var gm, ch *int
+	err := s.Pool.QueryRow(ctx, `
+		SELECT percentile_disc(0.05) WITHIN GROUP (ORDER BY league_points) FILTER (WHERE tier = 'GRANDMASTER'),
+			percentile_disc(0.05) WITHIN GROUP (ORDER BY league_points) FILTER (WHERE tier = 'CHALLENGER')
+		FROM league_entries
+		WHERE platform_region = $1 AND queue_type = 'RANKED_TFT' AND tier IN ('GRANDMASTER', 'CHALLENGER')`, platform).Scan(&gm, &ch)
+	if gm != nil {
+		c.Grandmaster = *gm
+	}
+	if ch != nil {
+		c.Challenger = *ch
+	}
+	return c, err
+}

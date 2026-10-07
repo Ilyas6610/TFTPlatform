@@ -10,7 +10,7 @@ import {
   getMatchLobby,
 } from "../api/client";
 import { GameIcon } from "../assets/tft";
-import { rankText, valueText } from "../components/LPChart";
+import { lobbyText, rankText } from "../components/LPChart";
 
 const DOUBLE_UP = 1160;
 
@@ -78,7 +78,7 @@ export default function MatchDetailPage() {
         </p>
         {lobby && lobby.known > 0 && (
           <p className="muted" title="Average Ranked standing of the players around this game, where recorded">
-            Lobby ≈ {valueText(lobby.average)} ({lobby.known} of {lobby.total} players ranked)
+            Lobby ≈ {lobbyText(lobby.average, lobby.averageTier)} ({lobby.known} of {lobby.total} players ranked)
           </p>
         )}
       </div>

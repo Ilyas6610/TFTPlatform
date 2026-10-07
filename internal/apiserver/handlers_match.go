@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"tft-platform/internal/ingest"
+	"tft-platform/internal/lobby"
 	"tft-platform/internal/lp"
 	"tft-platform/internal/riotapi"
 )
@@ -120,8 +121,11 @@ type MatchLobbyPlayer struct {
 type MatchLobbyResponse struct {
 	Players []MatchLobbyPlayer `json:"players"` // only those with a known rank
 	Average int                `json:"average"` // 0 when none is known
-	Known   int                `json:"known"`   // len(Players)
-	Total   int                `json:"total"`   // participants stored
+	// AverageTier names an apex average by the platform's current cutoffs
+	// (lobby.TierOf); empty below Master or when they aren't known.
+	AverageTier string `json:"averageTier,omitempty"`
+	Known       int    `json:"known"` // len(Players)
+	Total       int    `json:"total"` // participants stored
 }
 
 // handleMatchLobby serves GET /api/v1/matches/{matchId}/lobby: each stored
@@ -153,6 +157,19 @@ func (s *Server) handleMatchLobby(w http.ResponseWriter, r *http.Request) {
 	}
 	if resp.Known > 0 {
 		resp.Average = sum / resp.Known
+		cutoffs, err := s.Store.LadderCutoffs(r.Context(), platformOfMatch(matchID))
+		if err != nil {
+			writeDBError(w, r, err)
+			return
+		}
+		resp.AverageTier = lobby.TierOf(resp.Average, cutoffs)
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// platformOfMatch is the platform a match id names: "NA1_123" -> "na1"
+// (ids are validated, so the prefix is there).
+func platformOfMatch(matchID string) string {
+	prefix, _, _ := strings.Cut(matchID, "_")
+	return strings.ToLower(prefix)
 }

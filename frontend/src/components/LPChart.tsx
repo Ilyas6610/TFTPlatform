@@ -21,6 +21,14 @@ export function valueText(v: number) {
   return `${title(tier)} ${DIVISIONS[Math.floor((v % 400) / 100)]} ${v % 100} LP`;
 }
 
+/**
+ * A lobby's average rank: by its apex tier when the server named it from the
+ * platform's cutoffs ("Challenger 700 LP"), else like valueText.
+ */
+export function lobbyText(v: number, tier?: string) {
+  return tier && APEX.has(tier) ? `${title(tier)} ${v - 2800} LP` : valueText(v);
+}
+
 /** The division boundary a linear LP value sits on (multiples of 100 below Master). */
 function boundaryLabel(value: number): string | null {
   if (value === 2800) return "Master";

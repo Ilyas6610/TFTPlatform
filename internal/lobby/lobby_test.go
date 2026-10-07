@@ -55,3 +55,24 @@ func TestFor(t *testing.T) {
 		t.Errorf("D = %+v (the teammate must not count)", d)
 	}
 }
+
+func TestTierOf(t *testing.T) {
+	na := store.ApexCutoffs{Grandmaster: 225, Challenger: 566}
+	for _, c := range []struct {
+		value   int
+		cutoffs store.ApexCutoffs
+		want    string
+	}{
+		{2799, na, ""},                        // Diamond I 99 LP
+		{2800 + 100, na, "MASTER"},            // under the Grandmaster cutoff
+		{2800 + 225, na, "GRANDMASTER"},       // at it
+		{2800 + 565, na, "GRANDMASTER"},       // just under Challenger
+		{2800 + 700, na, "CHALLENGER"},        // 2 GM + 6 Challengers' average
+		{2800 + 700, store.ApexCutoffs{}, ""}, // no ladder stored: unknown
+		{2800 + 700, store.ApexCutoffs{Grandmaster: 200}, "GRANDMASTER"},
+	} {
+		if got := TierOf(c.value, c.cutoffs); got != c.want {
+			t.Errorf("TierOf(%d, %+v) = %q, want %q", c.value, c.cutoffs, got, c.want)
+		}
+	}
+}
