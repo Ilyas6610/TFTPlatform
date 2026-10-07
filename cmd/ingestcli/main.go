@@ -291,8 +291,8 @@ func runCrawlQueue(ctx context.Context, cfg config.Config, args []string) {
 		log.Printf("crawl-queue: record run finish: %v", err)
 	}
 
-	fmt.Printf("crawl-queue: puuids_crawled=%d requests=%d matches_ingested=%d status=%s\n",
-		result.PUUIDsCrawled, result.RequestsMade, result.MatchesIngested, status)
+	fmt.Printf("crawl-queue: puuids_crawled=%d puuids_failed=%d requests=%d matches_ingested=%d status=%s\n",
+		result.PUUIDsCrawled, result.PUUIDsFailed, result.RequestsMade, result.MatchesIngested, status)
 
 	if crawlErr != nil {
 		log.Fatalf("crawl-queue: %v", crawlErr)
