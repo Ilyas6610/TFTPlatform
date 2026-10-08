@@ -59,8 +59,12 @@ const STAT_RE = new RegExp(
 const statKeys = (name) => STATS.find(([n]) => n.toLowerCase() === name.toLowerCase())?.[1] ?? [];
 
 /** Who a sentence's stat bonus goes to. */
+let TRAIT_NAMES = [];
 function scopeOf(s) {
   const t = s.toLowerCase();
+  // "Your Lunar champions", "adjacent to an Elderwood plant": the bonus goes to that trait's units.
+  const named = TRAIT_NAMES.find((n) => new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(s));
+  if (named && !/(back row|back 2 rows|front row)/.test(t)) return { scope: "trait", trait: named };
   // "Champions in your back 2 rows gain ... for each champion that starts combat in your front row": the subject is the back.
   if (/(back row|back 2 rows)/.test(t)) return { scope: "back", rows: /back 2 rows/.test(t) ? 2 : 1 };
   if (/(front row|first row|center of the front)/.test(t)) return { scope: "front" };
@@ -171,7 +175,7 @@ function parseAugment(a, itemsByName, unitCosts) {
     let work = s; // matched "choose 1 of N" phrases are blanked so the generic patterns don't count them again
     const choose = s.match(/Choose 1 of (\d+) (Radiant Items|Artifacts|components)/i);
     if (choose) {
-      if (/radiant/i.test(choose[2])) res.completed += 2;
+      if (/radiant/i.test(choose[2])) res.radiants = (res.radiants ?? 0) + 1;
       else if (/artifact/i.test(choose[2])) res.artifacts += 1.3;
       else res.components += 1.3;
       hit = true;
@@ -221,7 +225,8 @@ function parseAugment(a, itemsByName, unitCosts) {
       if (/completed/i.test(m[0])) res.completed += count(m[1]);
     });
     take(/(a|an|\d+|two)\s+(?:random\s+)?Completed Item anvils?/gi, (m) => (res.completed += 1.3 * count(m[1])));
-    take(/(a|an|\d+)\s+(?:random\s+)?Radiant (?:Items?|Lucky Item Chest)/gi, (m) => (res.completed += 2 * count(m[1])));
+    // Radiant items are their own kind in the scorer; a named radiant (the Lucky Item Chest, Thief's Gloves) is counted once, by name below.
+    take(/(a|an|\d+)\s+(?:random\s+)?Radiant Items?\b(?!\s*\w*'s)/gi, (m) => (res.radiants = (res.radiants ?? 0) + count(m[1])));
     take(/(a|an|\d+|two)\s+(?:random\s+)?Artifacts?(?:\s+anvils?)?/gi, (m) => (res.artifacts += count(m[1])));
     take(/(a|an|\d+|two|three)\s+(?:random\s+)?Emblems?/gi, (m) => {
       if (/matches their class|that trait|that Emblem|of that/i.test(s) && /champion/i.test(s)) return;
@@ -305,7 +310,7 @@ function parseAugment(a, itemsByName, unitCosts) {
     if (conditional && JSON.stringify(res) !== before) conditionalText.push(s);
     if (/if heads|if tails/i.test(s) || conditional) {
       const was = JSON.parse(before);
-      for (const k of ["gold", "xp", "rerolls", "components", "completed", "artifacts", "emblems"]) {
+      for (const k of ["gold", "xp", "rerolls", "components", "completed", "artifacts", "emblems", "radiants"]) {
         const delta = (res[k] ?? 0) - (was[k] ?? 0);
         if (delta) res[k] = (was[k] ?? 0) + delta / 2;
       }
@@ -319,7 +324,7 @@ function parseAugment(a, itemsByName, unitCosts) {
   }
 
   const resourceTotal =
-    res.gold + res.xp + res.rerolls + res.components + res.completed + res.artifacts + res.emblems + res.units.length + res.named.length +
+    res.gold + res.xp + res.rerolls + res.components + res.completed + res.artifacts + res.emblems + (res.radiants ?? 0) + res.units.length + res.named.length +
     (res.duplicators?.length ?? 0) + (res.benchTransform ? 1 : 0) + (res.allOfCost ? 1 : 0);
   const hasResources = resourceTotal > 0 || Object.keys(recurring).length > 0;
   const out = {};
@@ -348,6 +353,8 @@ const NOT_MODELLED = {
 };
 
 const set = await loadSet();
+// Trait names that read as the subject of a bonus ("Your Lunar champions"); very short ones would match ordinary words.
+TRAIT_NAMES = [...new Set(set.traits.map((t) => t.name))].filter((n) => n.length >= 4);
 const itemsByName = new Map();
 for (const it of [...set.items, ...(set.wisps ?? [])]) {
   if (it.name && ["component", "completed", "emblem", "artifact", "radiant"].includes(it.kind) && !itemsByName.has(it.name)) itemsByName.set(it.name, it);
@@ -365,6 +372,8 @@ const result = {};
 const stats = { high: 0, medium: 0, low: 0, none: 0 };
 for (const a of set.augments) {
   const p = NOT_MODELLED[a.apiName] ? { confidence: "none", unparsed: [NOT_MODELLED[a.apiName]] } : parseAugment(a, itemsByName, unitCosts);
+  // Augments built around a trait (the set data lists it) are worth little to a board that doesn't play it.
+  if (a.traits?.length && p.confidence !== "none") p.traits = a.traits;
   result[a.apiName] = p;
   stats[p.confidence]++;
 }

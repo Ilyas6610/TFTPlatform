@@ -159,6 +159,9 @@
    "confidence": "medium",
    "unparsed": [
     "Primal grants an additional Blessing."
+   ],
+   "traits": [
+    "Primal"
    ]
   },
   "DA_18_PrimalAugment_Sivir": {
@@ -183,6 +186,9 @@
    "confidence": "medium",
    "unparsed": [
     "Primal grants an additional Blessing."
+   ],
+   "traits": [
+    "Primal"
    ]
   },
   "DA_18_PrimalAugmentPlus_Nidalee": {
@@ -207,6 +213,9 @@
    "confidence": "medium",
    "unparsed": [
     "Primal grants an additional Blessing."
+   ],
+   "traits": [
+    "Primal"
    ]
   },
   "DA_18_PrimalAugmentPlus_Sivir": {
@@ -231,6 +240,9 @@
    "confidence": "medium",
    "unparsed": [
     "Primal grants an additional Blessing."
+   ],
+   "traits": [
+    "Primal"
    ]
   },
   "DA_BeltOverflow": {
@@ -320,6 +332,9 @@
    "confidence": "medium",
    "unparsed": [
     "When you buy a Wisp, gain a random Blossom champion based on the Wisp's cost."
+   ],
+   "traits": [
+    "Blossom"
    ]
   },
   "DA_BodyguardTraining": {
@@ -690,7 +705,10 @@
      }
     ]
    },
-   "confidence": "high"
+   "confidence": "high",
+   "traits": [
+    "Solar"
+   ]
   },
   "DA_ClearMind": {
    "resources": {
@@ -812,6 +830,9 @@
    "confidence": "medium",
    "unparsed": [
     "The champion holding the emblem gains 50% increased benefits from Flora Fatalis."
+   ],
+   "traits": [
+    "Flora Fatalis"
    ]
   },
   "DA_CookingPot": {
@@ -895,6 +916,9 @@
    "confidence": "medium",
    "unparsed": [
     "When you choose to continue gathering Coven essence, heal 2 Tactician health."
+   ],
+   "traits": [
+    "Coven"
    ]
   },
   "DA_CraftedCrafting": {
@@ -995,6 +1019,9 @@
    "confidence": "medium",
    "unparsed": [
     "Converting Coven Essence to rewards grants Coven champions Ability Power instead of loot."
+   ],
+   "traits": [
+    "Coven"
    ]
   },
   "DA_DeadlierBlades": {
@@ -1124,6 +1151,9 @@
    "confidence": "medium",
    "unparsed": [
     "Fae pixies are now larger and grant 50% more Attack Damage and Ability Power."
+   ],
+   "traits": [
+    "Fae"
    ]
   },
   "DA_EpicRolldown": {
@@ -1273,13 +1303,15 @@
    "effects": [
     {
      "kind": "stat",
-     "scope": "team",
+     "scope": "trait",
+     "trait": "Inferno",
      "stat": "ad",
      "flat": 0.2
     },
     {
      "kind": "stat",
-     "scope": "team",
+     "scope": "trait",
+     "trait": "Inferno",
      "stat": "ap",
      "flat": 0.2
     }
@@ -1305,6 +1337,9 @@
    "confidence": "medium",
    "unparsed": [
     "The one who did the most damage last combat gains double."
+   ],
+   "traits": [
+    "Inferno"
    ]
   },
   "DA_Flexible": {
@@ -1490,7 +1525,7 @@
   "DA_GoldenGamble": {
    "resources": {
     "gold": 2,
-    "completed": 3.3,
+    "completed": 2.3,
     "named": [
      {
       "name": "Radiant Lucky Item Chest",
@@ -1504,7 +1539,7 @@
   "DA_GoldenGamblePlus": {
    "resources": {
     "gold": 3,
-    "completed": 3.3,
+    "completed": 2.3,
     "named": [
      {
       "name": "Radiant Lucky Item Chest",
@@ -1518,7 +1553,7 @@
   "DA_GoldenGamblePlusPlus": {
    "resources": {
     "gold": 6,
-    "completed": 3.3,
+    "completed": 2.3,
     "named": [
      {
       "name": "Radiant Lucky Item Chest",
@@ -1808,7 +1843,10 @@
      }
     ]
    },
-   "confidence": "high"
+   "confidence": "high",
+   "traits": [
+    "Blackthorn"
+   ]
   },
   "DA_ItemGrabBag": {
    "resources": {
@@ -2095,6 +2133,9 @@
     "Open an armory and choose one of 3 traits.",
     "Traits on your board are more likely to appear in the armory.",
     "Lux provides +2 to her chosen trait"
+   ],
+   "traits": [
+    "Avatar"
    ]
   },
   "DA_MaxBuild": {
@@ -2193,7 +2234,8 @@
    "effects": [
     {
      "kind": "stat",
-     "scope": "unknown",
+     "scope": "trait",
+     "trait": "Elderwood",
      "stat": "as",
      "pct": 0.15,
      "everySeconds": 2
@@ -2224,7 +2266,10 @@
      }
     ]
    },
-   "confidence": "high"
+   "confidence": "high",
+   "traits": [
+    "Elderwood"
+   ]
   },
   "DA_NestingAnvils": {
    "resources": {
@@ -2289,6 +2334,9 @@
    "confidence": "medium",
    "unparsed": [
     "You can now choose a second Alpha Riftbeast."
+   ],
+   "traits": [
+    "Riftbeast"
    ]
   },
   "DA_OneBuffTwoBuff": {
@@ -2356,7 +2404,7 @@
   },
   "DA_PandorasItemsIII": {
    "resources": {
-    "completed": 2
+    "radiants": 1
    },
    "confidence": "medium",
    "unparsed": [
@@ -2481,21 +2529,21 @@
   },
   "DA_RadiantRascal": {
    "resources": {
-    "completed": 4,
     "named": [
      {
       "name": "Radiant Thief's Gloves",
       "n": 1,
       "kind": "radiant"
      }
-    ]
+    ],
+    "radiants": 2
    },
    "confidence": "high"
   },
   "DA_RadiantRelic": {
    "resources": {
     "components": 1,
-    "completed": 2
+    "radiants": 1
    },
    "confidence": "high"
   },
@@ -2728,6 +2776,9 @@
    "confidence": "medium",
    "unparsed": [
     "While Sprykin is active, gain a second BFF summon that is 35% as powerful."
+   ],
+   "traits": [
+    "Sprykin"
    ]
   },
   "DA_SmallGrabBag": {
@@ -2862,14 +2913,16 @@
    "effects": [
     {
      "kind": "stat",
-     "scope": "team",
+     "scope": "trait",
+     "trait": "Lunar",
      "stat": "health",
      "flat": 100,
      "per": "uniqueOther"
     },
     {
      "kind": "stat",
-     "scope": "team",
+     "scope": "trait",
+     "trait": "Lunar",
      "stat": "damageAmp",
      "pct": 0.08,
      "per": "uniqueOther"
@@ -2900,20 +2953,25 @@
      }
     ]
    },
-   "confidence": "high"
+   "confidence": "high",
+   "traits": [
+    "Lunar"
+   ]
   },
   "DA_18_LunarTraitAugmentPlus": {
    "effects": [
     {
      "kind": "stat",
-     "scope": "team",
+     "scope": "trait",
+     "trait": "Lunar",
      "stat": "health",
      "flat": 100,
      "per": "uniqueOther"
     },
     {
      "kind": "stat",
-     "scope": "team",
+     "scope": "trait",
+     "trait": "Lunar",
      "stat": "damageAmp",
      "pct": 0.08,
      "per": "uniqueOther"
@@ -2944,7 +3002,10 @@
      }
     ]
    },
-   "confidence": "high"
+   "confidence": "high",
+   "traits": [
+    "Lunar"
+   ]
   },
   "DA_SweetTreats": {
    "effects": [
@@ -3249,6 +3310,9 @@
    "confidence": "medium",
    "unparsed": [
     "You can field Rengar and Kha'Zix together with no penalties, and they gain bonuses when the other casts."
+   ],
+   "traits": [
+    "Rival"
    ]
   },
   "DA_UpwardMobility": {

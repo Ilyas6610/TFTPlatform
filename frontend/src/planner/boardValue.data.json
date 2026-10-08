@@ -1,0 +1,52 @@
+{
+ "setNumber": 18,
+ "version": "16.19.8230722",
+ "fittedOn": {
+  "lobbies": 2181,
+  "boards": 17448,
+  "from": "2026-08-26T23:53:40.255+00:00",
+  "to": "2026-10-07T06:44:21.825+00:00"
+ },
+ "heldOut": {
+  "note": "fit on the oldest 60% of lobbies, tested on the newest 40%",
+  "spearman": 0.821,
+  "pairwise": 0.848,
+  "levelOnlySpearman": 0.481,
+  "goldCostSpearman": 0.687
+ },
+ "note": "Placement change within a lobby per +1 of the feature (negative is better). Correlational; used as an exchange rate, see scripts/fit-board-value.mjs.",
+ "itemGainMean": 0.2915,
+ "coefficients": {
+  "cost1star1": 0.191,
+  "cost1star2": -0.0833,
+  "cost1star3": -0.162,
+  "cost2star1": 0.2774,
+  "cost2star2": -0.0826,
+  "cost2star3": -0.612,
+  "cost3star1": 0.3231,
+  "cost3star2": -0.1551,
+  "cost3star3": -0.5336,
+  "cost4star1": 0.3892,
+  "cost4star2": -0.125,
+  "cost4star3": -0.6468,
+  "cost5star1": 0.2442,
+  "cost5star2": -0.2334,
+  "cost5star3": -2.7112,
+  "items_cost1star1": -0.1131,
+  "items_cost1star2": -0.1189,
+  "items_cost1star3": -0.3388,
+  "items_cost2star1": -0.2403,
+  "items_cost2star2": -0.1513,
+  "items_cost2star3": -0.2775,
+  "items_cost3star1": -0.102,
+  "items_cost3star2": -0.2021,
+  "items_cost3star3": -0.3991,
+  "items_cost4star1": -0.1997,
+  "items_cost4star2": -0.3186,
+  "items_cost4star3": -0.8962,
+  "items_cost5star1": -0.251,
+  "items_cost5star2": -0.3056,
+  "items_cost5star3": 0.1112,
+  "level": -1.2135
+ }
+}

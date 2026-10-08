@@ -4,6 +4,7 @@ import { GameIcon } from "../assets/tft";
 import { AUGMENT_SLOTS, augmentTier, availableAt } from "../planner/augmentStages";
 import { SHOP } from "../planner/augmentPlan";
 import { ASSUMPTIONS, AugmentScore, Confidence, rankAugments } from "../planner/augmentScore";
+import { BOARD_VALUE_FIT, ITEM_GAIN } from "../planner/boardValue";
 import { Board } from "../planner/board";
 import { Names } from "./stats";
 
@@ -16,7 +17,8 @@ const CONFIDENCE_HINT: Record<Confidence, string> = {
   none: "Not scored",
 };
 
-const pct = (x: number) => `${x >= 0 ? "+" : ""}${(x * 100).toFixed(1)}%`;
+/** A gain in placement as the change in average placement: a gain of 0.31 reads "−0.31" (a lower placement is better). */
+const place = (x: number) => `${x >= 0 ? "−" : "+"}${Math.abs(x).toFixed(2)}`;
 
 /**
  * Prototype: what each augment would add to the board in the planner, as a
@@ -58,8 +60,9 @@ export function AugmentImpact({
         Augment impact <span className="chip">prototype</span>
       </h3>
       <p className="muted augment-impact-note">
-        An estimate from the set's numbers, not from game results (Riot's match data has no augments). Stats are worth what they add to this
-        board's strength; gold, items and units are priced in gold. Open a row for the arithmetic.
+        An estimate, not a measurement: Riot's match data has no augments, so nothing here is learned from augment results. Items, star-ups and stat
+        bonuses are priced in average placement with a model fitted on {BOARD_VALUE_FIT.fittedOn.lobbies.toLocaleString()} stored lobbies; the rest is converted through the
+        shop. A lower number is better. Open a row for the arithmetic.
       </p>
       <div className="mode-tabs" role="tablist" aria-label="Augment stage">
         {AUGMENT_SLOTS.map((s, i) => (
@@ -100,30 +103,26 @@ export function AugmentImpact({
       )}
 
       <details className="augment-impact-assumptions">
-        <summary className="muted">Assumptions behind the numbers</summary>
+        <summary className="muted">How it's worked out, and what to trust</summary>
         <ul>
           <li>
-            Team strength = the geometric mean of total effective HP and total DPS. Each held item adds{" "}
-            {ASSUMPTIONS.itemHealth * 100}% health, {ASSUMPTIONS.itemDamage * 100}% attack damage and {ASSUMPTIONS.itemAbility * 100}% ability power;
-            ability damage is {ASSUMPTIONS.abilityShare * 100}% of a unit's damage; bonuses are averaged over a {ASSUMPTIONS.fightSeconds}s fight.
+            <strong>Fitted from boards</strong> (not guessed): within a lobby, a board's placement against the stars of its units by cost, the items it
+            holds (by who holds them) and its level. On the newest 40% of lobbies it ranks boards with a Spearman correlation of {BOARD_VALUE_FIT.heldOut.spearman}
+            (level alone {BOARD_VALUE_FIT.heldOut.levelOnlySpearman}, gold cost alone {BOARD_VALUE_FIT.heldOut.goldCostSpearman}). An average item is worth {ITEM_GAIN.toFixed(2)} placement,
+            a star-up its fitted gain split over the copies it needs. This is correlation (strong players hold more of everything), so it's scaled
+            down by {ASSUMPTIONS.calibration} and totals are capped near {ASSUMPTIONS.softCap}.
           </li>
           <li>
-            Prices in gold: a reroll {ASSUMPTIONS.ge.reroll}, a component {ASSUMPTIONS.ge.component}, a completed item {ASSUMPTIONS.ge.completed}, an
-            artifact {ASSUMPTIONS.ge.artifact}, an emblem {ASSUMPTIONS.ge.emblem}; a unit costs its cost × 1, 3 or 9 by star. Only {ASSUMPTIONS.usefulness.gold * 100}% of
-            gold, {ASSUMPTIONS.usefulness.item * 100}% of items and {ASSUMPTIONS.usefulness.unit * 100}% of units turn into board value.
+            <strong>Stat bonuses</strong>: team strength (the geometric mean of total effective HP and total DPS from base stats, stars and items) is recomputed with the
+            bonus on the units it covers; the lift is converted to placement through what one extra item does to the same strength. Ability numbers, traits and
+            positioning beyond front and back rows aren't modelled.
           </li>
           <li>
-            What a board can use is limited: it takes about {ASSUMPTIONS.targetValuePerSlot} gold of value per level slot, so gold, XP and units are worth less on a
-            nearly full board; items are limited by the free slots on {ASSUMPTIONS.itemCarries} carries; XP is worth less at level 8 and up. That is why the ranking
-            changes with the board.
+            <strong>Copies</strong>: a copy of a unit still short of its goal star ({SHOP.slots} shop slots, {SHOP.rerollGold} gold a reroll, the standard odds by level) is worth its share of the
+            star-up; a board of cheap carries counts copies up to {1 + ASSUMPTIONS.rerollTempo}× and a board of expensive carries barely (the tempo of a reroll comp's early star-ups
+            can't be measured from final boards: that factor, and {Math.round(ASSUMPTIONS.tempoPerStage * 100)}% extra per stage left for early gold, copies and items, are assumptions).
           </li>
-          <li>
-            Copies: a board of cheap carries (1-3 cost, not yet 3★) wants copies, so free rerolls, Champion Duplicators, random champions and Pandora's Bench are priced by the
-            shop odds (a copy of a specific unit costs its price plus the rerolls it takes at your level: {SHOP.slots} slots, {SHOP.rerollGold} gold each); a board of 4-5 cost
-            carries values them much less. Copies of filler units count at {SHOP.fillerWeight * 100}%.
-          </li>
-          <li>The board's value is its units' gold cost plus {ASSUMPTIONS.ge.itemOnBoard} per item. Early gold is worth a little more.</li>
-          <li>Traits, positioning beyond front and back rows, opponents and ability numbers aren't modelled.</li>
+          <li>Built around a trait the board doesn't play (Elderwood, Solar...): counted at {ASSUMPTIONS.offTraitShare * 100}%.</li>
         </ul>
       </details>
     </div>
@@ -146,7 +145,7 @@ function AugmentRow({ r, top, names, data, onPick }: { r: AugmentScore; top: num
           <span className="augment-impact-bar" aria-hidden>
             <span className={impact < 0 ? "neg" : undefined} style={{ width: `${width}%` }} />
           </span>
-          <span className="augment-impact-value">{pct(impact)}</span>
+          <span className="augment-impact-value">{place(impact)}</span>
           <span className={`augment-impact-conf conf-${r.confidence}`} title={CONFIDENCE_HINT[r.confidence]}>
             {r.confidence}
           </span>
@@ -158,14 +157,14 @@ function AugmentRow({ r, top, names, data, onPick }: { r: AugmentScore; top: num
               {r.parts.map((p, i) => (
                 <tr key={i}>
                   <td>{p.label}</td>
-                  <td className="num">{p.ge >= 0 ? "+" : ""}{p.ge.toFixed(1)} gold</td>
+                  <td className="num">{place(p.dp)}</td>
                   <td className="muted">{p.note ?? ""}</td>
                 </tr>
               ))}
               <tr>
                 <th>Total</th>
-                <th className="num">{r.ge!.toFixed(1)} gold</th>
-                <th className="muted">{pct(impact)} of the board's value</th>
+                <th className="num">{place(impact)}</th>
+                <th className="muted">average placement</th>
               </tr>
             </tbody>
           </table>

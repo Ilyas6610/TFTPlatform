@@ -1,23 +1,25 @@
-// Augment impact estimate (prototype).
+// Augment impact estimate (prototype, v2).
 //
 // Question: given the board in the planner, how much would each augment add?
 // Neither Set 16, 17 nor 18's match data records augments, so nothing here is
-// learned from results. It is arithmetic on the set data, with every
-// assumption written down in ASSUMPTIONS, and it reports a breakdown instead of
-// a bare score.
+// learned from augment results. What is learned from data is the exchange rate
+// between the things augments give: items, star-ups and stat bonuses are priced
+// in placement with the board value model fitted on stored boards
+// (boardValue.ts), and everything else is converted to those through the shop.
+// Every other assumption is in ASSUMPTIONS, and each score carries a breakdown.
 //
 // How it works:
-//  1. Board power. Each unit gets effective HP (HP scaled by resists) and
-//     damage per second (auto-attacks plus an ability share) from its base
-//     stats, star level and a flat bonus per held item. Team strength is the
-//     geometric mean of total effective HP and total DPS.
-//  2. Stat augments change the units they apply to (team, item holders, front
-//     row...) and power is recomputed; the lift is the gain.
-//  3. Everything else (gold, XP, rerolls, components, champions...) is priced
-//     in gold-equivalents (GE) with the table below.
-//  4. Both are put on one scale: GE, and "% of the board's value", where the
-//     board's value is its units' gold cost plus its items. A stat lift of 10%
-//     is worth 10% of the board.
+//  1. Items: a held item is worth about 0.24 placement (the fit), less when the
+//     carries' item slots are full.
+//  2. Copies: a copy of a unit that still wants stars is worth its share of the
+//     star-up's placement gain (the fit, by cost); the shop odds say what a copy
+//     costs to roll (augmentPlan.ts), so gold, rerolls, XP, duplicators, random
+//     champions and Pandora's Bench are all valued by the copies they buy.
+//  3. Stat bonuses: team strength (the geometric mean of total effective HP and
+//     total DPS) is recomputed with the bonus applied to the units it covers; the
+//     lift is converted to placement through what one extra item does to the same
+//     strength, so the scale is anchored to the fit, not guessed.
+//  4. Built around a trait the board doesn't play: worth little.
 //
 // Effects come from augmentEffects.data.json, extracted from the augments'
 // descriptions by scripts/extract-augment-effects.mjs. An augment it couldn't
@@ -27,12 +29,15 @@ import { SetAugment, SetData, SetUnit } from "../api/client";
 import raw from "./augmentEffects.data.json";
 import { Plan, SHOP, buildPlan, copyPrice, hitChance } from "./augmentPlan";
 import { Board, COLS, PlacedUnit, ROWS, computeTraits } from "./board";
+import { ITEM_GAIN, copyGain, itemGain } from "./boardValue";
 
 export type Confidence = "high" | "medium" | "low" | "none";
 
 export interface StatEffect {
   kind: "stat";
-  scope: "team" | "holders" | "unheld" | "front" | "back" | "cost" | "unknown";
+  scope: "team" | "holders" | "unheld" | "front" | "back" | "cost" | "trait" | "unknown";
+  /** For scope "trait": the units that have it. */
+  trait?: string;
   stat: "health" | "armor" | "mr" | "ad" | "ap" | "as" | "crit" | "critDmg" | "damageAmp" | "durability" | "omnivamp";
   flat?: number;
   /** The flat bonus grows by this much per player level. */
@@ -56,6 +61,7 @@ export interface Resources {
   completed?: number;
   artifacts?: number;
   emblems?: number;
+  radiants?: number;
   units?: { n: number; cost: number; star: number; fixed?: boolean; name?: string }[];
   named?: { name: string; n: number; kind: string }[];
   /** Champion Duplicators: each copies a unit of up to maxCost. */
@@ -80,6 +86,8 @@ export interface AugmentEffects {
   resources?: Resources;
   recurring?: Recurring;
   confidence: Confidence;
+  /** Traits the augment is built around (from the set data): worth little to a board that doesn't play one. */
+  traits?: string[];
   unparsed?: string[];
   /** Rewards that depend on something happening; counted at half. */
   conditional?: string[];
@@ -87,14 +95,18 @@ export interface AugmentEffects {
 
 export const EFFECTS = raw.augments as unknown as Record<string, AugmentEffects>;
 
-/** Every number the estimate rests on. Change one and the ranking moves. */
+/** Every number the estimate rests on besides the fitted board value model. Change one and the ranking moves. */
 export const ASSUMPTIONS = {
   /** TFT star scaling for health and attack damage. */
   starMultiplier: [1, 1.8, 3.24],
-  /** Each held item adds this much to health, to attack damage and to ability power (a generic item). */
-  itemHealth: 0.12,
-  itemDamage: 0.15,
-  itemAbility: 0.15,
+  /**
+   * Each held item adds this much to health, to attack damage and to ability power (a generic completed item: they are
+   * big, a third of a carry's base). Checked against stored boards: a higher item health predicts placements within
+   * a lobby slightly better than the first guess of 12%.
+   */
+  itemHealth: 0.35,
+  itemDamage: 0.3,
+  itemAbility: 0.3,
   /** Share of a unit's damage that comes from its ability (the rest is auto-attacks). */
   abilityShare: 0.5,
   /** How much of attack speed's gain reaches ability damage (faster mana generation). */
@@ -103,48 +115,62 @@ export const ASSUMPTIONS = {
   fightSeconds: 30,
   /** Healing from omnivamp, as a share of damage dealt that counts as extra health. */
   omnivampValue: 0.8,
+  /** What a trait augment is worth to a board that doesn't play its trait (its grants still sell, its bonuses do nothing). */
+  offTraitShare: 0.1,
+  /** Units of a trait a board needs for the trait to count as played. */
+  playedTraitUnits: 2,
   /** What an unclear "who gets this" bonus is assumed to cover. */
   unknownScopeCoverage: 0.5,
   /** Items on the one champion an augment grants, when it scales per item on that champion. */
   itemsOnOneUnit: 2,
   /** Allies sharing a trait with a unit, when an augment scales per such ally (average guess). */
   sharedTraitAllies: 2,
-  /** Gold-equivalent (GE) prices. A unit costs its cost x 1, 3 or 9 (copies for a 1, 2 or 3 star). */
-  ge: { gold: 1, xp: 1, reroll: 1.6, component: 3.5, completed: 8, artifact: 10, emblem: 7, itemOnBoard: 8 },
-  /** How much of a resource turns into board value: spent well, wasted, benched... */
-  usefulness: { gold: 0.75, xp: 0.75, reroll: 0.75, item: 0.9, unit: 0.6 },
+  /** How many items each kind counts as, next to a completed item. */
+  itemEquivalents: { component: 0.5, completed: 1, artifact: 1.2, emblem: 0.8, radiant: 1.4 } as Record<string, number>,
+  /** Items a unit can hold; how many free slots (best holders first) further items can fill before they count at a discount. */
+  itemsPerCarry: 3,
+  itemSlotsConsidered: 6,
+  /** Items always have some use when the carries are full (spares for others, swaps, tempo): usable slots never fall below this, at a share of an average item. */
+  itemSlotFloor: 3,
+  spareSlotShare: 0.7,
+  /** Share of an item beyond the free slots that still counts. */
+  itemOverflowShare: 0.3,
+  /** Placement per gold that nothing on the board needs to buy (interest, safety). */
+  idleGold: 0.003,
+  /**
+   * Gold, copies and items picked early do more than the final board shows: they arrive before the fights they decide,
+   * save rolling later and compound. Their value grows by this per stage left (the fit sees only final boards, so it
+   * can't measure this: it is an assumption, and the one that decides how economy compares with stats).
+   */
+  tempoPerStage: 0.1,
   /** Stages left after the stage an augment is picked at, and rounds per stage, for recurring gains. */
   stagesLeft: { "2-1": 5, "3-2": 4, "4-2": 3 } as Record<string, number>,
   roundsPerStage: 6,
-  /**
-   * How much more value a board can take. A level-L board holds about L units
-   * worth this much each (a 2-star 4-cost is 12); resources beyond the room
-   * left up to that, and the item slots still free, are worth less and less.
-   */
-  targetValuePerSlot: 13,
-  /** Impact is a share of the board's value, but of at least this share of a full board's, so a one-unit board doesn't read as +700%. */
-  impactFloor: 0.6,
-  roomFloor: 8,
-  /** Share of the copies a board still wants (to reach its goal stars) that it can realistically add. */
-  upgradeShare: 0.5,
-  /** Share of the rounds left in which the re-rolled bench slots hold spare units of the cost you want (a copy of a target on the bench would itself be transformed away). */
-  benchUseShare: 0.4,
-  /** Carries that can use items, and items each can hold. */
-  itemCarries: 3,
-  itemsPerCarry: 3,
   /** XP matters less the higher the level (level 9 and 10 have little left to buy). */
   xpUsefulByLevel: { 6: 1, 7: 1, 8: 0.6, 9: 0.2, 10: 0 } as Record<number, number>,
-  /** Gold early is worth more (interest, earlier levels): +this per stage left. */
-  earlyBonusPerStage: 0.06,
+  /**
+   * A board of cheap carries (a reroll board) lives on hitting 3 stars early: its copies decide fights the final board
+   * can't show (star-ups at level 5-6 beat the lobby), so their value is multiplied by 1 + this x the carries' low-cost
+   * share. Domain knowledge, not measured: the fit sees only final boards.
+   */
+  rerollTempo: 6,
+  /** No augment moves a placement by more than about this: totals are squeezed towards it (tanh), keeping their order. */
+  softCap: 0.8,
+  /** Share of the rounds left in which the re-rolled bench slots hold spare units of the cost you want. */
+  benchUseShare: 0.4,
+  /**
+   * Scale from the fitted placement exchange rate to what one augment can really move: the fit is correlational (strong
+   * players hold more of everything), so it overstates what one extra item or star causes. Set so the best augments
+   * come out around half a placement and a typical one around a tenth, as augment stats do in games that record them.
+   */
+  calibration: 0.35,
 };
 
 export interface Part {
   label: string;
-  /** Which of the board's limits applies to it: units/economy, items, or none (a stat bonus). */
-  side?: "units" | "items";
-  /** Gold-equivalents this part adds. */
-  ge: number;
-  /** For stat parts: the lift in team power, as a fraction. */
+  /** Placement this part is expected to gain (positive is better). */
+  dp: number;
+  /** For stat parts: the lift in team strength, as a fraction. */
   lift?: number;
   note?: string;
 }
@@ -153,11 +179,11 @@ export interface AugmentScore {
   apiName: string;
   name: string;
   tier: number;
-  /** Total gold-equivalents; null when the augment couldn't be read. */
-  ge: number | null;
-  /** ge as a fraction of the board's value; null when not scored. */
+  /** Placement the augment is expected to gain on this board; null when it couldn't be read. */
+  dp: number | null;
+  /** Same as dp (the ranking key, kept under its old name for the UI). */
   impact: number | null;
-  /** Team power lift from the stat effects alone. */
+  /** Team strength lift from the stat effects alone. */
   statLift: number;
   confidence: Confidence;
   parts: Part[];
@@ -288,6 +314,8 @@ function appliesTo(e: StatEffect, s: UnitState): boolean {
       return s.row >= ROWS - (e.rows ?? 1);
     case "cost":
       return s.cost === e.cost;
+    case "trait":
+      return e.trait !== undefined && s.traits.includes(e.trait);
   }
 }
 
@@ -355,158 +383,201 @@ function applyStat(s: UnitState, e: StatEffect, n: number, t: number, level: num
 
 // ---------------------------------------------------------------- resources
 
-const STAGE_LABELS = ["2-1", "3-2", "4-2"];
+export const STAGE_LABELS = ["2-1", "3-2", "4-2"];
 
 function stageFactors(stage: string) {
   const A = ASSUMPTIONS;
   const stages = A.stagesLeft[stage] ?? 4;
-  return { stages, rounds: stages * A.roundsPerStage, early: 1 + A.earlyBonusPerStage * stages };
+  return { stages, rounds: stages * A.roundsPerStage, tempo: 1 + A.tempoPerStage * stages };
 }
 
-function itemGE(kind: string): number {
-  const { ge } = ASSUMPTIONS;
-  switch (kind) {
-    case "component":
-      return ge.component;
-    case "emblem":
-    case "radiant":
-      return ge.emblem;
-    case "artifact":
-      return ge.artifact;
-    default:
-      return ge.completed;
-  }
-}
+const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
-export interface Room {
-  /** Gold-equivalents of units/upgrades the board can still take at its level. */
-  units: number;
-  /** Gold-equivalents of items the carries can still hold. */
-  items: number;
-  /** Share of XP that is still worth something at this level. */
-  xp: number;
-}
-
-/** What the board can still use: the same gold is worth more to a board with room for it. */
-export function boardRoom(board: Board, data: SetData): Room {
+/**
+ * Placement gained by n more items: each goes to the free slot where it is worth most
+ * (a 3-star carry before a 1-star filler: the fit prices items by holder), a few spare
+ * slots always count at a discount (swaps, tempo), and items beyond that count a little.
+ */
+function itemsDp(n: number, board: Board, data: SetData): { dp: number; note?: string } {
   const A = ASSUMPTIONS;
-  const value = boardValue(board, data);
-  const target = board.level * A.targetValuePerSlot;
-  const held = board.units.reduce((n, u) => n + u.items.length, 0);
-  const slots = Math.max(0, A.itemCarries * A.itemsPerCarry - held);
-  const xpLevel = Math.max(6, Math.min(10, board.level));
-  // A board of cheap units still has star-ups to buy: the copies it wants, at what they cost to roll, half of which it will get.
-  const plan = buildPlan(board, data);
-  const upgrades = plan.targets.reduce((sum, t) => sum + t.remaining * copyPrice(t.cost, plan), 0) * A.upgradeShare;
-  return {
-    units: Math.max(A.roomFloor, target - value) + upgrades,
-    items: Math.max(0, slots) * A.ge.completed,
-    xp: A.xpUsefulByLevel[xpLevel] ?? 1,
-  };
+  const cost = new Map(data.units.map((u) => [u.apiName, u.cost]));
+  const slots: { gain: number; who: string }[] = [];
+  for (const u of board.units) {
+    const c = cost.get(u.id);
+    if (!c) continue;
+    const g = itemGain(c, u.star);
+    for (let i = u.items.length; i < A.itemsPerCarry; i++) slots.push({ gain: g, who: `${c}-cost ${u.star}★` });
+  }
+  slots.sort((a, b) => b.gain - a.gain);
+  const carried = slots.slice(0, A.itemSlotsConsidered);
+  while (carried.length < A.itemSlotFloor) carried.push({ gain: ITEM_GAIN * A.spareSlotShare, who: "spare" });
+  let dp = 0;
+  const used: string[] = [];
+  let i = 0;
+  for (; i < Math.min(n, carried.length); i++) {
+    dp += carried[i].gain;
+    used.push(carried[i].who);
+  }
+  const frac = n - Math.floor(n); // components count half an item
+  if (frac > 0 && Math.floor(n) < carried.length) dp += carried[Math.floor(n)].gain * frac - (i > Math.floor(n) ? carried[Math.floor(n)].gain * (1 - frac) : 0);
+  const over = Math.max(0, n - carried.length);
+  dp += over * ITEM_GAIN * A.itemOverflowShare;
+  const where = [...new Set(used)].slice(0, 3).join(", ");
+  return { dp, note: where ? `on ${where}${over > 0 ? `; ${fmt(over)} more count at ${A.itemOverflowShare * 100}%` : ""}` : undefined };
 }
 
-/** Value of `ge` to something that can only take `room` more: close to ge when there is plenty of room, capped by the room when there isn't. */
-const saturate = (ge: number, room: number) => (ge <= 0 ? 0 : room <= 0 ? 0 : room * (1 - Math.exp(-ge / room)));
+/**
+ * Placement gained by `gold` spent on the copies the board wants: the best gain
+ * per gold first (a copy's gain over what it costs to roll), only as many copies
+ * as each unit still needs; the rest is idle. A board that doesn't roll uses
+ * little of it that way.
+ */
+function goldDp(gold: number, plan: Plan): { dp: number; note: string } {
+  const A = ASSUMPTIONS;
+  const spendable = gold * plan.rollIntent;
+  const options = plan.targets
+    .map((t) => ({ t, price: copyPrice(t.cost, plan), gain: copyGain(t.cost, t.star) * t.weight }))
+    .filter((o) => o.gain > 0)
+    .sort((a, b) => b.gain / b.price - a.gain / a.price);
+  let left = spendable;
+  let dp = 0;
+  let copies = 0;
+  for (const o of options) {
+    const take = Math.min(o.t.remaining, left / o.price);
+    if (take <= 0) continue;
+    dp += take * o.gain;
+    copies += take;
+    left -= take * o.price;
+    if (left <= 0) break;
+  }
+  const idle = left + (gold - spendable);
+  dp += idle * A.idleGold;
+  const note = copies > 0.05 ? `buys about ${copies.toFixed(1)} copies the board wants` : "nothing the board still needs to buy: idle gold";
+  return { dp, note };
+}
 
-function resourceParts(res: Resources, rec: Recurring | undefined, stage: string, room: Room, plan: Plan, data: SetData): Part[] {
-  const { ge, usefulness: use } = ASSUMPTIONS;
+const isCopyPart = (label: string) => /duplicator|bench slots|another copy|copy of each|rerolls|cost\)|champion|-cost|\u2605/.test(label);
+
+function resourceParts(res: Resources, rec: Recurring | undefined, stage: string, plan: Plan, board: Board, data: SetData): Part[] {
+  const A = ASSUMPTIONS;
   const f = stageFactors(stage);
   const parts: Part[] = [];
-  const add = (label: string, value: number, note?: string, side: Part["side"] = "units") => {
-    if (value !== 0) parts.push({ label, ge: value, note, side });
+  const add = (label: string, dp: number, note?: string) => {
+    if (Math.abs(dp) > 1e-9) parts.push({ label, dp, note });
   };
+  const xpShare = A.xpUsefulByLevel[Math.max(6, Math.min(10, board.level))] ?? 1;
+  const nameOf = (id: string) => (data.units.find((u) => u.apiName === id)?.name ?? id).replace(/\s*\(.*\)$/, "");
 
-  if (res.gold) add(`${res.gold} gold`, res.gold * ge.gold * use.gold * f.early, "early gold compounds (interest, earlier levels)");
-  if (rec?.gold?.perRound) add(`${rec.gold.perRound} gold a round`, rec.gold.perRound * f.rounds * use.gold, `${f.rounds} rounds left`);
-  if (rec?.gold?.perStage) add(`${rec.gold.perStage} gold a stage`, rec.gold.perStage * f.stages * use.gold, `${f.stages} stages left`);
-  if (res.xp) add(`${res.xp} XP`, res.xp * ge.xp * use.xp * f.early * room.xp, room.xp < 1 ? "XP is worth less at this level" : undefined);
-  if (rec?.xp?.perStage) add(`${rec.xp.perStage} XP a stage`, rec.xp.perStage * f.stages * use.xp * room.xp);
-  if (rec?.xp?.rounds && res.xp) add(`${res.xp} XP for ${rec.xp.rounds} more rounds`, res.xp * rec.xp.rounds * use.xp * room.xp);
-  // A free reroll saves its gold only if the board would roll: a board of cheap units that want copies rolls a lot.
-  const roll = SHOP.rerollGold * plan.rollIntent * use.reroll;
-  const rollNote = `${(plan.rollIntent * 100).toFixed(0)}% of its gold: ${plan.lowCostShare >= 0.5 ? "a board of cheap units wants to roll" : "this board rolls little"}`;
-  if (res.rerolls) add(`${fmt(res.rerolls)} rerolls`, res.rerolls * roll, rollNote);
-  if (rec?.rerolls?.perRound) add(`${rec.rerolls.perRound} reroll a round`, rec.rerolls.perRound * f.rounds * roll * 0.5, "half of the rounds you'd use them");
-  if (rec?.rerolls?.perStage) add(`${rec.rerolls.perStage} rerolls a stage`, rec.rerolls.perStage * f.stages * roll);
-  if (res.components) add(`${fmt(res.components)} components`, res.components * ge.component * use.item, undefined, "items");
-  if (rec?.components?.rounds && res.components) add(`components for ${rec.components.rounds} more rounds`, res.components * rec.components.rounds * ge.component * use.item, undefined, "items");
-  if (res.completed) add(`${fmt(res.completed)} completed items`, res.completed * ge.completed * use.item, undefined, "items");
-  if (res.artifacts) add(`${fmt(res.artifacts)} artifacts`, res.artifacts * ge.artifact * use.item, undefined, "items");
-  if (res.emblems) add(`${res.emblems} emblems`, res.emblems * ge.emblem * use.item, undefined, "items");
-  for (const n of res.named ?? []) add(`${n.n} × ${n.name}`, n.n * itemGE(n.kind) * use.item, undefined, "items");
-  // Champions: worth their gold, and more when they are copies the board still needs.
-  const nameOfUnit = (id: string) => data.units.find((u) => u.apiName === id)?.name ?? id;
-  const evUnit = (cost: number, star: number, name?: string, extraCopies = 0): { ge: number; note: string } => {
-    const nCopies = copies3(star) + extraCopies;
-    const price = copyPrice(cost, plan);
+  // Gold: now, per round, per stage; XP counts as gold while the level still matters; a reroll saves its gold.
+  const gold = res.gold ?? 0;
+  if (gold) {
+    const g = goldDp(gold, plan);
+    add(`${res.gold} gold`, g.dp, g.note);
+  }
+  if (rec?.gold?.perRound) {
+    const g = goldDp(rec.gold.perRound * f.rounds, plan);
+    add(`${rec.gold.perRound} gold a round`, g.dp, `${f.rounds} rounds left; ${g.note}`);
+  }
+  if (rec?.gold?.perStage) {
+    const g = goldDp(rec.gold.perStage * f.stages, plan);
+    add(`${rec.gold.perStage} gold a stage`, g.dp, `${f.stages} stages left; ${g.note}`);
+  }
+  const xp = (res.xp ?? 0) + (rec?.xp?.perStage ?? 0) * f.stages + (res.xp && rec?.xp?.rounds ? res.xp * rec.xp.rounds : 0);
+  if (xp) {
+    const g = goldDp(xp * xpShare, plan);
+    add(`${fmt(xp)} XP`, g.dp, xpShare < 1 ? `XP is worth ${Math.round(xpShare * 100)}% at level ${board.level}` : g.note);
+  }
+  const rolls = (res.rerolls ?? 0) + (rec?.rerolls?.perRound ? rec.rerolls.perRound * f.rounds * 0.5 : 0) + (rec?.rerolls?.perStage ? rec.rerolls.perStage * f.stages : 0);
+  if (rolls) {
+    const g = goldDp(rolls * SHOP.rerollGold, plan);
+    add(`${fmt(rolls)} rerolls`, g.dp, `${(plan.rollIntent * 100).toFixed(0)}% of its gold is used rolling: ${g.note}`);
+  }
+
+  // Items: components count half, completed items one, artifacts and radiants a bit more.
+  const itemsOf = (n: number, kind: string) => n * (A.itemEquivalents[kind] ?? 1);
+  let items = itemsOf(res.components ?? 0, "component") + itemsOf(res.completed ?? 0, "completed") + itemsOf(res.artifacts ?? 0, "artifact") + itemsOf(res.emblems ?? 0, "emblem") + itemsOf(res.radiants ?? 0, "radiant");
+  for (const n of res.named ?? []) items += itemsOf(n.n, n.kind);
+  if (rec?.components?.rounds && res.components) items += itemsOf(res.components * rec.components.rounds, "component");
+  if (items) {
+    const r = itemsDp(items, board, data);
+    const kinds = [res.components && `${fmt(res.components)} components`, res.completed && `${fmt(res.completed)} completed items`, res.artifacts && `${fmt(res.artifacts)} artifacts`, res.emblems && `${res.emblems} emblems`, res.radiants && `${fmt(res.radiants)} radiant items`, ...(res.named ?? []).map((n) => `${n.n} × ${n.name}`)].filter(Boolean);
+    add(kinds.join(", "), r.dp, `about ${fmt(items)} items' worth${r.note ? `; ${r.note}` : ""}`);
+  }
+
+  // Champions: a copy the board wants is worth its share of a star-up; any other champion sells for its gold.
+  const evUnit = (cost: number, star: number, name?: string, extraCopies = 0): { dp: number; note: string } => {
+    const nCopies = 3 ** (star - 1) + extraCopies;
     const same = plan.targets.filter((t) => t.cost === cost);
     let hit = hitChance(cost, plan);
     let wanted = same.length ? same.reduce((a, t) => a + t.remaining * t.weight, 0) / same.length : 0;
+    let per = same.length ? same.reduce((a, t) => a + copyGain(t.cost, t.star) * t.weight, 0) / same.length : 0;
     if (name) {
-      const t = same.find((x) => nameOfUnit(x.id).replace(/\s*\(.*\)$/, "") === name);
+      const t = same.find((x) => nameOf(x.id) === name);
       hit = t ? 1 : 0;
       wanted = t ? t.remaining * t.weight : 0;
+      per = t ? copyGain(t.cost, t.star) * t.weight : 0;
     }
-    // Only the copies the unit still needs are worth rolling for; the rest are worth their gold.
     const useful = Math.min(nCopies, wanted);
-    const gotHit = useful * price + (nCopies - useful) * cost * use.unit;
-    const miss = nCopies * cost * use.unit; // not a unit the board wants: bench or sell
+    const sell = A.idleGold * cost;
+    const gotHit = useful * per + (nCopies - useful) * sell;
+    const miss = nCopies * sell;
     return {
-      ge: hit * gotHit + (1 - hit) * miss,
-      note: hit > 0 ? `${Math.round(hit * 100)}% a copy the board wants (~${price.toFixed(0)} gold each to roll, it needs ${wanted.toFixed(0)} more)` : "no unit of that cost on the board still wants copies",
+      dp: hit * gotHit + (1 - hit) * miss,
+      note: hit > 0 ? `${Math.round(hit * 100)}% a copy the board wants (it needs ~${wanted.toFixed(0)} more)` : "no unit of that cost on the board still wants copies",
     };
   };
   for (const u of res.units ?? []) {
-    const label = u.name ? u.name : `${u.n} × ${u.cost}-cost`;
     const ev = evUnit(u.cost, u.star, u.name);
-    add(`${label}${u.star > 1 ? ` (${u.star}★)` : ""}`, u.n * ev.ge, ev.note);
+    add(`${u.name ? u.name : `${u.n} × ${u.cost}-cost`}${u.star > 1 ? ` (${u.star}★)` : ""}`, u.n * ev.dp, ev.note);
   }
   if (res.allOfCost) {
     const n = plan.unitsOfCost[res.allOfCost] ?? 0;
     const wantedHere = plan.targets.filter((t) => t.cost === res.allOfCost);
-    const hits = wantedHere.reduce((a, t) => a + t.weight, 0);
-    add(`a copy of each ${res.allOfCost}-cost (${n})`, (n - hits) * res.allOfCost * use.unit + hits * copyPrice(res.allOfCost, plan), `${wantedHere.length} of them are units the board wants`);
+    const dp = wantedHere.reduce((a, t) => a + copyGain(t.cost, t.star) * t.weight, 0) + Math.max(0, n - wantedHere.length) * A.idleGold * res.allOfCost;
+    add(`a copy of each ${res.allOfCost}-cost (${n})`, dp, `${wantedHere.length} of them are units the board wants`);
   }
   if (rec?.copies?.perRound && rec.copies.cost) {
-    // One champion, drawn once: a copy every round for the rounds left.
     const extra = rec.copies.perRound * f.rounds;
     const ev = evUnit(rec.copies.cost, 1, undefined, extra);
-    const base = evUnit(rec.copies.cost, 1);
-    add(`another copy each round`, ev.ge - base.ge, `${f.rounds} rounds left; ${ev.note}`);
+    add(`another copy each round`, ev.dp - evUnit(rec.copies.cost, 1).dp, `${f.rounds} rounds left; ${ev.note}`);
   }
-  // Duplicators copy one unit each: give every one to the most expensive copy the board still wants.
+  // Duplicators copy one unit each: the copy the board wants most (best gain per copy).
   for (const d of res.duplicators ?? []) {
     const wanted = plan.targets
       .filter((t) => t.cost <= d.maxCost)
-      .map((t) => ({ t, price: copyPrice(t.cost, plan) * t.weight }))
-      .sort((a, b) => b.price - a.price);
+      .map((t) => ({ t, gain: copyGain(t.cost, t.star) * t.weight }))
+      .filter((w) => w.gain > 0)
+      .sort((a, b) => b.gain - a.gain);
     let left = d.n;
-    let value = 0;
+    let dp = 0;
     const used: string[] = [];
     for (const w of wanted) {
       const take = Math.min(left, w.t.remaining);
-      value += take * w.price;
-      if (take > 0) used.push(nameOfUnit(w.t.id));
+      dp += take * w.gain;
+      if (take > 0) used.push(nameOf(w.t.id));
       left -= take;
       if (left <= 0) break;
     }
-    value += left * 2 * use.unit; // nothing left to copy: a spare cheap copy
-    add(`${d.n} duplicator${d.n > 1 ? "s" : ""} (units up to ${d.maxCost}-cost)`, value, used.length ? `copies of ${[...new Set(used)].join(", ")}` : `no unit up to ${d.maxCost}-cost still wants copies`);
+    dp += left * 2 * A.idleGold;
+    add(`${d.n} duplicator${d.n > 1 ? "s" : ""} (units up to ${d.maxCost}-cost)`, dp, used.length ? `copies of ${[...new Set(used)].join(", ")}` : `no unit up to ${d.maxCost}-cost still wants copies`);
   }
-  // Pandora's Bench: the rightmost bench slots become random champions of the same cost every round: free bench rerolls.
+  // Pandora's Bench: the rightmost bench slots become random champions of the same cost every round.
   if (res.benchTransform && plan.targets.length) {
     const valuable = plan.targets.filter((t) => t.weight >= 1);
-    const cheapest = Math.min(...(valuable.length ? valuable : plan.targets).map((t) => t.cost));
+    const pool = valuable.length ? valuable : plan.targets;
+    const cheapest = Math.min(...pool.map((t) => t.cost));
     const hit = hitChance(cheapest, plan);
     const perRound = res.benchTransform.slots * hit;
-    const rounds = f.rounds * ASSUMPTIONS.benchUseShare; // the bench isn't full of spare units of that cost every round
-    add(`bench slots re-rolled every round`, perRound * rounds * copyPrice(cheapest, plan), `${perRound.toFixed(2)} copies a round of your ${cheapest}-cost targets over ~${rounds.toFixed(0)} rounds`);
+    const rounds = f.rounds * A.benchUseShare;
+    const per = pool.filter((t) => t.cost === cheapest).reduce((a, t) => a + copyGain(t.cost, t.star) * t.weight, 0) / Math.max(1, pool.filter((t) => t.cost === cheapest).length);
+    const wantedCopies = pool.filter((t) => t.cost === cheapest).reduce((a, t) => a + t.remaining, 0);
+    add(`bench slots re-rolled every round`, Math.min(perRound * rounds, wantedCopies) * per, `${perRound.toFixed(2)} copies a round of your ${cheapest}-cost targets over ~${rounds.toFixed(0)} rounds`);
   }
+  // Early arrivals do more than the final board shows (see tempoPerStage), and copies most of all on a board of cheap carries.
+  const copyTempo = 1 + A.rerollTempo * plan.lowCostShare;
+  for (const p of parts) p.dp *= f.tempo * (isCopyPart(p.label) ? copyTempo : 1);
   return parts;
 }
-
-const copies3 = (star: number) => 3 ** (star - 1);
-const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
 // -------------------------------------------------------------------- score
 
@@ -514,12 +585,22 @@ const LEVELS: Confidence[] = ["none", "low", "medium", "high"];
 /** One notch less confident, but never "none": the augment is still scored. */
 const lower = (c: Confidence): Confidence => LEVELS[Math.max(1, LEVELS.indexOf(c) - 1)];
 
-/** A board's value in gold-equivalents: its units' gold cost plus its items. */
-export function boardValue(board: Board, data: SetData): number {
-  const cost = new Map(data.units.map((u) => [u.apiName, u.cost]));
-  const units = board.units.reduce((sum, u) => sum + (cost.get(u.id) ?? 0) * 3 ** (u.star - 1), 0);
-  const items = board.units.reduce((sum, u) => sum + u.items.length, 0);
-  return units + items * ASSUMPTIONS.ge.itemOnBoard;
+/** Placement per unit of team strength lift: what one extra item does to the strength, set equal to what an item is worth. */
+function strengthToPlacement(board: Board, data: SetData): number {
+  const defs = new Map(data.units.map((u) => [u.apiName, u]));
+  const states = board.units.filter((u) => defs.has(u.id)).map((u) => unitState(u, defs.get(u.id)!));
+  if (states.length === 0) return 0;
+  const before = teamPower(states);
+  // The item goes on the unit that gains most from it.
+  let best = 0;
+  for (let i = 0; i < states.length; i++) {
+    const alt = states.map((s) => ({ ...s }));
+    alt[i].hp *= 1 + ASSUMPTIONS.itemHealth;
+    alt[i].ad *= 1 + ASSUMPTIONS.itemDamage;
+    alt[i].apBonus += ASSUMPTIONS.itemAbility;
+    best = Math.max(best, teamPower(alt) / before - 1);
+  }
+  return best > 0.001 ? ITEM_GAIN / best : 0;
 }
 
 /**
@@ -533,17 +614,7 @@ export function scoreAugment(
   stage: string,
   effects: Record<string, AugmentEffects> = EFFECTS,
 ): AugmentScore {
-  const base: AugmentScore = {
-    apiName: aug.apiName,
-    name: aug.name,
-    tier: aug.tier,
-    ge: null,
-    impact: null,
-    statLift: 0,
-    confidence: "none",
-    parts: [],
-    caveats: [],
-  };
+  const base: AugmentScore = { apiName: aug.apiName, name: aug.name, tier: aug.tier, dp: null, impact: null, statLift: 0, confidence: "none", parts: [], caveats: [] };
   const fx = effects[aug.apiName];
   const defs = new Map(data.units.map((u) => [u.apiName, u]));
   const placed = board.units.filter((u) => defs.has(u.id));
@@ -556,9 +627,9 @@ export function scoreAugment(
   let confidence: Confidence = fx.confidence;
   const caveats: string[] = [];
   const parts: Part[] = [];
-  const value = boardValue(board, data);
+  const cal = ASSUMPTIONS.calibration;
 
-  // Stat effects: recompute power with every effect applied to the units it covers.
+  // Stat effects: recompute strength with every effect applied to the units it covers.
   let statLift = 0;
   if (fx.effects?.length) {
     const states = placed.map((u) => unitState(u, defs.get(u.id)!));
@@ -576,9 +647,7 @@ export function scoreAugment(
       if (e.scope === "unknown") assumedScope = true;
       if (covered === 0) caveats.push(`no unit on this board is covered by "${describeEffect(e)}"`);
     }
-    // Unclear scope: take only part of the effect (re-run with the coverage as a damping on the lift).
-    const full = teamPower(after);
-    statLift = before > 0 ? full / before - 1 : 0;
+    statLift = before > 0 ? teamPower(after) / before - 1 : 0;
     if (assumedScope) {
       statLift *= ASSUMPTIONS.unknownScopeCoverage;
       caveats.push("who receives part of the bonus isn't clear from the text; counted at half");
@@ -587,50 +656,45 @@ export function scoreAugment(
     if (fx.effects.some((e) => e.per === "uniqueOther" || e.per === "trait")) caveats.push("scales per ally or unit; an average is assumed");
     if (fx.effects.some((e) => e.everySeconds || e.ramp || e.delay)) caveats.push(`timed bonus, averaged over a ${ASSUMPTIONS.fightSeconds}s fight`);
     if (Math.abs(statLift) > 1e-6) {
-      parts.push({ label: fx.effects.map(describeEffect).join(", "), ge: statLift * value, lift: statLift, note: `${(statLift * 100).toFixed(1)}% team power` });
+      const k = strengthToPlacement(board, data);
+      parts.push({ label: fx.effects.map(describeEffect).join(", "), dp: statLift * k, lift: statLift, note: `${(statLift * 100).toFixed(1)}% team strength` });
     }
   }
 
-  if (fx.resources || fx.recurring) {
-    const room = boardRoom(board, data);
-    const rp = resourceParts(fx.resources ?? {}, fx.recurring, stage, room, buildPlan(board, data), data);
-    parts.push(...rp);
-    // A board can only use so much: limit each side to the room it has left and show the difference.
-    for (const [side, roomGE] of [["units", room.units], ["items", room.items]] as const) {
-      const sum = rp.filter((p) => p.side === side).reduce((a, p) => a + p.ge, 0);
-      if (sum <= 0) continue;
-      const usable = saturate(sum, roomGE);
-      if (sum - usable > 0.05 * sum) {
-        parts.push({
-          label: side === "items" ? "less: your carries have few free item slots" : "less: this board has little room left to use it",
-          ge: usable - sum,
-          note: `usable ${usable.toFixed(1)} of ${sum.toFixed(1)}`,
-        });
-        caveats.push(side === "items" ? "limited by the item slots still free on the board" : "limited by how much more value this board can take at its level");
-      }
-    }
-  }
-
-  if (fx.unparsed?.length) {
-    caveats.push(...fx.unparsed.map((t) => `not counted: ${t}`));
-  }
+  if (fx.resources || fx.recurring) parts.push(...resourceParts(fx.resources ?? {}, fx.recurring, stage, buildPlan(board, data), board, data));
+  if (fx.unparsed?.length) caveats.push(...fx.unparsed.map((t) => `not counted: ${t}`));
   if (fx.conditional?.length) caveats.push(...fx.conditional.map((t) => `counted at half, it depends on something happening: ${t}`));
-  const ge = parts.reduce((a, p) => a + p.ge, 0);
-  return {
-    ...base,
-    ge,
-    impact: value > 0 ? ge / Math.max(value, ASSUMPTIONS.impactFloor * board.level * ASSUMPTIONS.targetValuePerSlot) : null,
-    statLift,
-    confidence: parts.length === 0 ? "none" : confidence,
-    parts,
-    caveats,
-  };
+
+  // Built around a trait this board doesn't play: only what sells or still applies counts.
+  if (fx.traits?.length) {
+    const counts = new Map(computeTraits(board, data).map((t) => [t.name, t.count]));
+    if (!fx.traits.some((t) => (counts.get(t) ?? 0) >= ASSUMPTIONS.playedTraitUnits)) {
+      const gate = ASSUMPTIONS.offTraitShare;
+      caveats.push(`built around ${fx.traits.join("/")}, which this board doesn't play: counted at ${gate * 100}%`);
+      confidence = lower(confidence);
+      for (const p of parts) {
+        p.dp *= gate;
+        if (p.lift !== undefined) p.lift *= gate;
+      }
+      statLift *= gate;
+    }
+  }
+  for (const p of parts) p.dp *= cal;
+  // Diminishing returns: keep the order, squeeze the very large totals (parts shrink with the total so the breakdown still adds up).
+  const raw = parts.reduce((a, p) => a + p.dp, 0);
+  const cap = ASSUMPTIONS.softCap;
+  const dp = raw > 0 ? cap * Math.tanh(raw / cap) : raw;
+  if (raw > 0 && dp < raw) {
+    for (const p of parts) p.dp *= dp / raw;
+    if (dp < 0.9 * raw) caveats.push("a very large total is squeezed (diminishing returns)");
+  }
+  return { ...base, dp, impact: dp, statLift, confidence: parts.length === 0 ? "none" : confidence, parts, caveats };
 }
 
 function describeEffect(e: StatEffect): string {
   const v = e.pct !== undefined ? `${+(e.pct * 100).toFixed(1)}%` : `${e.flat}${e.plusPerLevel ? ` (+${e.plusPerLevel} per level)` : ""}`;
   const stat = { health: "health", armor: "armor", mr: "magic resist", ad: "attack damage", ap: "ability power", as: "attack speed", crit: "crit chance", critDmg: "crit damage", damageAmp: "damage amp", durability: "durability", omnivamp: "omnivamp" }[e.stat];
-  const who = { team: "team", holders: "item holders", unheld: "unequipped units", front: "front row", back: "back row", cost: `${e.cost}-cost units`, unknown: "some units" }[e.scope];
+  const who = { team: "team", holders: "item holders", unheld: "unequipped units", front: "front row", back: "back row", cost: `${e.cost}-cost units`, trait: `${e.trait} units`, unknown: "some units" }[e.scope];
   return `+${v} ${stat} (${who}${e.per ? `, per ${e.per}` : ""})`;
 }
 
@@ -640,5 +704,3 @@ export function rankAugments(augments: SetAugment[], board: Board, data: SetData
     .map((a) => scoreAugment(a, board, data, stage, effects))
     .sort((a, b) => (b.impact ?? -Infinity) - (a.impact ?? -Infinity) || a.name.localeCompare(b.name));
 }
-
-export { STAGE_LABELS };

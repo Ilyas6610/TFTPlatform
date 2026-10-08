@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SetData } from "../api/client";
-import { AugmentEffects, ASSUMPTIONS, EFFECTS, boardValue, rankAugments, scoreAugment, teamPower } from "./augmentScore";
+import { AugmentEffects, ASSUMPTIONS, EFFECTS, rankAugments, scoreAugment } from "./augmentScore";
+import { ITEM_GAIN, itemGain } from "./boardValue";
 import { Board, COLS } from "./board";
 
 const stats = (hp: number, damage: number) => ({ hp, damage, armor: 40, magicResist: 40, attackSpeed: 0.7, critChance: 0.25, critMultiplier: 1.4 });
@@ -108,105 +109,93 @@ describe("augment score: stats", () => {
 });
 
 describe("augment score: resources", () => {
-  const gold = fx({ resources: { gold: 20 } });
+  const gold = (n: number) => fx({ resources: { gold: n } });
+  // A board of cheap units short of 3 stars: it wants copies, so gold has something to buy.
+  const wants = board([placed("Tank", 0, [], 2), placed("Carry", 3 * COLS, ["IE", "JG"], 2)], 7);
 
-  it("prices gold higher early than late", () => {
-    const early = scoreAugment(aug("X"), basic, data, "2-1", gold);
-    const late = scoreAugment(aug("X"), basic, data, "4-2", gold);
-    expect(early.ge!).toBeGreaterThan(late.ge!);
-    expect(late.ge!).toBeLessThan(20); // spent imperfectly
-  });
-
-  it("counts recurring gold by the stages left", () => {
+  it("values more gold more, and gold at 2-1 more than the same gold at 4-2", () => {
+    const small = scoreAugment(aug("X"), wants, data, "3-2", gold(10));
+    const big = scoreAugment(aug("X"), wants, data, "3-2", gold(40));
+    expect(big.dp!).toBeGreaterThan(small.dp!);
     const stage = fx({ resources: { gold: 5 }, recurring: { gold: { perStage: 7 } } });
-    const early = scoreAugment(aug("X"), basic, data, "2-1", stage);
-    const late = scoreAugment(aug("X"), basic, data, "4-2", stage);
-    expect(early.parts.some((p) => /a stage/.test(p.label))).toBe(true);
-    expect(early.ge!).toBeGreaterThan(late.ge! * 1.4);
+    expect(scoreAugment(aug("X"), wants, data, "2-1", stage).dp!).toBeGreaterThan(scoreAugment(aug("X"), wants, data, "4-2", stage).dp!);
   });
 
-  // What a part is worth before the board's room limits it.
-  const raw = (r: ReturnType<typeof scoreAugment>) => r.parts.filter((p) => !p.label.startsWith("less:")).reduce((a, p) => a + p.ge, 0);
-
-  it("prices items, units and rerolls with the table", () => {
-    const items = scoreAugment(aug("X"), basic, data, "3-2", fx({ resources: { components: 2, completed: 1 } }));
-    expect(raw(items)).toBeCloseTo((2 * ASSUMPTIONS.ge.component + ASSUMPTIONS.ge.completed) * ASSUMPTIONS.usefulness.item, 6);
-    const units = scoreAugment(aug("X"), basic, data, "3-2", fx({ resources: { units: [{ n: 1, cost: 3, star: 2 }] } }));
-    expect(raw(units)).toBeCloseTo(3 * 3 * ASSUMPTIONS.usefulness.unit, 6);
+  it("buys copies the board wants, and says what's left over is idle", () => {
+    const r = scoreAugment(aug("X"), wants, data, "3-2", gold(30));
+    expect(r.parts[0].note).toMatch(/copies the board wants/);
+    // A board with nothing left to buy can only bank the gold.
+    const done = board([placed("Tank", 0, [], 3), placed("Carry", 1, [], 3)], 9);
+    const idle = scoreAugment(aug("X"), done, data, "3-2", gold(30));
+    expect(idle.parts[0].note).toMatch(/idle gold/);
+    expect(idle.dp!).toBeLessThan(r.dp! / 3);
   });
 
-  it("expresses the total as a share of the board's value", () => {
-    const r = scoreAugment(aug("X"), basic, data, "3-2", gold);
-    const denominator = Math.max(boardValue(basic, data), ASSUMPTIONS.impactFloor * basic.level * ASSUMPTIONS.targetValuePerSlot);
-    expect(r.impact!).toBeCloseTo(r.ge! / denominator, 9);
-    // Tank 2★ (2 x 3) + Carry 2★ (4 x 3) + two items.
-    expect(boardValue(basic, data)).toBe(2 * 3 + 4 * 3 + 2 * ASSUMPTIONS.ge.itemOnBoard);
+  it("counts a component as half an item and a completed item as one", () => {
+    const comp = scoreAugment(aug("X"), wants, data, "3-2", fx({ resources: { components: 2 } }));
+    const done = scoreAugment(aug("X"), wants, data, "3-2", fx({ resources: { completed: 1 } }));
+    expect(comp.dp!).toBeCloseTo(done.dp!, 6);
   });
 
-  it("combines stat and resource effects into one breakdown", () => {
-    const both = scoreAugment(aug("X"), basic, data, "3-2", fx({ effects: [{ kind: "stat", scope: "team", stat: "health", pct: 0.1 }], resources: { gold: 10 } }));
-    expect(both.parts.length).toBeGreaterThanOrEqual(2);
-    expect(both.parts.some((p) => p.lift !== undefined)).toBe(true);
-    expect(both.ge!).toBeCloseTo(both.parts.reduce((a, p) => a + p.ge, 0), 9);
-  });
-});
-
-// The point of the estimate: the same augment is worth different amounts on different boards.
-describe("augment score: depends on the board", () => {
-  const fullBoard = board(
-    [
-      placed("Tank", 0, ["A", "B", "C"], 3),
-      placed("Tank", 1, ["A", "B", "C"], 3),
-      placed("Carry", 21, ["A", "B", "C"], 3),
-      placed("Carry", 22, ["A", "B", "C"], 3),
-      placed("Carry", 23, [], 3),
-      placed("Tank", 2, [], 3),
-      placed("Carry", 24, [], 3),
-      placed("Tank", 3, [], 3),
-      placed("Carry", 25, [], 3),
-    ],
-    9,
-  );
-  const sparse = board([placed("Tank", 0, [], 1)], 8);
-
-  it("values the same gold less on a board with little room left", () => {
-    const gold = fx({ resources: { gold: 30 } });
-    const onSparse = scoreAugment(aug("X"), sparse, data, "3-2", gold);
-    const onFull = scoreAugment(aug("X"), fullBoard, data, "3-2", gold);
-    expect(onFull.ge!).toBeLessThan(onSparse.ge!);
-    expect(onFull.caveats.join(" ")).toMatch(/limited by how much more value/);
+  it("values an item by who can hold it: a 3-star carry before a 1-star filler", () => {
+    const carry = board([placed("Carry", 21, ["A", "B", "C"], 3), placed("Tank", 0, [], 3)], 8); // only the 3-star tank has room
+    const filler = board([placed("Carry", 21, ["A", "B", "C"], 1), placed("Tank", 0, [], 1)], 8); // only the 1-star tank has room
+    const item = fx({ resources: { completed: 1 } });
+    const onStrong = scoreAugment(aug("X"), carry, data, "3-2", item).dp!;
+    const onWeak = scoreAugment(aug("X"), filler, data, "3-2", item).dp!;
+    expect(itemGain(2, 3)).toBeGreaterThan(itemGain(2, 1));
+    expect(onStrong).toBeGreaterThan(onWeak);
   });
 
-  it("values items by the free item slots, not just their price", () => {
-    const items = fx({ resources: { completed: 3 } });
-    const open = scoreAugment(aug("X"), board([placed("Carry", 21, [], 2), placed("Tank", 0, [], 2), placed("Carry", 22, [], 2)], 8), data, "3-2", items);
-    const loaded = scoreAugment(aug("X"), board([placed("Carry", 21, ["A", "B", "C"], 2), placed("Tank", 0, ["A", "B", "C"], 2), placed("Carry", 22, ["A", "B", "C"], 2)], 8), data, "3-2", items);
-    expect(loaded.ge!).toBeLessThan(open.ge!);
-    expect(loaded.caveats.join(" ")).toMatch(/item slots/);
+  it("an item is never worth nothing, even when every carrier is full", () => {
+    const full = board([placed("Carry", 21, ["A", "B", "C"], 3), placed("Tank", 0, ["A", "B", "C"], 3)], 8);
+    const r = scoreAugment(aug("X"), full, data, "3-2", fx({ resources: { completed: 1 } }));
+    expect(r.dp!).toBeGreaterThan(0.1 * ITEM_GAIN * ASSUMPTIONS.calibration);
   });
 
   it("values XP less the higher the level", () => {
     const xp = fx({ resources: { xp: 10 } });
-    const at = (level: number) => scoreAugment(aug("X"), board(basic.units, level), data, "3-2", xp).ge!;
+    const at = (level: number) => scoreAugment(aug("X"), board(wants.units, level), data, "3-2", xp).dp!;
     expect(at(6)).toBeGreaterThan(at(8));
     expect(at(8)).toBeGreaterThan(at(9));
     expect(at(10)).toBe(0);
   });
 
-  it("no longer ranks the same augments first on every board", () => {
-    const effects: Record<string, AugmentEffects> = {
-      Economy: { confidence: "high", resources: { gold: 25, xp: 10 } },
-      Stats: { confidence: "high", effects: [{ kind: "stat", scope: "team", stat: "health", pct: 0.3 }, { kind: "stat", scope: "team", stat: "damageAmp", pct: 0.15 }] },
-    };
-    const offered = ["Economy", "Stats"].map((n) => ({ apiName: n, name: n, tier: 2, desc: "", values: {} })) as never;
-    const first = (b: Board) => rankAugments(offered, b, data, "3-2", effects)[0].apiName;
-    expect(first(sparse)).toBe("Economy");
-    expect(first(fullBoard)).toBe("Stats");
+  it("combines stat and resource effects into one breakdown that adds up", () => {
+    const both = scoreAugment(aug("X"), wants, data, "3-2", fx({ effects: [{ kind: "stat", scope: "team", stat: "health", pct: 0.1 }], resources: { gold: 10 } }));
+    expect(both.parts.length).toBeGreaterThanOrEqual(2);
+    expect(both.parts.some((p) => p.lift !== undefined)).toBe(true);
+    expect(both.dp!).toBeCloseTo(both.parts.reduce((a, p) => a + p.dp, 0), 9);
   });
 
-  it("keeps a one-unit board's impact sane (no +700%)", () => {
-    const r = scoreAugment(aug("X"), board([placed("Tank", 0, [], 1)], 4), data, "3-2", fx({ resources: { gold: 30 } }));
-    expect(r.impact!).toBeLessThan(1.2);
+  it("squeezes very large totals: nothing is worth more than the cap, and the order holds", () => {
+    const huge = scoreAugment(aug("X"), wants, data, "2-1", fx({ resources: { completed: 40 } }));
+    const bigger = scoreAugment(aug("X"), wants, data, "2-1", fx({ resources: { completed: 80 } }));
+    expect(huge.dp!).toBeLessThanOrEqual(ASSUMPTIONS.softCap);
+    expect(bigger.dp!).toBeGreaterThanOrEqual(huge.dp!);
+    expect(huge.caveats.join(" ")).toMatch(/diminishing returns/);
+  });
+});
+
+describe("augment score: traits", () => {
+  const tdata = {
+    ...data,
+    units: [...(data as unknown as { units: unknown[] }).units, { ...unit("Lunar1", 2, 800, 50), traits: ["Lunar"] }, { ...unit("Lunar2", 3, 800, 50), traits: ["Lunar"] }],
+    traits: [{ apiName: "T_Lunar", name: "Lunar", desc: "", breakpoints: [{ minUnits: 2, maxUnits: 3, style: 1, values: {} }] }],
+  } as unknown as SetData;
+  const effects: Record<string, AugmentEffects> = {
+    X: { confidence: "high", traits: ["Lunar"], effects: [{ kind: "stat", scope: "trait", trait: "Lunar", stat: "health", pct: 0.3 }], resources: { gold: 10 } },
+  };
+  it("is worth little to a board that doesn't play the trait, and full price to one that does", () => {
+    const off = scoreAugment(aug("X"), board([placed("Tank", 0), placed("Carry", 21, ["A"])], 8), tdata, "3-2", effects);
+    const on = scoreAugment(aug("X"), board([placed("Lunar1", 0), placed("Lunar2", 1), placed("Carry", 21, ["A"])], 8), tdata, "3-2", effects);
+    expect(off.dp!).toBeLessThan(0.2 * on.dp!);
+    expect(off.caveats.join(" ")).toMatch(/doesn't play/);
+    expect(on.statLift).toBeGreaterThan(0);
+  });
+  it("a trait bonus only reaches that trait's units", () => {
+    const only = scoreAugment(aug("X"), board([placed("Tank", 0), placed("Carry", 21)], 8), tdata, "3-2", { X: { confidence: "high", effects: [{ kind: "stat", scope: "trait", trait: "Lunar", stat: "health", pct: 0.5 }] } });
+    expect(only.statLift).toBe(0);
   });
 });
 
@@ -222,20 +211,11 @@ describe("augment score: not scored and ranking", () => {
   it("ranks the most valuable first and unscored ones last", () => {
     const effects: Record<string, AugmentEffects> = {
       Small: { confidence: "high", resources: { gold: 3 } },
-      Big: { confidence: "high", resources: { gold: 30 } },
+      Big: { confidence: "high", resources: { completed: 3 } },
       Unknown: { confidence: "none" },
     };
     const ranked = rankAugments([aug("Unknown"), aug("Small"), aug("Big")].map((a) => ({ ...a, name: a.apiName, desc: "", values: {} })) as never, basic, data, "3-2", effects);
     expect(ranked.map((r) => r.apiName)).toEqual(["Big", "Small", "Unknown"]);
-  });
-
-  it("teamPower grows with stars and items", () => {
-    const power = (b: Board) => {
-      const r = scoreAugment(aug("X"), b, data, "3-2", fx({ resources: { gold: 1 } }));
-      return r.impact;
-    };
-    expect(power(basic)).not.toBeNull();
-    expect(teamPower([])).toBe(0);
   });
 });
 
