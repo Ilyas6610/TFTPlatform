@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SetData } from "../api/client";
-import { AugmentEffects, ASSUMPTIONS, EFFECTS, mergeEffects, rankAugments, scoreAugment } from "./augmentScore";
+import { AugmentEffects, ASSUMPTIONS, EFFECTS, mergeEffects, picksCoverage, rankAugments, scoreAugment } from "./augmentScore";
 import { ITEM_GAIN, itemGain } from "./boardValue";
 import { Board, COLS } from "./board";
 
@@ -363,6 +363,25 @@ describe("augment score: on top of earlier picks", () => {
 
   it("ignores earlier picks built around a trait the board doesn't play", () => {
     expect(s("Items", ["OffTrait"]).impact).toBeCloseTo(s("Items").impact!, 6);
+  });
+
+  it("copy augments share one count of the copies the board still wants", () => {
+    // The 2-cost Tank (2★) wants 6 more copies; each augment copies 4 units: together only 6 of the 8 are wanted.
+    const dup: Record<string, AugmentEffects> = {
+      Dup: { confidence: "high", resources: { duplicators: [{ n: 4, maxCost: 3 }] } },
+      Dup2: { confidence: "high", resources: { duplicators: [{ n: 4, maxCost: 3 }] } },
+      Gold: { confidence: "high", resources: { gold: 30 } },
+    };
+    const d = (id: string, given: string[] = []) => scoreAugment(aug(id), basic, data, "3-2", dup, given);
+    expect(d("Dup2", ["Dup"]).impact!).toBeLessThan(d("Dup2").impact! * 0.8);
+    // Gold buys copies from the same count: less is left to buy after the duplicators.
+    expect(d("Gold", ["Dup", "Dup2"]).impact!).toBeLessThan(d("Gold").impact!);
+
+    const c = picksCoverage(["Dup"], basic, data, "3-2", "now", dup);
+    expect(c.copiesWanted).toBe(6);
+    expect(c.copiesCovered).toBeCloseTo(4, 6);
+    expect(c.items).toBe(0);
+    expect(picksCoverage(["Items"], basic, data, "3-2", "now", effects).items).toBe(4);
   });
 });
 

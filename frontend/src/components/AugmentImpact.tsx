@@ -3,7 +3,7 @@ import { SetData } from "../api/client";
 import { GameIcon } from "../assets/tft";
 import { AUGMENT_SLOTS, augmentTier, availableAt } from "../planner/augmentStages";
 import { SHOP } from "../planner/augmentPlan";
-import { ASSUMPTIONS, AugmentScore, BoardMode, Confidence, rankAugments } from "../planner/augmentScore";
+import { ASSUMPTIONS, AugmentScore, BoardMode, Confidence, picksCoverage, rankAugments } from "../planner/augmentScore";
 import { STAGE_PROGRESS } from "../planner/goalProgress";
 import { BOARD_VALUE_FIT, ITEM_GAIN } from "../planner/boardValue";
 import { Board } from "../planner/board";
@@ -54,6 +54,10 @@ export function AugmentImpact({
     const earlier = settled.augments.slice(0, slot).filter((a): a is string => !!a);
     return rankAugments(offered, settled, data, stage, undefined, earlier, mode);
   }, [settled, data, slot, stage, mode]);
+  const coverage = useMemo(() => {
+    const earlier = settled.augments.slice(0, slot).filter((a): a is string => !!a);
+    return earlier.length && settled.units.length ? picksCoverage(earlier, settled, data, stage, mode) : null;
+  }, [settled, data, slot, stage, mode]);
   const progress = STAGE_PROGRESS[stage];
   const earlierNames = board.augments
     .slice(0, slot)
@@ -103,8 +107,8 @@ export function AugmentImpact({
 
       {earlierNames.length > 0 && board.units.length > 0 && (
         <p className="muted augment-impact-given">
-          Scored on top of your {earlierNames.length > 1 ? "earlier picks" : "earlier pick"}: {earlierNames.join(", ")}. A second item or copy augment adds
-          less once the first has filled what the board needs.
+          Scored on top of your {earlierNames.length > 1 ? "earlier picks" : "earlier pick"}: {earlierNames.join(", ")}.{" "}
+          {coverage && coverageText(coverage)}
         </p>
       )}
       {board.units.length === 0 ? (
@@ -162,6 +166,21 @@ export function AugmentImpact({
       </details>
     </div>
   );
+}
+
+/** What the earlier picks already cover: the next augment is worth less only for what goes past what's still open. */
+function coverageText(c: ReturnType<typeof picksCoverage>): string {
+  const said: string[] = [];
+  if (c.copiesCovered >= 0.5) {
+    const left = Math.max(0, Math.round(c.copiesWanted - c.copiesCovered));
+    said.push(`about ${Math.round(c.copiesCovered)} of the ~${Math.round(c.copiesWanted)} copies the board still wants (${left} left)`);
+  }
+  if (c.items >= 0.25) {
+    const left = Math.max(0, c.itemSlots - c.items);
+    said.push(`${+c.items.toFixed(1)} items' worth of the ${c.itemSlots} item slots that count most (${left > 0 ? `${+left.toFixed(1)} left` : "all filled"})`);
+  }
+  if (said.length === 0) return "It gives no copies or items, so only augments whose stat bonuses stack with it change.";
+  return `It covers ${said.join(" and ")}. An augment giving more of the same is worth less only for what goes past what's left.`;
 }
 
 function AugmentRow({ r, top, names, data, onPick }: { r: AugmentScore; top: number; names: Names; data: SetData; onPick: () => void }) {

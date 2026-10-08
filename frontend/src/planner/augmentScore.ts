@@ -435,22 +435,7 @@ const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
  */
 function itemsDp(n: number, board: Board, data: SetData, goal?: Board): { dp: number; note?: string } {
   const A = ASSUMPTIONS;
-  const cost = new Map(data.units.map((u) => [u.apiName, u.cost]));
-  const slots: { gain: number; who: string }[] = [];
-  // Towards a goal that holds items, the free slots are the goal's: each unit up to its goal items, valued at its goal
-  // star. Without items in the goal (or without a goal), every unit up to a full carry.
-  const goalItems = goal?.units.some((u) => u.items.length > 0);
-  board.units.forEach((u, i) => {
-    const c = cost.get(u.id);
-    if (!c) return;
-    const target = goal ? goal.units[i] : u;
-    const capacity = goalItems ? target.items.length : A.itemsPerCarry;
-    const g = itemGain(c, target.star);
-    for (let k = u.items.length; k < capacity; k++) slots.push({ gain: g, who: `${c}-cost ${target.star}★` });
-  });
-  slots.sort((a, b) => b.gain - a.gain);
-  const carried = slots.slice(0, A.itemSlotsConsidered);
-  while (carried.length < A.itemSlotFloor) carried.push({ gain: ITEM_GAIN * A.spareSlotShare, who: "spare" });
+  const carried = itemSlots(board, data, goal);
   // Whole items fill the best slots in turn; a fraction (a component is half an item) takes that share of the next slot.
   let dp = 0;
   const used: string[] = [];
@@ -468,6 +453,28 @@ function itemsDp(n: number, board: Board, data: SetData, goal?: Board): { dp: nu
   dp += over * ITEM_GAIN * A.itemOverflowShare;
   const where = [...new Set(used)].slice(0, 3).join(", ");
   return { dp, note: where ? `on ${where}${over > 0 ? `; ${fmt(over)} more count at ${A.itemOverflowShare * 100}%` : ""}` : undefined };
+}
+
+/** The item slots an augment's items can fill, best first (at most itemSlotsConsidered, padded with spare slots). */
+function itemSlots(board: Board, data: SetData, goal?: Board): { gain: number; who: string }[] {
+  const A = ASSUMPTIONS;
+  const cost = new Map(data.units.map((u) => [u.apiName, u.cost]));
+  const slots: { gain: number; who: string }[] = [];
+  // Towards a goal that holds items, the free slots are the goal's: each unit up to its goal items, valued at its goal
+  // star. Without items in the goal (or without a goal), every unit up to a full carry.
+  const goalItems = goal?.units.some((u) => u.items.length > 0);
+  board.units.forEach((u, i) => {
+    const c = cost.get(u.id);
+    if (!c) return;
+    const target = goal ? goal.units[i] : u;
+    const capacity = goalItems ? target.items.length : A.itemsPerCarry;
+    const g = itemGain(c, target.star);
+    for (let k = u.items.length; k < capacity; k++) slots.push({ gain: g, who: `${c}-cost ${target.star}★` });
+  });
+  slots.sort((a, b) => b.gain - a.gain);
+  const carried = slots.slice(0, A.itemSlotsConsidered);
+  while (carried.length < A.itemSlotFloor) carried.push({ gain: ITEM_GAIN * A.spareSlotShare, who: "spare" });
+  return carried;
 }
 
 /**
@@ -491,6 +498,7 @@ function goldDp(gold: number, plan: Plan): { dp: number; note: string } {
     if (take <= 0) continue;
     dp += take * o.gain;
     copies += take;
+    o.t.remaining -= take; // the plan is resourceParts' own copy: later gold can't buy the same copies again
     left -= take * o.price;
     if (left <= 0) break;
   }
@@ -500,8 +508,25 @@ function goldDp(gold: number, plan: Plan): { dp: number; note: string } {
   return { dp, note };
 }
 
-function resourceParts(res: Resources, rec: Recurring | undefined, stage: string, plan: Plan, board: Board, data: SetData, goal?: Board): Part[] {
+/** Items' worth of what an augment gives: components count half, completed items one, artifacts and radiants a bit more. */
+function itemEquivalents(res: Resources, rec: Recurring | undefined, board: Board, data: SetData): number {
+  const itemsOf = (n: number, kind: string) => n * (ASSUMPTIONS.itemEquivalents[kind] ?? 1);
+  // Emblems here are random ones ("Gain 3 random Emblems"; a named emblem is under named): one is only as good as an
+  // item if its trait is one the board plays, so it counts at the share of the set's emblem traits this board plays.
+  const emblemUse = res.emblems ? randomEmblemUse(board, data) : 1;
+  let items = itemsOf(res.components ?? 0, "component") + itemsOf(res.completed ?? 0, "completed") + itemsOf(res.artifacts ?? 0, "artifact") + itemsOf(res.emblems ?? 0, "emblem") * emblemUse + itemsOf(res.radiants ?? 0, "radiant");
+  for (const n of res.named ?? []) items += itemsOf(n.n, n.kind);
+  if (rec?.components?.rounds && res.components) items += itemsOf(res.components * rec.components.rounds, "component");
+  return items;
+}
+
+function resourceParts(res: Resources, rec: Recurring | undefined, stage: string, sharedPlan: Plan, board: Board, data: SetData, goal?: Board, out?: { copiesLeft: number }): Part[] {
   const A = ASSUMPTIONS;
+  // One count of the copies each unit still needs, shared by every source below (and, through mergeEffects, by
+  // several augments): copies one source covers aren't wanted again from the next. Sources that give specific copies
+  // go first, gold last (it can buy whatever is still missing).
+  const plan: Plan = { ...sharedPlan, targets: sharedPlan.targets.map((t) => ({ ...t })) };
+  const take = (t: Plan["targets"][number], n: number) => (t.remaining = Math.max(0, t.remaining - n));
   const f = stageFactors(stage);
   const parts: Part[] = [];
   const add = (label: string, dp: number, note?: string, copies = false) => {
@@ -510,6 +535,102 @@ function resourceParts(res: Resources, rec: Recurring | undefined, stage: string
   const xpShare = A.xpUsefulByLevel[Math.max(6, Math.min(10, board.level))] ?? 1;
   const nameOf = (id: string) => (data.units.find((u) => u.apiName === id)?.name ?? id).replace(/\s*\(.*\)$/, "");
 
+  const emblemUse = res.emblems ? randomEmblemUse(board, data) : 1;
+  const items = itemEquivalents(res, rec, board, data);
+  if (items) {
+    const r = itemsDp(items, board, data, goal);
+    const kinds = [res.components && `${fmt(res.components)} components`, res.completed && `${fmt(res.completed)} completed items`, res.artifacts && `${fmt(res.artifacts)} artifacts`, res.emblems && `${res.emblems} random emblems${emblemUse < 1 ? ` (${Math.round(emblemUse * 100)}% likely to fit)` : ""}`, res.radiants && `${fmt(res.radiants)} radiant items`, ...(res.named ?? []).map((n) => `${n.n} × ${n.name}`)].filter(Boolean);
+    add(kinds.join(", "), r.dp, `about ${fmt(items)} items' worth${r.note ? `; ${r.note}` : ""}`);
+  }
+
+  // Champions: a copy the board wants is worth its share of a star-up; any other champion sells for its gold.
+  // use: copies that complete a star-up the board wants (what a reroll board's tempo multiplies); sell: the rest,
+  // worth only their gold.
+  const evUnit = (cost: number, star: number, name?: string, extraCopies = 0): { use: number; sell: number; note: string } => {
+    const nCopies = 3 ** (star - 1) + extraCopies;
+    const same = plan.targets.filter((t) => t.cost === cost);
+    let hit = hitChance(cost, plan);
+    let wanted = same.length ? same.reduce((a, t) => a + t.remaining * t.weight, 0) / same.length : 0;
+    let per = same.length ? same.reduce((a, t) => a + copyGain(t.cost, t.star) * t.weight, 0) / same.length : 0;
+    if (name) {
+      const t = same.find((x) => nameOf(x.id) === name);
+      hit = t ? 1 : 0;
+      wanted = t ? t.remaining * t.weight : 0;
+      per = t ? copyGain(t.cost, t.star) * t.weight : 0;
+    }
+    const useful = Math.min(nCopies, wanted);
+    const sell = A.idleGold * cost;
+    const got = hit * useful;
+    if (name) {
+      const t = same.find((x) => nameOf(x.id) === name);
+      if (t) take(t, got);
+    } else for (const t of same) take(t, got / same.length);
+    return {
+      use: hit * useful * per,
+      sell: (hit * (nCopies - useful) + (1 - hit) * nCopies) * sell,
+      note: hit > 0 ? `${Math.round(hit * 100)}% a copy the board wants (it needs ~${wanted.toFixed(0)} more)` : "no unit of that cost on the board still wants copies",
+    };
+  };
+  const addUnits = (label: string, use: number, sell: number, note: string) => {
+    if (use > 0 || sell === 0) add(label, use, note, true);
+    if (sell > 0) add(use > 0 ? `${label}: the rest sold` : `${label} (sold)`, sell, use > 0 ? "copies the board doesn't need sell for their gold" : note);
+  };
+  for (const u of res.units ?? []) {
+    const ev = evUnit(u.cost, u.star, u.name);
+    addUnits(`${u.name ? u.name : `${u.n} × ${u.cost}-cost`}${u.star > 1 ? ` (${u.star}★)` : ""}`, u.n * ev.use, u.n * ev.sell, ev.note);
+  }
+  if (res.allOfCost) {
+    const n = plan.unitsOfCost[res.allOfCost] ?? 0;
+    const wantedHere = plan.targets.filter((t) => t.cost === res.allOfCost);
+    const still = wantedHere.filter((t) => t.remaining >= 1);
+    const dp = still.reduce((a, t) => a + copyGain(t.cost, t.star) * t.weight, 0) + Math.max(0, n - still.length) * A.idleGold * res.allOfCost;
+    for (const t of still) take(t, 1);
+    add(`a copy of each ${res.allOfCost}-cost (${n})`, dp, `${wantedHere.length} of them are units the board wants`, true);
+  }
+  if (rec?.copies?.perRound && rec.copies.cost) {
+    const extra = rec.copies.perRound * f.rounds;
+    const saved = plan.targets.map((t) => t.remaining);
+    const one = evUnit(rec.copies.cost, 1);
+    plan.targets.forEach((t, i) => (t.remaining = saved[i]));
+    const ev = evUnit(rec.copies.cost, 1, undefined, extra);
+    addUnits(`another copy each round`, ev.use - one.use, ev.sell - one.sell, `${f.rounds} rounds left; ${ev.note}`);
+  }
+  // Duplicators copy one unit each: the copy the board wants most (best gain per copy).
+  for (const d of res.duplicators ?? []) {
+    const wanted = plan.targets
+      .filter((t) => t.cost <= d.maxCost)
+      .map((t) => ({ t, gain: copyGain(t.cost, t.star) * t.weight }))
+      .filter((w) => w.gain > 0)
+      .sort((a, b) => b.gain - a.gain);
+    let left = d.n;
+    let dp = 0;
+    const used: string[] = [];
+    for (const w of wanted) {
+      const n = Math.min(left, w.t.remaining);
+      dp += n * w.gain;
+      if (n > 0) used.push(nameOf(w.t.id));
+      take(w.t, n);
+      left -= n;
+      if (left <= 0) break;
+    }
+    dp += left * 2 * A.idleGold;
+    add(`${d.n} duplicator${d.n > 1 ? "s" : ""} (units up to ${d.maxCost}-cost)`, dp, used.length ? `copies of ${[...new Set(used)].join(", ")}` : `no unit up to ${d.maxCost}-cost still wants copies`, true);
+  }
+  // Pandora's Bench: the rightmost bench slots become random champions of the same cost every round.
+  if (res.benchTransform && plan.targets.length) {
+    const valuable = plan.targets.filter((t) => t.weight >= 1);
+    const pool = valuable.length ? valuable : plan.targets;
+    const cheapest = Math.min(...pool.map((t) => t.cost));
+    const hit = hitChance(cheapest, plan);
+    const perRound = res.benchTransform.slots * hit;
+    const rounds = f.rounds * A.benchUseShare;
+    const per = pool.filter((t) => t.cost === cheapest).reduce((a, t) => a + copyGain(t.cost, t.star) * t.weight, 0) / Math.max(1, pool.filter((t) => t.cost === cheapest).length);
+    const cheap = pool.filter((t) => t.cost === cheapest);
+    const wantedCopies = cheap.reduce((a, t) => a + t.remaining, 0);
+    const got = Math.min(perRound * rounds, wantedCopies);
+    for (const t of cheap) take(t, wantedCopies > 0 ? (got * t.remaining) / wantedCopies : 0);
+    add(`bench slots re-rolled every round`, got * per, `${perRound.toFixed(2)} copies a round of your ${cheapest}-cost targets over ~${rounds.toFixed(0)} rounds`, true);
+  }
   // Gold: now, per round, per stage; XP counts as gold while the level still matters; a reroll saves its gold.
   const gold = res.gold ?? 0;
   if (gold) {
@@ -535,96 +656,8 @@ function resourceParts(res: Resources, rec: Recurring | undefined, stage: string
     add(`${fmt(rolls)} rerolls`, g.dp, `${(plan.rollIntent * 100).toFixed(0)}% of its gold is used rolling: ${g.note}`, true);
   }
 
-  // Items: components count half, completed items one, artifacts and radiants a bit more.
-  const itemsOf = (n: number, kind: string) => n * (A.itemEquivalents[kind] ?? 1);
-  // Emblems here are random ones ("Gain 3 random Emblems"; a named emblem is under named): one is only as good as an
-  // item if its trait is one the board plays, so it counts at the share of the set's emblem traits this board plays.
-  const emblemUse = res.emblems ? randomEmblemUse(board, data) : 1;
-  let items = itemsOf(res.components ?? 0, "component") + itemsOf(res.completed ?? 0, "completed") + itemsOf(res.artifacts ?? 0, "artifact") + itemsOf(res.emblems ?? 0, "emblem") * emblemUse + itemsOf(res.radiants ?? 0, "radiant");
-  for (const n of res.named ?? []) items += itemsOf(n.n, n.kind);
-  if (rec?.components?.rounds && res.components) items += itemsOf(res.components * rec.components.rounds, "component");
-  if (items) {
-    const r = itemsDp(items, board, data, goal);
-    const kinds = [res.components && `${fmt(res.components)} components`, res.completed && `${fmt(res.completed)} completed items`, res.artifacts && `${fmt(res.artifacts)} artifacts`, res.emblems && `${res.emblems} random emblems${emblemUse < 1 ? ` (${Math.round(emblemUse * 100)}% likely to fit)` : ""}`, res.radiants && `${fmt(res.radiants)} radiant items`, ...(res.named ?? []).map((n) => `${n.n} × ${n.name}`)].filter(Boolean);
-    add(kinds.join(", "), r.dp, `about ${fmt(items)} items' worth${r.note ? `; ${r.note}` : ""}`);
-  }
-
-  // Champions: a copy the board wants is worth its share of a star-up; any other champion sells for its gold.
-  // use: copies that complete a star-up the board wants (what a reroll board's tempo multiplies); sell: the rest,
-  // worth only their gold.
-  const evUnit = (cost: number, star: number, name?: string, extraCopies = 0): { use: number; sell: number; note: string } => {
-    const nCopies = 3 ** (star - 1) + extraCopies;
-    const same = plan.targets.filter((t) => t.cost === cost);
-    let hit = hitChance(cost, plan);
-    let wanted = same.length ? same.reduce((a, t) => a + t.remaining * t.weight, 0) / same.length : 0;
-    let per = same.length ? same.reduce((a, t) => a + copyGain(t.cost, t.star) * t.weight, 0) / same.length : 0;
-    if (name) {
-      const t = same.find((x) => nameOf(x.id) === name);
-      hit = t ? 1 : 0;
-      wanted = t ? t.remaining * t.weight : 0;
-      per = t ? copyGain(t.cost, t.star) * t.weight : 0;
-    }
-    const useful = Math.min(nCopies, wanted);
-    const sell = A.idleGold * cost;
-    return {
-      use: hit * useful * per,
-      sell: (hit * (nCopies - useful) + (1 - hit) * nCopies) * sell,
-      note: hit > 0 ? `${Math.round(hit * 100)}% a copy the board wants (it needs ~${wanted.toFixed(0)} more)` : "no unit of that cost on the board still wants copies",
-    };
-  };
-  const addUnits = (label: string, use: number, sell: number, note: string) => {
-    if (use > 0 || sell === 0) add(label, use, note, true);
-    if (sell > 0) add(use > 0 ? `${label}: the rest sold` : `${label} (sold)`, sell, use > 0 ? "copies the board doesn't need sell for their gold" : note);
-  };
-  for (const u of res.units ?? []) {
-    const ev = evUnit(u.cost, u.star, u.name);
-    addUnits(`${u.name ? u.name : `${u.n} × ${u.cost}-cost`}${u.star > 1 ? ` (${u.star}★)` : ""}`, u.n * ev.use, u.n * ev.sell, ev.note);
-  }
-  if (res.allOfCost) {
-    const n = plan.unitsOfCost[res.allOfCost] ?? 0;
-    const wantedHere = plan.targets.filter((t) => t.cost === res.allOfCost);
-    const dp = wantedHere.reduce((a, t) => a + copyGain(t.cost, t.star) * t.weight, 0) + Math.max(0, n - wantedHere.length) * A.idleGold * res.allOfCost;
-    add(`a copy of each ${res.allOfCost}-cost (${n})`, dp, `${wantedHere.length} of them are units the board wants`, true);
-  }
-  if (rec?.copies?.perRound && rec.copies.cost) {
-    const extra = rec.copies.perRound * f.rounds;
-    const ev = evUnit(rec.copies.cost, 1, undefined, extra);
-    const one = evUnit(rec.copies.cost, 1);
-    addUnits(`another copy each round`, ev.use - one.use, ev.sell - one.sell, `${f.rounds} rounds left; ${ev.note}`);
-  }
-  // Duplicators copy one unit each: the copy the board wants most (best gain per copy).
-  for (const d of res.duplicators ?? []) {
-    const wanted = plan.targets
-      .filter((t) => t.cost <= d.maxCost)
-      .map((t) => ({ t, gain: copyGain(t.cost, t.star) * t.weight }))
-      .filter((w) => w.gain > 0)
-      .sort((a, b) => b.gain - a.gain);
-    let left = d.n;
-    let dp = 0;
-    const used: string[] = [];
-    for (const w of wanted) {
-      const take = Math.min(left, w.t.remaining);
-      dp += take * w.gain;
-      if (take > 0) used.push(nameOf(w.t.id));
-      left -= take;
-      if (left <= 0) break;
-    }
-    dp += left * 2 * A.idleGold;
-    add(`${d.n} duplicator${d.n > 1 ? "s" : ""} (units up to ${d.maxCost}-cost)`, dp, used.length ? `copies of ${[...new Set(used)].join(", ")}` : `no unit up to ${d.maxCost}-cost still wants copies`, true);
-  }
-  // Pandora's Bench: the rightmost bench slots become random champions of the same cost every round.
-  if (res.benchTransform && plan.targets.length) {
-    const valuable = plan.targets.filter((t) => t.weight >= 1);
-    const pool = valuable.length ? valuable : plan.targets;
-    const cheapest = Math.min(...pool.map((t) => t.cost));
-    const hit = hitChance(cheapest, plan);
-    const perRound = res.benchTransform.slots * hit;
-    const rounds = f.rounds * A.benchUseShare;
-    const per = pool.filter((t) => t.cost === cheapest).reduce((a, t) => a + copyGain(t.cost, t.star) * t.weight, 0) / Math.max(1, pool.filter((t) => t.cost === cheapest).length);
-    const wantedCopies = pool.filter((t) => t.cost === cheapest).reduce((a, t) => a + t.remaining, 0);
-    add(`bench slots re-rolled every round`, Math.min(perRound * rounds, wantedCopies) * per, `${perRound.toFixed(2)} copies a round of your ${cheapest}-cost targets over ~${rounds.toFixed(0)} rounds`, true);
-  }
   // Early arrivals do more than the final board shows (see tempoPerStage), and copies most of all on a board of cheap carries.
+  if (out) out.copiesLeft = plan.targets.reduce((a, t) => a + t.remaining, 0);
   const copyTempo = 1 + A.rerollTempo * plan.lowCostShare;
   for (const p of parts) p.dp *= f.tempo * (p.copies ? copyTempo : 1);
   return parts;
@@ -799,6 +832,27 @@ export type BoardMode = "now" | "goal";
 
 function scoreIn(fx: AugmentEffects, board: Board, data: SetData, stage: string, mode: BoardMode): RawScore {
   return mode === "goal" ? rawScore(fx, boardAtStage(board, stage, data), data, stage, board) : rawScore(fx, board, data, stage);
+}
+
+/**
+ * How much of what the board still wants at `stage` the picks cover: copies (of the units that still need some) and
+ * item slots (the best ones items count for). Lets the panel say why an earlier pick does or doesn't change the
+ * ranking: a pick that leaves most of the need open leaves the next augment's value as it was.
+ */
+export function picksCoverage(given: string[], board: Board, data: SetData, stage: string, mode: BoardMode = "now", effects: Record<string, AugmentEffects> = EFFECTS) {
+  const at = mode === "goal" ? boardAtStage(board, stage, data) : board;
+  const goal = mode === "goal" ? board : undefined;
+  const fx = mergeEffects(given.map((id) => effects[id]).filter((e) => e && e.confidence !== "none"));
+  const plan = buildPlan(at, data, goal);
+  const copiesWanted = plan.targets.reduce((a, t) => a + t.remaining, 0);
+  const out = { copiesLeft: copiesWanted };
+  if (fx.resources || fx.recurring) resourceParts(fx.resources ?? {}, fx.recurring, stage, plan, at, data, goal, out);
+  return {
+    copiesWanted,
+    copiesCovered: copiesWanted - out.copiesLeft,
+    itemSlots: itemSlots(at, data, goal).length,
+    items: fx.resources ? itemEquivalents(fx.resources, fx.recurring, at, data) : 0,
+  };
 }
 
 /**
