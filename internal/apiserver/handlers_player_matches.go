@@ -156,12 +156,12 @@ func (s *Server) handlePlayerMatches(w http.ResponseWriter, r *http.Request) {
 			// A finished run reports incomplete, which holds off a rerun for
 			// matchSyncCooldown, so a page Riot has nothing more for isn't
 			// re-requested by every poll.
-			resp.Refreshing = s.jobs.start(key, matchSyncTimeout, matchSyncCooldown, func(ctx context.Context) (bool, error) {
+			resp.Refreshing = s.jobs.startFor(clientIP(r), key, matchSyncTimeout, matchSyncCooldown, func(ctx context.Context) (bool, error) {
 				_, err := ingest.SyncOlderMatches(ctx, s.Riot, s.Store, platform, puuid, offset, limit)
 				return false, err
 			})
 		case offset == 0 && syncDue(r, syncedAt, &resp):
-			resp.Refreshing = s.jobs.start(key, matchSyncTimeout, matchSyncCooldown, func(ctx context.Context) (bool, error) {
+			resp.Refreshing = s.jobs.startFor(clientIP(r), key, matchSyncTimeout, matchSyncCooldown, func(ctx context.Context) (bool, error) {
 				result, err := ingest.SyncPlayerMatches(ctx, s.Riot, s.Store, platform, puuid, matchHistorySyncCount)
 				if err == nil && result.Stopped != "" {
 					log.Printf("match sync %s: stopped early: %s", puuid, result.Stopped)

@@ -19,6 +19,21 @@ type Client struct {
 	httpClient *http.Client
 	keySource  KeySource
 	limiter    *RateLimiter
+	// budget, when set (WithBudget), is this view's share of the key; every
+	// attempt draws from it before the shared limiter.
+	budget        *Budget
+	budgetMaxWait time.Duration
+}
+
+// WithBudget returns a view of c whose requests also draw from budget, a
+// fixed share of the key, before the shared RateLimiter (which still
+// guards the key as a whole). maxWait > 0 makes a request fail with
+// *ErrBudgetExhausted instead of waiting longer than that for the share
+// (for interactive lookups); 0 waits as long as the context allows.
+func (c *Client) WithBudget(budget *Budget, maxWait time.Duration) *Client {
+	v := *c
+	v.budget, v.budgetMaxWait = budget, maxWait
+	return &v
 }
 
 type Option func(*Client)
@@ -60,6 +75,11 @@ func (c *Client) do(ctx context.Context, methodKey, url string, out interface{})
 	var lastErr error
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if c.budget != nil {
+			if err := c.budget.Acquire(ctx, c.budgetMaxWait); err != nil {
+				return err
+			}
+		}
 		if err := c.limiter.Acquire(ctx, methodKey); err != nil {
 			return err
 		}

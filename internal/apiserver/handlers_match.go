@@ -54,7 +54,7 @@ func (s *Server) handleMatchDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	defer release()
 
-	match, rawLive, err := s.Riot.GetTFTMatch(ctx, routing, matchID)
+	match, rawLive, err := s.liveRiot().GetTFTMatch(ctx, routing, matchID)
 	if err != nil {
 		var notFound *riotapi.ErrNotFound
 		if errors.As(err, &notFound) {

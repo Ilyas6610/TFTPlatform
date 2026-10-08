@@ -25,7 +25,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("config: %v", err)
 	}
-	syncCfg, err := riotsync.LoadConfig()
+	syncCfg, err := riotsync.LoadConfig(cfg.Share(cfg.Budget.Sync))
 	if err != nil {
 		log.Fatalf("config: %v", err)
 	}

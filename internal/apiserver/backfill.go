@@ -17,12 +17,11 @@ import (
 const (
 	// backfillMaxGames caps one whole-set load (like the history's paging).
 	backfillMaxGames = 500
-	// backfillPace spaces a load's Riot requests: 50 per 2 minutes, half a
-	// personal key's budget, so live pages and riotsync keep the rest
-	// instead of queueing behind the load. 500 games take ~20 minutes.
-	backfillPace = 2400 * time.Millisecond
-	// backfillTimeout bounds a run.
-	backfillTimeout = 40 * time.Minute
+	// backfillTimeout bounds a run. A load's requests draw from the
+	// backfill share of the key (Server.RiotBackfill, RIOT_BUDGET_SPLIT),
+	// which on a personal key's default split is 20 per 2 minutes: 500
+	// games take ~50 minutes.
+	backfillTimeout = time.Hour
 	// backfillRecent is how long a finished load is reported and not rerun
 	// for its player; a failed one isn't retried for as long either.
 	backfillRecent = 10 * time.Minute
@@ -45,8 +44,10 @@ type BackfillStatus struct {
 
 // backfills runs whole-set loads one at a time server-wide, with a gap
 // between them: each spends hundreds of Riot requests from the key the
-// live pages share. The zero value is ready; pace and gap default to
-// backfillPace and backfillGap (tests shorten them).
+// live pages share. The zero value is ready; gap defaults to backfillGap.
+// pace, extra spacing between a load's requests, is 0 by default: the
+// backfill share of the key (Server.RiotBackfill) already paces it. Tests
+// shorten gap and set pace.
 type backfills struct {
 	mu         sync.Mutex
 	running    string // puuid of the load in flight, if any
@@ -89,7 +90,7 @@ func (b *backfills) start(puuid string, run func(ctx context.Context, pace time.
 	if b.status == nil {
 		b.status = map[string]*BackfillStatus{}
 	}
-	pace, gap := cmp.Or(b.pace, backfillPace), cmp.Or(b.gap, backfillGap)
+	pace, gap := b.pace, cmp.Or(b.gap, backfillGap)
 	if cur := b.status[puuid]; cur != nil {
 		if cur.State == "running" {
 			return *cur, nil
@@ -189,7 +190,7 @@ func (s *Server) handlePlayerBackfill(w http.ResponseWriter, r *http.Request) {
 			// which the profile's set filter leaves out anyway.
 			since = since.Add(-24 * time.Hour)
 		}
-		_, err = ingest.BackfillSet(ctx, s.Riot, s.Store, platform, puuid, since, backfillMaxGames, pace, report)
+		_, err = ingest.BackfillSet(ctx, s.backfillRiot(), s.Store, platform, puuid, since, backfillMaxGames, pace, report)
 		if since.IsZero() {
 			return nil, err
 		}

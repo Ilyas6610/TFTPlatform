@@ -11,6 +11,7 @@ func setEnv(t *testing.T, kv map[string]string) {
 	for _, k := range []string{
 		"DATABASE_URL", "RIOT_API_KEY", "RIOT_API_KEY_FILE", "RIOT_APP_RATE_LIMIT_PER_SEC", "RIOT_APP_RATE_LIMIT_PER_2MIN",
 		"HTTP_ADDR", "SETDATA_SYNC_INTERVAL", "STATS_CACHE_TTL", "DB_STATEMENT_TIMEOUT", "DB_MAX_CONNS", "REDIS_URL",
+		"RIOT_BUDGET_SPLIT",
 	} {
 		t.Setenv(k, "")
 	}
@@ -123,6 +124,52 @@ func TestLoad_ReportsEveryProblemTogether(t *testing.T) {
 	for _, name := range []string{"RIOT_APP_RATE_LIMIT_PER_2MIN", "DB_MAX_CONNS", "STATS_CACHE_TTL"} {
 		if !strings.Contains(err.Error(), name) {
 			t.Errorf("%s missing from %q", name, err)
+		}
+	}
+}
+
+func TestLoad_BudgetSplit(t *testing.T) {
+	setEnv(t, valid())
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Budget != (BudgetSplit{Sync: 40, OnDemand: 30, Backfill: 20, Reserve: 10}) {
+		t.Errorf("default split = %+v", cfg.Budget)
+	}
+	// Shares of a personal key (20/s, 100 per 2 min).
+	if s, m := cfg.Share(cfg.Budget.Sync); s != 8 || m != 40 {
+		t.Errorf("sync share = %d/%d, want 8/40", s, m)
+	}
+	if s, m := cfg.Share(cfg.Budget.OnDemand); s != 6 || m != 30 {
+		t.Errorf("on-demand share = %d/%d, want 6/30", s, m)
+	}
+	if s, m := cfg.Share(1); s != 1 || m != 1 {
+		t.Errorf("a tiny share = %d/%d, want at least 1/1", s, m)
+	}
+
+	env := valid()
+	env["RIOT_BUDGET_SPLIT"] = " Reserve:0, backfill:10 ,ondemand:50,sync:40"
+	setEnv(t, env)
+	if cfg, err := Load(); err != nil || cfg.Budget != (BudgetSplit{Sync: 40, OnDemand: 50, Backfill: 10}) {
+		t.Errorf("custom split: %+v %v", cfg.Budget, err)
+	}
+
+	for _, bad := range []string{
+		"sync:50,ondemand:30,backfill:20,reserve:10", // 110%
+		"sync:40,ondemand:30,backfill:20",            // reserve missing
+		"sync:40,ondemand:30,backfill:20,reserve:10,crawl:5",
+		"sync:40,ondemand:30,backfill:20,reserve:x",
+		"sync:40,ondemand:30,backfill:20,reserve:-5",
+		"sync:40,sync:30,backfill:20,reserve:10",
+		"sync:0,ondemand:70,backfill:20,reserve:10", // a class with nothing
+		"40,30,20,10",
+	} {
+		env := valid()
+		env["RIOT_BUDGET_SPLIT"] = bad
+		setEnv(t, env)
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "RIOT_BUDGET_SPLIT") {
+			t.Errorf("%q: err = %v, want RIOT_BUDGET_SPLIT rejected", bad, err)
 		}
 	}
 }
