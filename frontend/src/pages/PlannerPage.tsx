@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ApiError, PlannerCodes, SetData, SetItem, getPlannerCodes, getSetData } from "../api/client";
 import { GameIcon } from "../assets/tft";
@@ -48,6 +48,9 @@ import {
 
 // Board planner. The whole board lives in the page URL (see planner/board.ts),
 // so copying the address shares it: no account or server storage needed.
+
+// The augment estimate and its data are a sizeable chunk only this page uses: load it with the page, not with every page.
+const AugmentImpact = lazy(() => import("../components/AugmentImpact").then((m) => ({ default: m.AugmentImpact })));
 
 const AUGMENT_TIERS: Record<number, string> = { 1: "Silver", 2: "Gold", 3: "Prismatic" };
 const tierName = (tier: number) => AUGMENT_TIERS[tier] ?? "";
@@ -408,6 +411,12 @@ export default function PlannerPage() {
               })}
             </div>
           </div>
+
+          {data && (
+            <Suspense fallback={<div className="panel augment-impact muted">Loading the augment estimate…</div>}>
+              <AugmentImpact board={board} data={data} names={names} onPick={(slot, a) => update((b) => setAugment(b, slot, a))} />
+            </Suspense>
+          )}
 
           <div className="panel">
             <h3>Traits</h3>
