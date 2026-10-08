@@ -265,6 +265,18 @@ describe("extracted effects (Set 18)", () => {
     expect(e.effects!.find((x) => x.stat === "damageAmp")!.pct).toBeCloseTo(0.25);
   });
 
+  it("doesn't count what a gained item does as a further reward (Radiant Rascal's gloves equip items)", () => {
+    const e = get("RadiantRascal")!;
+    expect(e.resources!.radiants).toBeUndefined();
+    expect(e.resources!.named).toEqual([{ name: "Radiant Thief's Gloves", n: 1, kind: "radiant" }]);
+    expect(e.notes!.join(" ")).toMatch(/equips 2 random Radiant items/);
+  });
+
+  it("counts a named reward on one branch of a coin flip at half", () => {
+    const chest = get("GoldenGamble")!.resources!.named!.find((n) => n.name === "Radiant Lucky Item Chest")!;
+    expect(chest.n).toBe(0.5);
+  });
+
   it("doesn't model augments that rewrite the board", () => {
     expect(get("Dummify")!.confidence).toBe("none");
   });

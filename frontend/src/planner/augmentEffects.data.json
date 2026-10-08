@@ -1098,8 +1098,8 @@
      "pct": 0.05
     }
    ],
-   "confidence": "medium",
-   "unparsed": [
+   "confidence": "high",
+   "notes": [
     "This increases by 1% after each player combat. 1-cost champions gain double."
    ]
   },
@@ -1529,7 +1529,7 @@
     "named": [
      {
       "name": "Radiant Lucky Item Chest",
-      "n": 1,
+      "n": 0.5,
       "kind": "radiant"
      }
     ]
@@ -1543,7 +1543,7 @@
     "named": [
      {
       "name": "Radiant Lucky Item Chest",
-      "n": 1,
+      "n": 0.5,
       "kind": "radiant"
      }
     ]
@@ -1557,7 +1557,7 @@
     "named": [
      {
       "name": "Radiant Lucky Item Chest",
-      "n": 1,
+      "n": 0.5,
       "kind": "radiant"
      }
     ]
@@ -1585,8 +1585,8 @@
      "flat": 6
     }
    ],
-   "confidence": "medium",
-   "unparsed": [
+   "confidence": "high",
+   "notes": [
     "This effect stacks."
    ]
   },
@@ -1605,8 +1605,8 @@
      "flat": 9
     }
    ],
-   "confidence": "medium",
-   "unparsed": [
+   "confidence": "high",
+   "notes": [
     "This effect stacks."
    ]
   },
@@ -2535,10 +2535,12 @@
       "n": 1,
       "kind": "radiant"
      }
-    ],
-    "radiants": 2
+    ]
    },
-   "confidence": "high"
+   "confidence": "high",
+   "notes": [
+    "This equips 2 random Radiant items every round."
+   ]
   },
   "DA_RadiantRelic": {
    "resources": {
@@ -2736,7 +2738,9 @@
    "confidence": "none",
    "unparsed": [
     "Twice per stage, gain a random champion.",
-    "Its cost increases by Stage.",
+    "Its cost increases by Stage."
+   ],
+   "notes": [
     "This effect ends after receiving 1 5-cost champion."
    ]
   },
@@ -3105,7 +3109,10 @@
      }
     ]
    },
-   "confidence": "high"
+   "confidence": "high",
+   "notes": [
+    "This item allows you to copy a 3-cost or less champion."
+   ]
   },
   "DA_TheGoldenDragon": {
    "effects": [

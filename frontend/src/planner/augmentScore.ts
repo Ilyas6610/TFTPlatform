@@ -89,6 +89,8 @@ export interface AugmentEffects {
   /** Traits the augment is built around (from the set data): worth little to a board that doesn't play one. */
   traits?: string[];
   unparsed?: string[];
+  /** Sentences describing what a gained item does: read, but not counted as a further reward. */
+  notes?: string[];
   /** Rewards that depend on something happening; counted at half. */
   conditional?: string[];
 }
@@ -667,6 +669,7 @@ export function scoreAugment(
 
   if (fx.resources || fx.recurring) parts.push(...resourceParts(fx.resources ?? {}, fx.recurring, stage, buildPlan(board, data), board, data));
   if (fx.unparsed?.length) caveats.push(...fx.unparsed.map((t) => `not counted: ${t}`));
+  if (fx.notes?.length) caveats.push(...fx.notes.map((t) => `not counted again: ${t}`));
   if (fx.conditional?.length) caveats.push(...fx.conditional.map((t) => `counted at half, it depends on something happening: ${t}`));
 
   // Built around a trait this board doesn't play: only what sells or still applies counts.

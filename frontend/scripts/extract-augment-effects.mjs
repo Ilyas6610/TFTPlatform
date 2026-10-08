@@ -100,6 +100,7 @@ function parseAugment(a, itemsByName, unitCosts) {
   const recurring = {};
   const unparsed = [];
   const conditionalText = [];
+  const notes = []; // sentences that describe an item just gained: read, but not counted as a further reward
   let covered = 0;
   let total = 0;
 
@@ -116,6 +117,7 @@ function parseAugment(a, itemsByName, unitCosts) {
     total++;
     let understood = false;
     const before = JSON.stringify(res);
+    const namedBefore = res.named.length;
     const lower = s.toLowerCase();
 
     // ---- stats ----
@@ -172,6 +174,14 @@ function parseAugment(a, itemsByName, unitCosts) {
 
     // ---- resources ----
     let hit = false;
+    // "Gain a Radiant Thief's Gloves item. This equips 2 random Radiant items every round.": the second sentence says what the
+    // item just gained does, not a further reward, so its items aren't counted again.
+    const describesGainedItem = /^(this|it|that)\b/i.test(s) && !/^(this|it) (augment|will)\b/i.test(s);
+    if (describesGainedItem) {
+      covered++;
+      notes.push(s);
+      continue;
+    }
     let work = s; // matched "choose 1 of N" phrases are blanked so the generic patterns don't count them again
     const choose = s.match(/Choose 1 of (\d+) (Radiant Items|Artifacts|components)/i);
     if (choose) {
@@ -314,6 +324,7 @@ function parseAugment(a, itemsByName, unitCosts) {
         const delta = (res[k] ?? 0) - (was[k] ?? 0);
         if (delta) res[k] = (was[k] ?? 0) + delta / 2;
       }
+      for (const n of res.named.slice(namedBefore)) n.n /= 2; // a named reward on one branch ("a Radiant Lucky Item Chest" if heads)
     }
 
     if (/win streak to \+4/i.test(s)) understood = true; // CalledShot: tempo, no stat value
@@ -339,6 +350,7 @@ function parseAugment(a, itemsByName, unitCosts) {
   out.confidence = !effects.length && !hasResources ? "none" : unparsed.length === 0 ? "high" : ratio >= 0.5 ? "medium" : "low";
   if (unparsed.length) out.unparsed = unparsed;
   if (conditionalText.length) out.conditional = conditionalText;
+  if (notes.length) out.notes = notes;
   return out;
 }
 

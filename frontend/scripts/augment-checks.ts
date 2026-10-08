@@ -82,11 +82,32 @@ let agree = 0, an = 0;
 for (let i = 0; i + 1 < midScores.length; i += 2) { const keys = [...midScores[i].keys()]; agree += spearman(keys.map((k) => midScores[i].get(k)!), keys.map((k) => midScores[i + 1].get(k)!)); an++; }
 const copyDelta = mean(lowB) - mean(highB);
 const distinct = top1.size;
+// An augment and its upgraded variants (Golden Gamble, +, ++) are one line: no line should be the top pick on most boards.
+const family = (n: string) => n.replace(/\++$/, "").replace(/ (I|II|III|IV)$/, "");
+const byFamily = new Map<string, number>();
+for (const [n, c] of top1) byFamily.set(family(n), (byFamily.get(family(n)) ?? 0) + c);
+const [domName, domCount] = [...byFamily.entries()].sort((a, b) => b[1] - a[1])[0];
+const domShare = domCount / (boards.length * 3);
+// Trait gating, tested directly (the top-5 view above can pass vacuously when no trait augment gets that high): for every trait
+// augment, a board that plays the trait must score it clearly above a board that doesn't.
+let gated = 0, gatedOk = 0;
+for (const a of data.augments.filter((x: any) => x.traits?.length && (EFFECTS as any)[x.apiName]?.confidence !== "none")) {
+  const t: string = a.traits[0];
+  const on = boards.find((b) => (new Map(computeTraits(b, data).map((x) => [x.name, x.count])).get(t) ?? 0) >= ASSUMPTIONS.playedTraitUnits);
+  const off = boards.find((b) => (new Map(computeTraits(b, data).map((x) => [x.name, x.count])).get(t) ?? 0) === 0);
+  if (!on || !off) continue;
+  const s = (b: Board) => rankAugments([a], b, data, "3-2")[0].impact ?? 0;
+  gated++;
+  if (s(on) >= 3 * Math.max(s(off), 0.005) || s(on) <= 0.02) gatedOk++; // (a tiny augment is tiny everywhere)
+  else console.log(`  (trait gate: ${a.name} scores ${s(on).toFixed(3)} on a ${t} board and ${s(off).toFixed(3)} off it)`);
+}
 
 const checks: [string, boolean, string][] = [
   ["tier order: Silver < Gold < Prismatic means", tierMeans[0] < tierMeans[1] && tierMeans[1] < tierMeans[2], `means ${tierMeans.map((x) => x.toFixed(3)).join(" < ")}`],
   ["tier correlation (Spearman, designer tier vs mean score) >= 0.25", tierRho >= 0.25, tierRho.toFixed(3)],
-  ["trait augments in the top 5 only for boards that play the trait", traitMismatch === 0, `${traitMismatch} of ${traitTop} mismatched`],
+  ["trait augments in the top 5 only for boards that play the trait", traitMismatch === 0, `${traitMismatch} of ${traitTop} mismatched in the top 5`],
+  ["trait augments score well above 3x on a board that plays the trait (tested directly)", gated >= 5 && gatedOk === gated, `${gatedOk} of ${gated} trait augments checked (needs at least 5 with a board on and off the trait)`],
+  [`no augment line is the top pick on more than 35% of cases`, domShare <= 0.35, `${domName}: ${(100 * domShare).toFixed(0)}%`],
   ["median augment moves placement by 0.03-0.2", q(0.5) >= 0.03 && q(0.5) <= 0.2, `median ${q(0.5).toFixed(3)}, p90 ${q(0.9).toFixed(2)}, p99 ${q(0.99).toFixed(2)}`],
   ["no augment above the cap", q(1) <= ASSUMPTIONS.softCap + 1e-9, `max ${q(1).toFixed(2)} (cap ${ASSUMPTIONS.softCap})`],
   ["rankings differ between boards (mean Spearman between two boards < 0.97)", agree / an < 0.97, (agree / an).toFixed(3)],

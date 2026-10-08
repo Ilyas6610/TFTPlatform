@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { SetData } from "../api/client";
 import { GameIcon } from "../assets/tft";
 import { AUGMENT_SLOTS, augmentTier, availableAt } from "../planner/augmentStages";
@@ -21,10 +21,9 @@ const CONFIDENCE_HINT: Record<Confidence, string> = {
 const place = (x: number) => `${x >= 0 ? "−" : "+"}${Math.abs(x).toFixed(2)}`;
 
 /**
- * Prototype: what each augment would add to the board in the planner, as a
- * share of the board's value. An estimate from set data (see
- * planner/augmentScore.ts), not from game results: Riot's match data has no
- * augments, so there is nothing to measure it against.
+ * Prototype: the average placement each augment would gain on the board in the
+ * planner. An estimate (see planner/augmentScore.ts), not a measurement: Riot's
+ * match data has no augments, so there is nothing to measure it against.
  */
 export function AugmentImpact({
   board,
@@ -44,10 +43,12 @@ export function AugmentImpact({
   const stage = AUGMENT_SLOTS[slot].stage;
   const [all, setAll] = useState(false);
 
+  // Ranking all the augments takes tens of milliseconds: let the board editing stay responsive and rank when it settles.
+  const settled = useDeferredValue(board);
   const ranked = useMemo(() => {
-    const offered = data.augments.filter((a) => availableAt(a, slot) && !board.augments.some((c, i) => c === a.apiName && i !== slot));
-    return rankAugments(offered, board, data, stage);
-  }, [board, data, slot, stage]);
+    const offered = data.augments.filter((a) => availableAt(a, slot) && !settled.augments.some((c, i) => c === a.apiName && i !== slot));
+    return rankAugments(offered, settled, data, stage);
+  }, [settled, data, slot, stage]);
 
   const scored = ranked.filter((r) => r.impact !== null);
   const unscored = ranked.filter((r) => r.impact === null);
@@ -62,7 +63,7 @@ export function AugmentImpact({
       <p className="muted augment-impact-note">
         An estimate, not a measurement: Riot's match data has no augments, so nothing here is learned from augment results. Items, star-ups and stat
         bonuses are priced in average placement with a model fitted on {BOARD_VALUE_FIT.fittedOn.lobbies.toLocaleString()} stored lobbies; the rest is converted through the
-        shop. A lower number is better. Open a row for the arithmetic.
+        shop. Each row shows the gain in average placement: the longer the bar, the bigger the gain ("−0.31" means 0.31 places better). Open a row for the arithmetic.
       </p>
       <div className="mode-tabs" role="tablist" aria-label="Augment stage">
         {AUGMENT_SLOTS.map((s, i) => (
