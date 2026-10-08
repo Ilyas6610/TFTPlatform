@@ -69,7 +69,7 @@ function scopeOf(s) {
   if (/(back row|back 2 rows)/.test(t)) return { scope: "back", rows: /back 2 rows/.test(t) ? 2 : 1 };
   if (/(front row|first row|center of the front)/.test(t)) return { scope: "front" };
   if (/(without items|aren't holding items|no items equipped)/.test(t)) return { scope: "unheld" };
-  if (/(holding an item|holding items|equipped with an emblem|holding a|holding the|with an item)/.test(t)) return { scope: "holders" };
+  if (/(holding an item|holding items|equipped with|holding a|holding the|with an item)/.test(t)) return { scope: "holders" };
   if (/(your team|all allies|your units|allies gain|your champions gain|champions gain|allies in the same row)/.test(t)) return { scope: "team" };
   if (/(grants?|gains?) (?:the|its|their) holders?|their holders|whenever their holders/.test(t)) return { scope: "holders" };
   if (/adjacent champions|nearby ally|nearest champion/.test(t)) return { scope: "team" };
@@ -94,6 +94,13 @@ function timingOf(s) {
 
 const SPLIT = /(?<=[.!?])\s+(?=[A-Z])|\s*\/\s*/;
 
+/** "Allies equipped with Hand of Justice gain ...": the bonus goes to the holders of the items the augment gave, at most that many units. */
+function holderLimit(s, res) {
+  if (!/equipped with (?!an? emblem|emblems)/i.test(s) || !res.named.length) return {};
+  const n = res.named.filter((x) => new RegExp(`equipped with (?:an? )?${x.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i").test(s)).reduce((a, x) => a + x.n, 0);
+  return n > 0 ? { maxUnits: n } : {};
+}
+
 function parseAugment(a, itemsByName, unitCosts) {
   const effects = [];
   const res = { gold: 0, xp: 0, rerolls: 0, components: 0, completed: 0, artifacts: 0, emblems: 0, units: [], named: [] };
@@ -113,10 +120,26 @@ function parseAugment(a, itemsByName, unitCosts) {
     // Trailing credits ("TFT Macao Open, 2024") and flavour aren't effects.
     .filter((s) => !/(championship|open|crown|tactician's crown),?\s*\d{4}$/i.test(s) && !/^\w[\w &'-]*,\s*\d{4}$/.test(s));
 
+  let repeats = 0;
   for (const s of sentences) {
     total++;
     let understood = false;
     const before = JSON.stringify(res);
+    // Precision is a keyword: "Your team gains ... and Precision" lets their ability damage crit;
+    // its definition ("Precision: Ability damage can critically strike. Additional Precision grants
+    // 10% Critical Strike Damage.") adds nothing for a unit that has it once.
+    if (/^(?:precision:|additional precision)/i.test(s)) {
+      covered++;
+      continue;
+    }
+    if (/\bprecision\b/i.test(s)) effects.push({ kind: "stat", ...scopeOf(s), ...holderLimit(s, res), stat: "abilityCrit", pct: 1 });
+    // "At the start of the next 2 stages, gain the package again": the whole reward repeats.
+    const again = s.match(/next (\d+|two|three) stages?,? gain (?:the|this|that) [\w ]*?again/i);
+    if (again) {
+      repeats += count(again[1]);
+      covered++;
+      continue;
+    }
     const namedBefore = res.named.length;
     const lower = s.toLowerCase();
 
@@ -151,7 +174,7 @@ function parseAugment(a, itemsByName, unitCosts) {
     // "drop below 35 Health", "Your Tactician loses 20 Health" aren't bonuses to the board.
     const notABonus = /\b(below|loses?|lose all)\b|tactician/i.test(s) && !/tactician's (crown|cape|shield)/i.test(s);
     if (statHits.length && !notABonus && (isGrant || /% max health|health shield/i.test(s))) {
-      const sc = scopeOf(s);
+      const sc = { ...scopeOf(s), ...holderLimit(s, res) };
       const timing = timingOf(s);
       const step = s.match(/increased by (\d+) per player level/i);
       for (const m of statHits) {
@@ -231,7 +254,8 @@ function parseAugment(a, itemsByName, unitCosts) {
       if (nextRounds) (recurring.components ??= {}).rounds = Number(nextRounds[1]);
     });
     take(/(a|an|\d+|two)\s+(?:random\s+)?component anvils?/gi, (m) => (res.components += 1.3 * count(m[1])));
-    take(/(a|an|\d+|two)\s+(?:random\s+)?(?:completed\s+)?(?:item|items)\b/gi, (m) => {
+    // (not "Completed Item anvils": the anvil pattern below counts those)
+    take(/(a|an|\d+|two)\s+(?:random\s+)?(?:completed\s+)?(?:item|items)\b(?!\s+anvils?)/gi, (m) => {
       if (/completed/i.test(m[0])) res.completed += count(m[1]);
     });
     take(/(a|an|\d+|two)\s+(?:random\s+)?Completed Item anvils?/gi, (m) => (res.completed += 1.3 * count(m[1])));
@@ -258,6 +282,10 @@ function parseAugment(a, itemsByName, unitCosts) {
     );
     take(/(a|an|\d+|two)\s+(?:random\s+)?(\d)-star\s+(\d)-cost\s+champion/gi, (m) =>
       res.units.push({ n: count(m[1]), cost: Number(m[3]), star: Number(m[2]) }),
+    );
+    // "a package containing a 5-cost champion, ..." (a star level is the pattern above)
+    take(/containing\s+(a|an|\d+|two)\s+(?:random\s+)?(\d)-cost\s+champions?/gi, (m) =>
+      res.units.push({ n: count(m[1]), cost: Number(m[2]), star: 1 }),
     );
     take(/gold of random champions/gi, () => {});
     take(/Gain (\d+) gold of random champions|Gain (\d+) gold of/gi, () => {});
@@ -292,11 +320,14 @@ function parseAugment(a, itemsByName, unitCosts) {
     }
 
     // named items the set knows ("Gain a Rabadon's Deathcap")
-    for (const [name, item] of itemsByName) {
+    // Longest names first, each match blanked out, so "a Tear of the Goddess" isn't also read as "a Tear".
+    let rest = s;
+    for (const [name, item] of [...itemsByName].sort((a, b) => b[0].length - a[0].length)) {
       const re = new RegExp(`(?:gain|get)\\s+(a|an|\\d+|two|three|four)\\s+(?:random\\s+)?${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}s?\\b`, "i");
-      const mm = s.match(re);
+      const mm = rest.match(re);
       if (mm) {
-        res.named.push({ name, n: count(mm[1]), kind: item.kind });
+        res.named.push({ name: item.name, n: count(mm[1]), kind: item.kind });
+        rest = rest.replace(mm[0], " ");
         hit = true;
       }
     }
@@ -332,6 +363,13 @@ function parseAugment(a, itemsByName, unitCosts) {
 
     if (understood) covered++;
     else unparsed.push(s);
+  }
+
+  if (repeats) {
+    // Each repeat delivers the same reward again later in the game.
+    for (const k of ["gold", "xp", "rerolls", "components", "completed", "artifacts", "emblems", "radiants"]) if (res[k]) res[k] *= 1 + repeats;
+    for (const u of res.units) u.n *= 1 + repeats;
+    for (const n of res.named) n.n *= 1 + repeats;
   }
 
   const resourceTotal =
@@ -371,7 +409,22 @@ const itemsByName = new Map();
 for (const it of [...set.items, ...(set.wisps ?? [])]) {
   if (it.name && ["component", "completed", "emblem", "artifact", "radiant"].includes(it.kind) && !itemsByName.has(it.name)) itemsByName.set(it.name, it);
 }
-// "Giant's Belts" etc. are matched by the singular name plus an optional s.
+// "Giant's Belts" etc. are matched by the singular name plus an optional s. Descriptions also
+// write some names differently from the item data: without punctuation ("BF Swords" for
+// "B.F. Sword") and, for Tear of the Goddess, as just "a Tear". Both are added as aliases.
+for (const [name, item] of [...itemsByName]) {
+  const plain = name.replace(/\./g, "");
+  if (plain !== name && !itemsByName.has(plain)) itemsByName.set(plain, item);
+}
+// "Hands of Justice": names of the form "X of Y" pluralise their first word.
+for (const [name, item] of [...itemsByName]) {
+  const m = name.match(/^(\w+) (of .+)$/i);
+  if (m && !itemsByName.has(`${m[1]}s ${m[2]}`)) itemsByName.set(`${m[1]}s ${m[2]}`, item);
+}
+for (const [alias, name] of [["Tear", "Tear Of The Goddess"]]) {
+  const item = [...itemsByName].find(([n]) => n.toLowerCase() === name.toLowerCase())?.[1];
+  if (item && !itemsByName.has(alias)) itemsByName.set(alias, item);
+}
 
 const unitCosts = new Map();
 for (const u of set.units) {

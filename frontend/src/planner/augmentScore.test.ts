@@ -292,3 +292,42 @@ describe("extracted effects (Set 18)", () => {
     }
   });
 });
+
+describe("augment score: mechanisms added after the TFT Academy comparison", () => {
+  it("lets Precision make ability damage crit, worth more with more crit chance", () => {
+    const precision = scoreAugment(aug("X"), basic, data, "3-2", fx({ effects: [{ kind: "stat", scope: "team", stat: "abilityCrit", pct: 1 }] }));
+    const both = scoreAugment(aug("X"), basic, data, "3-2", fx({ effects: [
+      { kind: "stat", scope: "team", stat: "abilityCrit", pct: 1 },
+      { kind: "stat", scope: "team", stat: "crit", pct: 0.25 },
+    ] }));
+    const critOnly = scoreAugment(aug("X"), basic, data, "3-2", fx({ effects: [{ kind: "stat", scope: "team", stat: "crit", pct: 0.25 }] }));
+    expect(precision.statLift).toBeGreaterThan(0);
+    expect(both.statLift).toBeGreaterThan(critOnly.statLift + precision.statLift * 0.99);
+  });
+
+  it("gives a holders bonus with maxUnits to that many holders only", () => {
+    const two = board([placed("Tank", 0, ["A"]), placed("Carry", 3 * COLS, ["IE", "JG"]), placed("Carry", 3 * COLS + 1, ["IE"])]);
+    const all = scoreAugment(aug("X"), two, data, "3-2", fx({ effects: [{ kind: "stat", scope: "holders", stat: "damageAmp", pct: 0.2 }] }));
+    const one = scoreAugment(aug("X"), two, data, "3-2", fx({ effects: [{ kind: "stat", scope: "holders", maxUnits: 1, stat: "damageAmp", pct: 0.2 }] }));
+    expect(one.statLift).toBeGreaterThan(0);
+    expect(one.statLift).toBeLessThan(all.statLift);
+  });
+
+  it("counts back-row health for less than front-row health", () => {
+    const tanks = board([placed("Tank", 0), placed("Tank", 3 * COLS)]);
+    const front = scoreAugment(aug("X"), tanks, data, "3-2", fx({ effects: [{ kind: "stat", scope: "front", stat: "health", pct: 0.2 }] }));
+    const back = scoreAugment(aug("X"), tanks, data, "3-2", fx({ effects: [{ kind: "stat", scope: "back", stat: "health", pct: 0.2 }] }));
+    expect(back.statLift).toBeGreaterThan(0);
+    expect(back.statLift).toBeLessThan(front.statLift * 0.75);
+  });
+
+  it("values random emblems by how many of the set's emblem traits the board plays", () => {
+    const withEmblems = { ...data, items: [{ apiName: "E1", name: "Brawler Emblem", kind: "emblem" }, { apiName: "E2", name: "Fae Emblem", kind: "emblem" }] } as unknown as SetData;
+    const emblems = scoreAugment(aug("X"), basic, withEmblems, "3-2", fx({ resources: { emblems: 2 } }));
+    const completed = scoreAugment(aug("X"), basic, withEmblems, "3-2", fx({ resources: { completed: 2 } }));
+    // The test units play no traits: random emblems fall to the floor, well below completed items.
+    expect(emblems.impact!).toBeGreaterThan(0);
+    expect(emblems.impact!).toBeLessThan(completed.impact! * 0.5);
+    expect(emblems.parts[0].label).toMatch(/random emblems \(20% likely to fit\)/);
+  });
+});

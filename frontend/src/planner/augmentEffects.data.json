@@ -1525,7 +1525,7 @@
   "DA_GoldenGamble": {
    "resources": {
     "gold": 2,
-    "completed": 2.3,
+    "completed": 1.3,
     "named": [
      {
       "name": "Radiant Lucky Item Chest",
@@ -1539,7 +1539,7 @@
   "DA_GoldenGamblePlus": {
    "resources": {
     "gold": 3,
-    "completed": 2.3,
+    "completed": 1.3,
     "named": [
      {
       "name": "Radiant Lucky Item Chest",
@@ -1553,7 +1553,7 @@
   "DA_GoldenGamblePlusPlus": {
    "resources": {
     "gold": 6,
-    "completed": 2.3,
+    "completed": 1.3,
     "named": [
      {
       "name": "Radiant Lucky Item Chest",
@@ -1859,23 +1859,26 @@
     {
      "kind": "stat",
      "scope": "team",
-     "stat": "crit",
-     "pct": 0.1
+     "stat": "abilityCrit",
+     "pct": 1
     },
     {
      "kind": "stat",
-     "scope": "unknown",
-     "stat": "critDmg",
+     "scope": "team",
+     "stat": "crit",
      "pct": 0.1
     }
    ],
-   "confidence": "medium",
-   "unparsed": [
-    "Precision: Ability damage can critically strike."
-   ]
+   "confidence": "high"
   },
   "DA_JeweledLotus_II": {
    "effects": [
+    {
+     "kind": "stat",
+     "scope": "team",
+     "stat": "abilityCrit",
+     "pct": 1
+    },
     {
      "kind": "stat",
      "scope": "team",
@@ -1887,18 +1890,9 @@
      "scope": "team",
      "stat": "critDmg",
      "pct": 0.1
-    },
-    {
-     "kind": "stat",
-     "scope": "unknown",
-     "stat": "critDmg",
-     "pct": 0.1
     }
    ],
-   "confidence": "medium",
-   "unparsed": [
-    "Precision: Ability damage can critically strike."
-   ]
+   "confidence": "high"
   },
   "DA_KickStart": {
    "resources": {
@@ -2052,19 +2046,21 @@
   },
   "DA_LuxurySubscription": {
    "resources": {
-    "gold": 3,
+    "gold": 9,
     "units": [
      {
-      "n": 1,
+      "n": 3,
       "cost": 1,
       "star": 2
+     },
+     {
+      "n": 3,
+      "cost": 5,
+      "star": 1
      }
     ]
    },
-   "confidence": "medium",
-   "unparsed": [
-    "At the start of the next 2 stages, gain the package again."
-   ]
+   "confidence": "high"
   },
   "DA_MagicRoll": {
    "confidence": "none",
@@ -2614,22 +2610,29 @@
    "effects": [
     {
      "kind": "stat",
-     "scope": "unknown",
-     "stat": "crit",
-     "pct": 0.25
+     "scope": "holders",
+     "maxUnits": 2,
+     "stat": "abilityCrit",
+     "pct": 1
     },
     {
      "kind": "stat",
-     "scope": "unknown",
-     "stat": "critDmg",
-     "pct": 0.1
+     "scope": "holders",
+     "maxUnits": 2,
+     "stat": "crit",
+     "pct": 0.25
     }
    ],
-   "confidence": "medium",
-   "unparsed": [
-    "Gain 2 Hands of Justice.",
-    "Precision: Ability damage can critically strike."
-   ]
+   "resources": {
+    "named": [
+     {
+      "name": "Hand Of Justice",
+      "n": 2,
+      "kind": "completed"
+     }
+    ]
+   },
+   "confidence": "high"
   },
   "DA_RollingForDays": {
    "resources": {
@@ -3035,10 +3038,16 @@
      "pct": 0.04
     }
    ],
-   "confidence": "medium",
-   "unparsed": [
-    "Gain 4 BF Swords."
-   ]
+   "resources": {
+    "named": [
+     {
+      "name": "B.F. Sword",
+      "n": 4,
+      "kind": "component"
+     }
+    ]
+   },
+   "confidence": "high"
   },
   "DA_Swordsmith": {
    "resources": {
@@ -3502,7 +3511,7 @@
     }
    ],
    "resources": {
-    "completed": 2.3,
+    "completed": 1.3,
     "emblems": 1
    },
    "confidence": "high"

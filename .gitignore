@@ -20,3 +20,4 @@ frontend/*.tsbuildinfo
 
 # Downloaded TFT assets (regenerate with: cd frontend && npm run assets)
 frontend/public/tft/
+/frontend/scripts/.academy/

@@ -38,7 +38,7 @@ export interface StatEffect {
   scope: "team" | "holders" | "unheld" | "front" | "back" | "cost" | "trait" | "unknown";
   /** For scope "trait": the units that have it. */
   trait?: string;
-  stat: "health" | "armor" | "mr" | "ad" | "ap" | "as" | "crit" | "critDmg" | "damageAmp" | "durability" | "omnivamp";
+  stat: "health" | "armor" | "mr" | "ad" | "ap" | "as" | "crit" | "critDmg" | "damageAmp" | "durability" | "omnivamp" | "abilityCrit";
   flat?: number;
   /** The flat bonus grows by this much per player level. */
   plusPerLevel?: number;
@@ -46,6 +46,8 @@ export interface StatEffect {
   /** The bonus repeats per ... (see perCount). */
   per?: "trait" | "activeTrait" | "bronzeTrait" | "frontRowUnit" | "level" | "item" | "oneUnitItem" | "emblem" | "uniqueOther";
   rows?: number;
+  /** At most this many of the covered units get it (the holders of the items the augment gave), the most itemized first. */
+  maxUnits?: number;
   cost?: number;
   delay?: number;
   everySeconds?: number;
@@ -115,12 +117,20 @@ export const ASSUMPTIONS = {
   abilityFromAttackSpeed: 0.5,
   /** Length of a fight that bonuses are averaged over. */
   fightSeconds: 30,
+  /**
+   * How much a back-row unit's effective HP counts towards team strength next to a front-row unit's (rows in between
+   * linearly): the front line takes most of a fight's damage, so back-row health is worth less. Domain knowledge, not
+   * fitted (final boards don't record who took damage).
+   */
+  backRowEhpWeight: 0.5,
   /** Healing from omnivamp, as a share of damage dealt that counts as extra health. */
   omnivampValue: 0.8,
   /** What a trait augment is worth to a board that doesn't play its trait (its grants still sell, its bonuses do nothing). */
   offTraitShare: 0.1,
   /** Units of a trait a board needs for the trait to count as played. */
   playedTraitUnits: 2,
+  /** What a random emblem whose trait the board doesn't play is still worth, as a share of a fitting one (held for a pivot, reforged). */
+  randomEmblemFloor: 0.2,
   /** What an unclear "who gets this" bonus is assumed to cover. */
   unknownScopeCoverage: 0.5,
   /** Items on the one champion an augment grants, when it scales per item on that champion. */
@@ -207,6 +217,8 @@ interface UnitState {
   abilityBase: number;
   crit: number;
   critMult: number;
+  /** Ability damage can crit too (Precision). */
+  abilityCrit: boolean;
   apBonus: number; // ability power as a fraction added to ability damage
   damageAmp: number;
   durability: number;
@@ -236,6 +248,7 @@ function unitState(u: PlacedUnit, def: SetUnit): UnitState {
     abilityBase: (baseAuto * A.abilityShare) / (1 - A.abilityShare),
     crit,
     critMult,
+    abilityCrit: false,
     apBonus: A.itemAbility * items,
     damageAmp: 0,
     durability: 0,
@@ -259,7 +272,7 @@ function dps(s: UnitState): number {
   const auto = s.ad * s.attackSpeed * (1 + crit);
   // Ability damage: its share of the unit's base damage, scaled by ability power and (partly) attack speed.
   const asGain = s.attackSpeed / 0.7 - 1;
-  const ability = s.abilityBase * (1 + s.apBonus) * (1 + A.abilityFromAttackSpeed * Math.max(0, asGain));
+  const ability = s.abilityBase * (1 + s.apBonus) * (1 + A.abilityFromAttackSpeed * Math.max(0, asGain)) * (1 + (s.abilityCrit ? crit : 0));
   return (auto + ability) * (1 + s.damageAmp);
 }
 
@@ -270,9 +283,23 @@ function dps(s: UnitState): number {
  */
 export function teamPower(states: UnitState[]): number {
   if (states.length === 0) return 0;
-  const hp = states.reduce((a, s) => a + ehp(s), 0);
+  const w = (row: number) => 1 - (1 - ASSUMPTIONS.backRowEhpWeight) * (row / (ROWS - 1));
+  const hp = states.reduce((a, s) => a + ehp(s) * w(s.row), 0);
   const dmg = states.reduce((a, s) => a + dps(s), 0);
   return Math.sqrt(hp * dmg);
+}
+
+/**
+ * How useful a random emblem is to the board: the share of the set's emblem traits it plays (playedTraitUnits or
+ * more units), never below randomEmblemFloor (an emblem can still be held for a later pivot, or reforged).
+ */
+export function randomEmblemUse(board: Board, data: SetData): number {
+  const emblemTraits = new Set(
+    data.items.filter((i) => i.kind === "emblem" && / Emblem$/i.test(i.name)).map((i) => i.name.replace(/ Emblem$/i, "").toLowerCase()),
+  );
+  if (emblemTraits.size === 0) return 1;
+  const played = computeTraits(board, data).filter((t) => t.count >= ASSUMPTIONS.playedTraitUnits && emblemTraits.has(t.name.toLowerCase())).length;
+  return Math.max(ASSUMPTIONS.randomEmblemFloor, played / emblemTraits.size);
 }
 
 // -------------------------------------------------------------- stat effects
@@ -366,6 +393,9 @@ function applyStat(s: UnitState, e: StatEffect, n: number, t: number, level: num
       break;
     case "as":
       s.attackSpeed *= 1 + pct;
+      break;
+    case "abilityCrit":
+      s.abilityCrit = true;
       break;
     case "crit":
       s.crit += pct;
@@ -501,12 +531,15 @@ function resourceParts(res: Resources, rec: Recurring | undefined, stage: string
 
   // Items: components count half, completed items one, artifacts and radiants a bit more.
   const itemsOf = (n: number, kind: string) => n * (A.itemEquivalents[kind] ?? 1);
-  let items = itemsOf(res.components ?? 0, "component") + itemsOf(res.completed ?? 0, "completed") + itemsOf(res.artifacts ?? 0, "artifact") + itemsOf(res.emblems ?? 0, "emblem") + itemsOf(res.radiants ?? 0, "radiant");
+  // Emblems here are random ones ("Gain 3 random Emblems"; a named emblem is under named): one is only as good as an
+  // item if its trait is one the board plays, so it counts at the share of the set's emblem traits this board plays.
+  const emblemUse = res.emblems ? randomEmblemUse(board, data) : 1;
+  let items = itemsOf(res.components ?? 0, "component") + itemsOf(res.completed ?? 0, "completed") + itemsOf(res.artifacts ?? 0, "artifact") + itemsOf(res.emblems ?? 0, "emblem") * emblemUse + itemsOf(res.radiants ?? 0, "radiant");
   for (const n of res.named ?? []) items += itemsOf(n.n, n.kind);
   if (rec?.components?.rounds && res.components) items += itemsOf(res.components * rec.components.rounds, "component");
   if (items) {
     const r = itemsDp(items, board, data);
-    const kinds = [res.components && `${fmt(res.components)} components`, res.completed && `${fmt(res.completed)} completed items`, res.artifacts && `${fmt(res.artifacts)} artifacts`, res.emblems && `${res.emblems} emblems`, res.radiants && `${fmt(res.radiants)} radiant items`, ...(res.named ?? []).map((n) => `${n.n} × ${n.name}`)].filter(Boolean);
+    const kinds = [res.components && `${fmt(res.components)} components`, res.completed && `${fmt(res.completed)} completed items`, res.artifacts && `${fmt(res.artifacts)} artifacts`, res.emblems && `${res.emblems} random emblems${emblemUse < 1 ? ` (${Math.round(emblemUse * 100)}% likely to fit)` : ""}`, res.radiants && `${fmt(res.radiants)} radiant items`, ...(res.named ?? []).map((n) => `${n.n} × ${n.name}`)].filter(Boolean);
     add(kinds.join(", "), r.dp, `about ${fmt(items)} items' worth${r.note ? `; ${r.note}` : ""}`);
   }
 
@@ -645,8 +678,10 @@ export function scoreAugment(
     for (const e of fx.effects) {
       const t = timing(e);
       let covered = 0;
-      for (const s of after) {
+      const order = e.maxUnits ? [...after].sort((a, b) => b.items - a.items) : after;
+      for (const s of order) {
         if (!appliesTo(e, s)) continue;
+        if (e.maxUnits && covered >= e.maxUnits) break;
         covered++;
         applyStat(s, e, perCount(e, after, board, data), t, board.level);
       }
@@ -700,8 +735,9 @@ export function scoreAugment(
 
 function describeEffect(e: StatEffect): string {
   const v = e.pct !== undefined ? `${+(e.pct * 100).toFixed(1)}%` : `${e.flat}${e.plusPerLevel ? ` (+${e.plusPerLevel} per level)` : ""}`;
-  const stat = { health: "health", armor: "armor", mr: "magic resist", ad: "attack damage", ap: "ability power", as: "attack speed", crit: "crit chance", critDmg: "crit damage", damageAmp: "damage amp", durability: "durability", omnivamp: "omnivamp" }[e.stat];
+  const stat = { health: "health", armor: "armor", mr: "magic resist", ad: "attack damage", ap: "ability power", as: "attack speed", crit: "crit chance", critDmg: "crit damage", damageAmp: "damage amp", durability: "durability", omnivamp: "omnivamp", abilityCrit: "ability damage can crit" }[e.stat];
   const who = { team: "team", holders: "item holders", unheld: "unequipped units", front: "front row", back: "back row", cost: `${e.cost}-cost units`, trait: `${e.trait} units`, unknown: "some units" }[e.scope];
+  if (e.stat === "abilityCrit") return `${stat} (${who})`;
   return `+${v} ${stat} (${who}${e.per ? `, per ${e.per}` : ""})`;
 }
 
