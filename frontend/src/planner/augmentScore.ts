@@ -204,6 +204,8 @@ export interface AugmentScore {
   parts: Part[];
   /** Plain reasons this is a rough number (assumed coverage, partly read text...). */
   caveats: string[];
+  /** With earlier picks given: what the augment would be worth without them (dp is then its value on top of them). */
+  alone?: number;
 }
 
 // ---------------------------------------------------------------- power model
@@ -882,6 +884,7 @@ export function scoreAugment(
   const { parts, caveats } = alone;
   let raw = alone.raw;
   let statLift = alone.statLift;
+  let aloneRaw: number | undefined;
 
   // On top of earlier picks: what the two together are worth, minus the picks alone. Picks built around a trait the
   // board doesn't play add almost nothing, so they're left out; so is a candidate like that (its value is mostly
@@ -905,16 +908,18 @@ export function scoreAugment(
       }
     }
     raw = marginal;
+    aloneRaw = alone.raw;
   }
 
   // Diminishing returns: keep the order, squeeze the very large totals (parts shrink with the total so the breakdown still adds up).
   const cap = ASSUMPTIONS.softCap;
-  const dp = raw > 0 ? cap * Math.tanh(raw / cap) : raw;
+  const squeeze = (x: number) => (x > 0 ? cap * Math.tanh(x / cap) : x);
+  const dp = squeeze(raw);
   if (raw > 0 && dp < raw) {
     for (const p of parts) p.dp *= dp / raw;
     if (dp < 0.9 * raw) caveats.push("a very large total is squeezed (diminishing returns)");
   }
-  return { ...base, dp, impact: dp, statLift, confidence: alone.confidence, parts, caveats };
+  return { ...base, dp, impact: dp, statLift, confidence: alone.confidence, parts, caveats, ...(aloneRaw !== undefined ? { alone: squeeze(aloneRaw) } : {}) };
 }
 
 function describeEffect(e: StatEffect): string {

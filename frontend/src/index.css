@@ -2588,7 +2588,7 @@ table.partners td:first-child {
 
 .augment-impact-row summary {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) minmax(40px, 90px) 54px 52px;
+  grid-template-columns: 28px minmax(0, 1fr) minmax(40px, 90px) 64px 52px;
   align-items: center;
   gap: 8px;
   padding: 4px 0;
@@ -2626,6 +2626,13 @@ table.partners td:first-child {
 .augment-impact-value {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/* With earlier picks: what the augment was worth without them. */
+.augment-impact-alone {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--text-dim);
 }
 
 .augment-impact-conf {
@@ -2670,7 +2677,7 @@ table.partners td:first-child {
 
 @media (max-width: 600px) {
   .augment-impact-row summary {
-    grid-template-columns: 28px minmax(0, 1fr) 54px 48px;
+    grid-template-columns: 28px minmax(0, 1fr) 64px 48px;
   }
   .augment-impact-bar {
     display: none;

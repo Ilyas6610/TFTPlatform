@@ -64,6 +64,13 @@ export function AugmentImpact({
     .filter((a): a is string => !!a)
     .map((a) => names.name(a));
 
+  // After a pick, move on to the next stage still open: its list is the one the pick changes.
+  const pick = (apiName: string) => {
+    onPick(slot, apiName);
+    const next = board.augments.findIndex((a, i) => i > slot && !a);
+    setSlot(next >= 0 ? next : slot);
+  };
+
   const scored = ranked.filter((r) => r.impact !== null);
   const unscored = ranked.filter((r) => r.impact === null);
   const top = scored[0]?.impact ?? 0;
@@ -117,7 +124,7 @@ export function AugmentImpact({
         <>
           <ul className="augment-impact-list">
             {shown.map((r) => (
-              <AugmentRow key={r.apiName} r={r} top={top} names={names} data={data} onPick={() => onPick(slot, r.apiName)} />
+              <AugmentRow key={r.apiName} r={r} top={top} names={names} data={data} earlier={earlierNames} onPick={() => pick(r.apiName)} />
             ))}
           </ul>
           {scored.length > SHOWN && (
@@ -183,7 +190,7 @@ function coverageText(c: ReturnType<typeof picksCoverage>): string {
   return `It covers ${said.join(" and ")}. An augment giving more of the same is worth less only for what goes past what's left.`;
 }
 
-function AugmentRow({ r, top, names, data, onPick }: { r: AugmentScore; top: number; names: Names; data: SetData; onPick: () => void }) {
+function AugmentRow({ r, top, names, data, earlier, onPick }: { r: AugmentScore; top: number; names: Names; data: SetData; earlier: string[]; onPick: () => void }) {
   const impact = r.impact ?? 0;
   const width = top > 0 ? Math.max(2, (Math.max(0, impact) / top) * 100) : 0;
   const desc = data.augments.find((a) => a.apiName === r.apiName)?.desc;
@@ -199,7 +206,14 @@ function AugmentRow({ r, top, names, data, onPick }: { r: AugmentScore; top: num
           <span className="augment-impact-bar" aria-hidden>
             <span className={impact < 0 ? "neg" : undefined} style={{ width: `${width}%` }} />
           </span>
-          <span className="augment-impact-value">{place(impact)}</span>
+          <span className="augment-impact-value">
+            {place(impact)}
+            {r.alone !== undefined && (
+              <small className="augment-impact-alone" title={`Without ${earlier.join(", ")}: ${place(r.alone)}`}>
+                {Math.abs(r.alone - impact) < 0.005 ? "unchanged" : `was ${place(r.alone)}`}
+              </small>
+            )}
+          </span>
           <span className={`augment-impact-conf conf-${r.confidence}`} title={CONFIDENCE_HINT[r.confidence]}>
             {r.confidence}
           </span>
