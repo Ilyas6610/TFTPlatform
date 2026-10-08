@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -46,19 +47,20 @@ func TestBackgroundJobs_PerClientQuota(t *testing.T) {
 		return true, nil
 	}
 	for i := 0; i < jobQuotaPerClient; i++ {
-		if !b.startFor("1.2.3.4", fmt.Sprint("k", i), time.Minute, time.Minute, job) {
+		if ok, _ := b.startFor("1.2.3.4", fmt.Sprint("k", i), time.Minute, time.Minute, job); !ok {
 			t.Fatalf("job %d refused within the quota", i)
 		}
 	}
-	if b.startFor("1.2.3.4", "one-too-many", time.Minute, time.Minute, job) {
-		t.Error("a job past the quota started")
+	ok, wait := b.startFor("1.2.3.4", "one-too-many", time.Minute, time.Minute, job)
+	if ok || wait < jobQuotaWindow-time.Second || wait > jobQuotaWindow {
+		t.Errorf("past the quota: started=%v, wait %v; want refused with ~%v to wait", ok, wait, jobQuotaWindow)
 	}
 	// Joining a run already in flight is free, even past the quota.
-	if !b.startFor("1.2.3.4", "k0", time.Minute, time.Minute, job) {
+	if ok, wait := b.startFor("1.2.3.4", "k0", time.Minute, time.Minute, job); !ok || wait != 0 {
 		t.Error("joining a running job was refused")
 	}
 	// Other clients and the server's own work aren't affected.
-	if !b.startFor("5.6.7.8", "other", time.Minute, time.Minute, job) {
+	if ok, _ := b.startFor("5.6.7.8", "other", time.Minute, time.Minute, job); !ok {
 		t.Error("another client was refused")
 	}
 	if !b.start("server-work", time.Minute, time.Minute, job) {
@@ -96,5 +98,29 @@ func TestLiveLookup_BudgetExhausted(t *testing.T) {
 	// A stored match never needs the budget.
 	if rec := get("NA1_7"); rec.Code != http.StatusOK {
 		t.Errorf("stored match: %d", rec.Code)
+	}
+}
+
+// Over the quota, the history page says why it isn't refreshing.
+func TestPlayerMatches_QuotaIsReported(t *testing.T) {
+	s, _ := newMatchServer(t)
+	block := make(chan struct{})
+	defer close(block)
+	// Use up the test client's quota with jobs that stay running.
+	for i := 0; i < jobQuotaPerClient; i++ {
+		s.jobs.startFor("192.0.2.1", fmt.Sprint("filler", i), time.Minute, time.Minute, func(ctx context.Context) (bool, error) {
+			<-block
+			return true, nil
+		})
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, meMatches, nil) // RemoteAddr 192.0.2.1
+	NewRouter(s).ServeHTTP(rec, req)
+	var resp PlayerMatchesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("%d %v %s", rec.Code, err, rec.Body)
+	}
+	if resp.Refreshing || !resp.Stale || resp.StaleReason != "client_quota" || rec.Header().Get("Retry-After") == "" {
+		t.Errorf("over quota: %+v, Retry-After %q; want a stale client_quota answer", resp, rec.Header().Get("Retry-After"))
 	}
 }

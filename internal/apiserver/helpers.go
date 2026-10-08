@@ -96,7 +96,9 @@ func riotErrorCode(err error) string {
 // address only (frontend/nginx.conf.template), so that header is used when
 // the connection itself comes from a private or loopback address; a direct
 // connection from a public address is identified by that address, so a
-// client reaching the API directly can't pick its own identity.
+// client reaching the API directly can't pick its own identity. The proxy
+// must overwrite the header (nginx: proxy_set_header X-Forwarded-For
+// $remote_addr), not append to a client-supplied one.
 func clientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {

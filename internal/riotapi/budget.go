@@ -64,10 +64,12 @@ func (b *Budget) Acquire(ctx context.Context, maxWait time.Duration) error {
 		if maxWait > 0 && wait > maxWait {
 			return &ErrBudgetExhausted{RetryAfter: wait}
 		}
+		t := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
+			t.Stop()
 			return ctx.Err()
-		case <-time.After(wait):
+		case <-t.C:
 		}
 	}
 }

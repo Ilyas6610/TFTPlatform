@@ -20,8 +20,8 @@ const (
 	// backfillTimeout bounds a run. A load's requests draw from the
 	// backfill share of the key (Server.RiotBackfill, RIOT_BUDGET_SPLIT),
 	// which on a personal key's default split is 20 per 2 minutes: 500
-	// games take ~50 minutes.
-	backfillTimeout = time.Hour
+	// games take ~50 minutes, so this leaves room for 429 pauses.
+	backfillTimeout = 2 * time.Hour
 	// backfillRecent is how long a finished load is reported and not rerun
 	// for its player; a failed one isn't retried for as long either.
 	backfillRecent = 10 * time.Minute

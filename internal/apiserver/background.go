@@ -56,13 +56,16 @@ type jobFunc func(ctx context.Context) (complete bool, err error)
 // after the call: running, or declined only because too many runs are in
 // flight (so the caller tells the client to poll again).
 func (b *backgroundJobs) start(key string, timeout, cooldown time.Duration, fn jobFunc) bool {
-	return b.startFor("", key, timeout, cooldown, fn)
+	pending, _ := b.startFor("", key, timeout, cooldown, fn)
+	return pending
 }
 
 // startFor is start on behalf of client (an IP; "" for the server's own
-// work): a new run also counts against client's quota, and past it the job
-// isn't started (reported as not pending, so the client stops polling).
-func (b *backgroundJobs) startFor(client, key string, timeout, cooldown time.Duration, fn jobFunc) bool {
+// work): a new run also counts against client's quota. Past it the job
+// isn't started (not pending, so the client stops polling) and overQuota
+// says how long until the client may start another, so the response can
+// say why nothing happened.
+func (b *backgroundJobs) startFor(client, key string, timeout, cooldown time.Duration, fn jobFunc) (pending bool, overQuota time.Duration) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.running == nil {
@@ -71,17 +74,19 @@ func (b *backgroundJobs) startFor(client, key string, timeout, cooldown time.Dur
 		b.starts = make(map[string][]time.Time)
 	}
 	if b.running[key] {
-		return true
+		return true, 0
 	}
 	if time.Now().Before(b.failed[key].retryAt) {
-		return false
+		return false, 0
 	}
 	if len(b.running) >= maxRunningJobs {
-		return true // busy: pending, retried on the client's next poll
+		return true, 0 // busy: pending, retried on the client's next poll
 	}
-	if client != "" && !b.takeQuotaLocked(client) {
-		log.Printf("background %s: %s is over its job quota", key, client)
-		return false
+	if client != "" {
+		if wait := b.takeQuotaLocked(client); wait > 0 {
+			log.Printf("background %s: %s is over its job quota", key, client)
+			return false, wait
+		}
 	}
 	b.running[key] = true
 
@@ -103,7 +108,7 @@ func (b *backgroundJobs) startFor(client, key string, timeout, cooldown time.Dur
 			delete(b.failed, key)
 		}
 	}()
-	return true
+	return true, 0
 }
 
 // pruneLocked drops failures whose cooldown is over once the table is
@@ -122,8 +127,10 @@ func (b *backgroundJobs) pruneLocked() {
 }
 
 // takeQuotaLocked records a new run for client if it's under
-// jobQuotaPerClient in the last jobQuotaWindow, and reports whether it was.
-func (b *backgroundJobs) takeQuotaLocked(client string) bool {
+// jobQuotaPerClient in the last jobQuotaWindow and returns 0; otherwise it
+// records nothing and returns how long until the oldest run leaves the
+// window.
+func (b *backgroundJobs) takeQuotaLocked(client string) time.Duration {
 	now := time.Now()
 	recent := b.starts[client]
 	for len(recent) > 0 && now.Sub(recent[0]) >= jobQuotaWindow {
@@ -131,7 +138,7 @@ func (b *backgroundJobs) takeQuotaLocked(client string) bool {
 	}
 	if len(recent) >= jobQuotaPerClient {
 		b.starts[client] = recent
-		return false
+		return recent[len(recent)-jobQuotaPerClient].Add(jobQuotaWindow).Sub(now)
 	}
 	if len(b.starts) >= maxQuotaClients {
 		// Forget clients with nothing in the window; the table stays
@@ -143,7 +150,7 @@ func (b *backgroundJobs) takeQuotaLocked(client string) bool {
 		}
 	}
 	b.starts[client] = append(recent, now)
-	return true
+	return 0
 }
 
 // isRunning reports whether a run for key is in flight.

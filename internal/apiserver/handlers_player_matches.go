@@ -3,6 +3,7 @@ package apiserver
 import (
 	"context"
 	"log"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -150,18 +151,19 @@ func (s *Server) handlePlayerMatches(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid_region", err.Error())
 			return
 		}
+		var overQuota time.Duration
 		switch {
 		case offset > 0 && len(matches) < limit:
 			// An older page not fully stored: fetch that page of Riot's ids.
 			// A finished run reports incomplete, which holds off a rerun for
 			// matchSyncCooldown, so a page Riot has nothing more for isn't
 			// re-requested by every poll.
-			resp.Refreshing = s.jobs.startFor(clientIP(r), key, matchSyncTimeout, matchSyncCooldown, func(ctx context.Context) (bool, error) {
+			resp.Refreshing, overQuota = s.jobs.startFor(clientIP(r), key, matchSyncTimeout, matchSyncCooldown, func(ctx context.Context) (bool, error) {
 				_, err := ingest.SyncOlderMatches(ctx, s.Riot, s.Store, platform, puuid, offset, limit)
 				return false, err
 			})
 		case offset == 0 && syncDue(r, syncedAt, &resp):
-			resp.Refreshing = s.jobs.startFor(clientIP(r), key, matchSyncTimeout, matchSyncCooldown, func(ctx context.Context) (bool, error) {
+			resp.Refreshing, overQuota = s.jobs.startFor(clientIP(r), key, matchSyncTimeout, matchSyncCooldown, func(ctx context.Context) (bool, error) {
 				result, err := ingest.SyncPlayerMatches(ctx, s.Riot, s.Store, platform, puuid, matchHistorySyncCount)
 				if err == nil && result.Stopped != "" {
 					log.Printf("match sync %s: stopped early: %s", puuid, result.Stopped)
@@ -176,11 +178,17 @@ func (s *Server) handlePlayerMatches(w http.ResponseWriter, r *http.Request) {
 				return result.Stopped == "", err
 			})
 		}
+		if overQuota > 0 {
+			// This client started too many syncs lately: say so instead of
+			// silently not refreshing.
+			w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(overQuota.Seconds()))))
+			resp.Stale, resp.StaleReason = true, "client_quota"
+		}
 	}
 	if !resp.Refreshing {
 		resp.Refreshing = s.jobs.isRunning(key)
 	}
-	if err := s.jobs.lastError(key); err != nil && !resp.Refreshing {
+	if err := s.jobs.lastError(key); err != nil && !resp.Refreshing && resp.StaleReason == "" {
 		resp.Stale = true
 		resp.StaleReason = riotErrorCode(err)
 	}

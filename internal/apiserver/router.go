@@ -18,9 +18,11 @@ import (
 // The three clients are views of that one client (riotapi.Client.WithBudget),
 // each drawing from its class's share of the key (RIOT_BUDGET_SPLIT):
 //   - Riot: background work a request triggers (history and rank syncs,
-//     older pages, ladder refreshes, name resolution); waits for its share.
-//   - RiotLive: lookups a request waits on (profile, match detail); when the
-//     on-demand share is used up it fails at once with
+//     older pages, ladder refreshes, name resolution); waits for its share
+//     (the rest of the on-demand share).
+//   - RiotLive: lookups a request waits on (profile, match detail), on a
+//     reserved third of the on-demand share so background work can't crowd
+//     them out; when it's used up it fails at once with
 //     riotapi.ErrBudgetExhausted, answered as 503 with Retry-After.
 //   - RiotBackfill: "Load whole set" loads, on their own share.
 //

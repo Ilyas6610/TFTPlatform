@@ -47,17 +47,21 @@ func main() {
 	limiter := riotapi.NewRateLimiter(cfg.RiotAppRateLimitPerSec, cfg.RiotAppRateLimitPer2Min)
 	riotClient := riotapi.NewClient(keySource, limiter)
 	// Views of that client, each on its class's share of the key
-	// (RIOT_BUDGET_SPLIT): request-triggered work and live lookups share the
-	// on-demand budget (live lookups fail fast rather than wait long), and
-	// whole-set loads have their own.
-	onDemand := riotapi.NewBudget(cfg.Share(cfg.Budget.OnDemand))
+	// (RIOT_BUDGET_SPLIT). The on-demand share is split again: a third is
+	// reserved for live lookups (a visitor waiting on a profile or match),
+	// which fail fast rather than wait long, so the request-triggered
+	// background work (history syncs) can't crowd them out. Whole-set loads
+	// have their own share.
+	liveShare := max(1, cfg.Budget.OnDemand/3)
+	live := riotapi.NewBudget(cfg.Share(liveShare))
+	jobs := riotapi.NewBudget(cfg.Share(cfg.Budget.OnDemand - liveShare))
 	backfill := riotapi.NewBudget(cfg.Share(cfg.Budget.Backfill))
-	log.Printf("riot budget: on-demand %d/s %d/2min, backfill %d/s %d/2min (split %+v)",
-		onDemand.PerSec, onDemand.Per2Min, backfill.PerSec, backfill.Per2Min, cfg.Budget)
+	log.Printf("riot budget: live %d/s %d/2min, jobs %d/s %d/2min, backfill %d/s %d/2min (split %+v)",
+		live.PerSec, live.Per2Min, jobs.PerSec, jobs.Per2Min, backfill.PerSec, backfill.Per2Min, cfg.Budget)
 
 	server := &apiserver.Server{
-		Riot:          riotClient.WithBudget(onDemand, 0),
-		RiotLive:      riotClient.WithBudget(onDemand, apiserver.LiveBudgetWait),
+		Riot:          riotClient.WithBudget(jobs, 0),
+		RiotLive:      riotClient.WithBudget(live, apiserver.LiveBudgetWait),
 		RiotBackfill:  riotClient.WithBudget(backfill, 0),
 		Store:         st,
 		StatsCacheTTL: cfg.StatsCacheTTL,

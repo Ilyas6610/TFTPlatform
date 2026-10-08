@@ -346,6 +346,7 @@ const STALE_REASONS: Record<string, string> = {
   riot_api_rate_limited: "Riot API rate limit reached",
   riot_api_timeout: "Riot API is busy",
   riot_api_busy: "too many live lookups right now; try again shortly",
+  client_quota: "too many refreshes from you just now; try again in a minute",
 };
 
 /** " (reason)" for a known staleReason, or "" — for "couldn't update" notices. */
