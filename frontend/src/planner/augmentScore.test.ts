@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SetData } from "../api/client";
-import { AugmentEffects, ASSUMPTIONS, EFFECTS, rankAugments, scoreAugment } from "./augmentScore";
+import { AugmentEffects, ASSUMPTIONS, EFFECTS, mergeEffects, rankAugments, scoreAugment } from "./augmentScore";
 import { ITEM_GAIN, itemGain } from "./boardValue";
 import { Board, COLS } from "./board";
 
@@ -329,5 +329,52 @@ describe("augment score: mechanisms added after the TFT Academy comparison", () 
     expect(emblems.impact!).toBeGreaterThan(0);
     expect(emblems.impact!).toBeLessThan(completed.impact! * 0.5);
     expect(emblems.parts[0].label).toMatch(/random emblems \(20% likely to fit\)/);
+  });
+});
+
+describe("augment score: on top of earlier picks", () => {
+  const effects: Record<string, AugmentEffects> = {
+    Items: { confidence: "high", resources: { completed: 4 } },
+    MoreItems: { confidence: "high", resources: { completed: 4 } },
+    Amp: { confidence: "high", effects: [{ kind: "stat", scope: "team", stat: "damageAmp", pct: 0.2 }] },
+    Tough: { confidence: "high", effects: [{ kind: "stat", scope: "team", stat: "health", pct: 0.2 }] },
+    OffTrait: { confidence: "high", traits: ["Nobody"], resources: { completed: 4 } },
+  };
+  const s = (id: string, given: string[] = []) => scoreAugment(aug(id), basic, data, "3-2", effects, given);
+
+  it("a second item augment adds less once the first has filled the free slots", () => {
+    const alone = s("MoreItems");
+    const after = s("MoreItems", ["Items"]);
+    expect(after.impact!).toBeGreaterThan(0);
+    expect(after.impact!).toBeLessThan(alone.impact! * 0.9);
+    expect(after.caveats[0]).toMatch(/with your earlier pick \(Items\): worth \d+% of what it adds alone/);
+    // The breakdown still adds up to the shown total.
+    expect(after.parts.reduce((a, p) => a + p.dp, 0)).toBeCloseTo(after.impact!, 6);
+  });
+
+  it("a stat bonus on top of another stat bonus is priced on the stronger team", () => {
+    const alone = s("Tough");
+    const afterAmp = s("Tough", ["Amp"]);
+    // Health after damage amp: the geometric mean makes them complements, so it's worth at least as much.
+    expect(afterAmp.statLift).toBeGreaterThan(alone.statLift * 0.99);
+    const twice = s("Amp", ["Amp"]);
+    expect(twice.impact).toBeCloseTo(s("Amp").impact!, 6); // a pick isn't counted against itself
+  });
+
+  it("ignores earlier picks built around a trait the board doesn't play", () => {
+    expect(s("Items", ["OffTrait"]).impact).toBeCloseTo(s("Items").impact!, 6);
+  });
+});
+
+describe("mergeEffects", () => {
+  it("adds resources, concatenates effects and keeps the larger per-round copies", () => {
+    const m = mergeEffects([
+      { confidence: "high", resources: { gold: 3, completed: 1, units: [{ n: 1, cost: 2, star: 1 }] }, effects: [{ kind: "stat", scope: "team", stat: "ad", pct: 0.1 }], recurring: { gold: { perRound: 2 }, copies: { perRound: 1, cost: 1 } } },
+      { confidence: "medium", resources: { gold: 4, units: [{ n: 2, cost: 1, star: 2 }] }, effects: [{ kind: "stat", scope: "team", stat: "as", pct: 0.1 }], recurring: { gold: { perRound: 1 }, copies: { perRound: 2, cost: 2 } } },
+    ]);
+    expect(m.resources).toMatchObject({ gold: 7, completed: 1 });
+    expect(m.resources!.units).toHaveLength(2);
+    expect(m.effects).toHaveLength(2);
+    expect(m.recurring).toMatchObject({ gold: { perRound: 3 }, copies: { perRound: 2, cost: 2 } });
   });
 });

@@ -2547,6 +2547,11 @@ table.partners td:first-child {
   vertical-align: middle;
 }
 
+.augment-impact-given {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+}
+
 .augment-impact-note {
   margin: 0 0 8px;
   font-size: 0.85rem;

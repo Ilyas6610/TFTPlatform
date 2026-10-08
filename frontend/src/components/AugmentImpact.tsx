@@ -47,8 +47,14 @@ export function AugmentImpact({
   const settled = useDeferredValue(board);
   const ranked = useMemo(() => {
     const offered = data.augments.filter((a) => availableAt(a, slot) && !settled.augments.some((c, i) => c === a.apiName && i !== slot));
-    return rankAugments(offered, settled, data, stage);
+    // Augments picked at earlier stages are already working: each one here is scored on top of them.
+    const earlier = settled.augments.slice(0, slot).filter((a): a is string => !!a);
+    return rankAugments(offered, settled, data, stage, undefined, earlier);
   }, [settled, data, slot, stage]);
+  const earlierNames = board.augments
+    .slice(0, slot)
+    .filter((a): a is string => !!a)
+    .map((a) => names.name(a));
 
   const scored = ranked.filter((r) => r.impact !== null);
   const unscored = ranked.filter((r) => r.impact === null);
@@ -73,6 +79,12 @@ export function AugmentImpact({
         ))}
       </div>
 
+      {earlierNames.length > 0 && board.units.length > 0 && (
+        <p className="muted augment-impact-given">
+          Scored on top of your {earlierNames.length > 1 ? "earlier picks" : "earlier pick"}: {earlierNames.join(", ")}. A second item or copy augment adds
+          less once the first has filled what the board needs.
+        </p>
+      )}
       {board.units.length === 0 ? (
         <p className="muted">Put units on the board to see how much each augment would add.</p>
       ) : (

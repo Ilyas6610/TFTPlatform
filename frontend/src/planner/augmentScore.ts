@@ -648,27 +648,25 @@ function strengthToPlacement(board: Board, data: SetData): number {
   return best > 0.001 ? ITEM_GAIN / best : 0;
 }
 
-/**
- * Scores one augment for the board, as if picked at `stage` ("2-1", "3-2" or
- * "4-2"). `effects` is overridable for tests.
- */
-export function scoreAugment(
-  aug: Pick<SetAugment, "apiName" | "name" | "tier">,
-  board: Board,
-  data: SetData,
-  stage: string,
-  effects: Record<string, AugmentEffects> = EFFECTS,
-): AugmentScore {
-  const base: AugmentScore = { apiName: aug.apiName, name: aug.name, tier: aug.tier, dp: null, impact: null, statLift: 0, confidence: "none", parts: [], caveats: [] };
-  const fx = effects[aug.apiName];
+/** Before the soft cap: the calibrated parts of one set of effects, and what's needed to describe them. */
+interface RawScore {
+  raw: number;
+  parts: Part[];
+  statLift: number;
+  confidence: Confidence;
+  caveats: string[];
+}
+
+/** Whether a trait augment's trait is played on the board (augments without traits always pass). */
+function traitPlayed(fx: AugmentEffects, board: Board, data: SetData): boolean {
+  if (!fx.traits?.length) return true;
+  const counts = new Map(computeTraits(board, data).map((t) => [t.name, t.count]));
+  return fx.traits.some((t) => (counts.get(t) ?? 0) >= ASSUMPTIONS.playedTraitUnits);
+}
+
+function rawScore(fx: AugmentEffects, board: Board, data: SetData, stage: string): RawScore {
   const defs = new Map(data.units.map((u) => [u.apiName, u]));
   const placed = board.units.filter((u) => defs.has(u.id));
-  if (!fx || fx.confidence === "none" || placed.length === 0) {
-    base.caveats.push(placed.length === 0 ? "put units on the board first" : "this augment's effect isn't modelled");
-    if (fx?.unparsed?.length) base.caveats.push(...fx.unparsed.map((t) => `not read: ${t}`));
-    return base;
-  }
-
   let confidence: Confidence = fx.confidence;
   const caveats: string[] = [];
   const parts: Part[] = [];
@@ -714,29 +712,132 @@ export function scoreAugment(
   if (fx.conditional?.length) caveats.push(...fx.conditional.map((t) => `counted at half, it depends on something happening: ${t}`));
 
   // Built around a trait this board doesn't play: only what sells or still applies counts.
-  if (fx.traits?.length) {
-    const counts = new Map(computeTraits(board, data).map((t) => [t.name, t.count]));
-    if (!fx.traits.some((t) => (counts.get(t) ?? 0) >= ASSUMPTIONS.playedTraitUnits)) {
-      const gate = ASSUMPTIONS.offTraitShare;
-      caveats.push(`built around ${fx.traits.join("/")}, which this board doesn't play: counted at ${gate * 100}%`);
-      confidence = lower(confidence);
-      for (const p of parts) {
-        p.dp *= gate;
-        if (p.lift !== undefined) p.lift *= gate;
-      }
-      statLift *= gate;
+  if (!traitPlayed(fx, board, data)) {
+    const gate = ASSUMPTIONS.offTraitShare;
+    caveats.push(`built around ${fx.traits!.join("/")}, which this board doesn't play: counted at ${gate * 100}%`);
+    confidence = lower(confidence);
+    for (const p of parts) {
+      p.dp *= gate;
+      if (p.lift !== undefined) p.lift *= gate;
     }
+    statLift *= gate;
   }
   for (const p of parts) p.dp *= cal;
+  return { raw: parts.reduce((a, p) => a + p.dp, 0), parts, statLift, confidence: parts.length === 0 ? "none" : confidence, caveats };
+}
+
+/**
+ * Several augments' effects as one, so the model can price them together: stat effects apply together (a second
+ * damage bonus lands on an already stronger team), and resources add up before they're priced (a second item
+ * augment fills the slots the first left, copies stop counting once the board has the ones it wants, gold runs out
+ * of things to buy). Trait gating isn't carried: callers leave out augments whose trait the board doesn't play.
+ */
+export function mergeEffects(list: AugmentEffects[]): AugmentEffects {
+  const out: AugmentEffects = { confidence: "high" };
+  const res: Resources = {};
+  const rec: Recurring = {};
+  const num = <T extends object>(dst: T, src: T | undefined) => {
+    for (const [k, v] of Object.entries(src ?? {})) if (typeof v === "number") (dst as any)[k] = ((dst as any)[k] ?? 0) + v;
+  };
+  for (const fx of list) {
+    if (fx.effects?.length) out.effects = [...(out.effects ?? []), ...fx.effects];
+    const c0 = fx.recurring;
+    // "N components (or XP) now and again for R rounds" multiplies that augment's own amount; turned into totals
+    // first, so the rounds can't multiply what another augment gives.
+    const r = fx.resources && {
+      ...fx.resources,
+      ...(fx.resources.components && c0?.components?.rounds ? { components: fx.resources.components * (1 + c0.components.rounds) } : {}),
+      ...(fx.resources.xp && c0?.xp?.rounds ? { xp: fx.resources.xp * (1 + c0.xp.rounds) } : {}),
+    };
+    if (r) {
+      num(res, r);
+      for (const k of ["units", "named", "duplicators"] as const) if (r[k]?.length) (res as any)[k] = [...((res as any)[k] ?? []), ...r[k]!];
+      if (r.benchTransform) res.benchTransform = { slots: (res.benchTransform?.slots ?? 0) + r.benchTransform.slots };
+      if (r.allOfCost && !res.allOfCost) res.allOfCost = r.allOfCost;
+    }
+    const c = fx.recurring;
+    if (c) {
+      for (const k of ["gold", "rerolls"] as const) if (c[k]) num(((rec as any)[k] ??= {}), c[k]);
+      if (c.xp?.perStage) num((rec.xp ??= {}), { perStage: c.xp.perStage }); // xp.rounds was folded into the total above
+      // Per-round copies of one champion: two such augments rarely give the same one, so the larger is kept.
+      if (c.copies && (!rec.copies || (c.copies.perRound ?? 0) > (rec.copies.perRound ?? 0))) rec.copies = { ...c.copies };
+    }
+  }
+  if (Object.keys(res).length) out.resources = res;
+  if (Object.keys(rec).length) out.recurring = rec;
+  return out;
+}
+
+// The picks' own score is the same for every candidate in a ranking: kept per board object, stage and picks.
+const picksCache = new WeakMap<Board, Map<string, RawScore>>();
+function picksAlone(pickFx: AugmentEffects[], picks: string[], board: Board, data: SetData, stage: string): RawScore {
+  const key = `${stage}|${data.version}|${picks.join(",")}`;
+  let m = picksCache.get(board);
+  if (!m) picksCache.set(board, (m = new Map()));
+  let r = m.get(key);
+  if (!r) m.set(key, (r = rawScore(mergeEffects(pickFx), board, data, stage)));
+  return r;
+}
+
+/**
+ * Scores one augment for the board, as if picked at `stage` ("2-1", "3-2" or "4-2"). `effects` is overridable for
+ * tests. `given` are augments already picked (earlier stages): the score is then what the augment adds on top of
+ * them, the model's value of the picks plus this one minus its value of the picks alone.
+ */
+export function scoreAugment(
+  aug: Pick<SetAugment, "apiName" | "name" | "tier">,
+  board: Board,
+  data: SetData,
+  stage: string,
+  effects: Record<string, AugmentEffects> = EFFECTS,
+  given: string[] = [],
+): AugmentScore {
+  const base: AugmentScore = { apiName: aug.apiName, name: aug.name, tier: aug.tier, dp: null, impact: null, statLift: 0, confidence: "none", parts: [], caveats: [] };
+  const fx = effects[aug.apiName];
+  const placed = board.units.filter((u) => data.units.some((d) => d.apiName === u.id));
+  if (!fx || fx.confidence === "none" || placed.length === 0) {
+    base.caveats.push(placed.length === 0 ? "put units on the board first" : "this augment's effect isn't modelled");
+    if (fx?.unparsed?.length) base.caveats.push(...fx.unparsed.map((t) => `not read: ${t}`));
+    return base;
+  }
+
+  const alone = rawScore(fx, board, data, stage);
+  const { parts, caveats } = alone;
+  let raw = alone.raw;
+  let statLift = alone.statLift;
+
+  // On top of earlier picks: what the two together are worth, minus the picks alone. Picks built around a trait the
+  // board doesn't play add almost nothing, so they're left out; so is a candidate like that (its value is mostly
+  // what sells).
+  const picks = given.filter((id) => id !== aug.apiName && effects[id] && effects[id].confidence !== "none" && traitPlayed(effects[id], board, data));
+  if (picks.length && traitPlayed(fx, board, data)) {
+    const pickFx = picks.map((id) => effects[id]);
+    const without = picksAlone(pickFx, picks, board, data, stage);
+    const together = rawScore(mergeEffects([...pickFx, fx]), board, data, stage);
+    const marginal = together.raw - without.raw;
+    statLift = together.statLift - without.statLift;
+    if (Math.abs(alone.raw) > 1e-9) {
+      const share = marginal / alone.raw;
+      for (const p of parts) {
+        p.dp *= share;
+        if (p.lift !== undefined) p.lift *= share;
+      }
+      if (Math.abs(share - 1) >= 0.05) {
+        const names = picks.map((id) => data.augments.find((a) => a.apiName === id)?.name ?? id).join(", ");
+        caveats.unshift(`with ${picks.length > 1 ? "your earlier picks" : "your earlier pick"} (${names}): worth ${Math.round(share * 100)}% of what it adds alone`);
+      }
+    }
+    raw = marginal;
+  }
+
   // Diminishing returns: keep the order, squeeze the very large totals (parts shrink with the total so the breakdown still adds up).
-  const raw = parts.reduce((a, p) => a + p.dp, 0);
   const cap = ASSUMPTIONS.softCap;
   const dp = raw > 0 ? cap * Math.tanh(raw / cap) : raw;
   if (raw > 0 && dp < raw) {
     for (const p of parts) p.dp *= dp / raw;
     if (dp < 0.9 * raw) caveats.push("a very large total is squeezed (diminishing returns)");
   }
-  return { ...base, dp, impact: dp, statLift, confidence: parts.length === 0 ? "none" : confidence, parts, caveats };
+  return { ...base, dp, impact: dp, statLift, confidence: alone.confidence, parts, caveats };
 }
 
 function describeEffect(e: StatEffect): string {
@@ -748,8 +849,15 @@ function describeEffect(e: StatEffect): string {
 }
 
 /** Scores the augments, best first; those that couldn't be scored come last. */
-export function rankAugments(augments: SetAugment[], board: Board, data: SetData, stage: string, effects: Record<string, AugmentEffects> = EFFECTS): AugmentScore[] {
+export function rankAugments(
+  augments: SetAugment[],
+  board: Board,
+  data: SetData,
+  stage: string,
+  effects: Record<string, AugmentEffects> = EFFECTS,
+  given: string[] = [],
+): AugmentScore[] {
   return augments
-    .map((a) => scoreAugment(a, board, data, stage, effects))
+    .map((a) => scoreAugment(a, board, data, stage, effects, given))
     .sort((a, b) => (b.impact ?? -Infinity) - (a.impact ?? -Infinity) || a.name.localeCompare(b.name));
 }
