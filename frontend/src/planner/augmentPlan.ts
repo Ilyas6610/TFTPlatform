@@ -64,7 +64,12 @@ export interface Plan {
 
 const copies = (star: number) => 3 ** (star - 1);
 
-export function buildPlan(board: Board, data: SetData): Plan {
+/**
+ * The plan for `board`. With `goal` (the same units in the same order, at the stars and items the player is aiming
+ * for: the planner's "my goal" mode, where `board` is the estimated position at a stage), carries are the goal's and
+ * each unit wants copies up to its goal star rather than the usual one for its cost.
+ */
+export function buildPlan(board: Board, data: SetData, goal?: Board): Plan {
   const defs = new Map(data.units.map((u) => [u.apiName, u]));
   const unitsOfCost: Record<number, number> = {};
   for (const u of data.units) {
@@ -72,11 +77,13 @@ export function buildPlan(board: Board, data: SetData): Plan {
     unitsOfCost[u.cost] = (unitsOfCost[u.cost] ?? 0) + 1;
   }
   // Carries: the units holding items; if the board holds few, its most valuable units.
+  // Carries and goal stars come from the goal when there is one (matched by position in the unit list).
+  const ref = goal ?? board;
   const value = (p: Board["units"][number]) => (defs.get(p.id)?.cost ?? 0) * copies(p.star);
-  const held = [...board.units].filter((p) => p.items.length > 0 && defs.has(p.id)).sort((a, b) => b.items.length - a.items.length || value(b) - value(a));
+  const held = [...ref.units].filter((p) => p.items.length > 0 && defs.has(p.id)).sort((a, b) => b.items.length - a.items.length || value(b) - value(a));
   const carries = new Set(held.slice(0, SHOP.maxCarries));
   if (carries.size < 2) {
-    for (const p of [...board.units].filter((x) => defs.has(x.id)).sort((a, b) => value(b) - value(a))) {
+    for (const p of [...ref.units].filter((x) => defs.has(x.id)).sort((a, b) => value(b) - value(a))) {
       if (carries.size >= SHOP.maxCarries) break;
       carries.add(p);
     }
@@ -84,16 +91,18 @@ export function buildPlan(board: Board, data: SetData): Plan {
   const targets: Target[] = [];
   let low = 0;
   let total = 0;
-  for (const p of board.units) {
+  board.units.forEach((p, i) => {
     const d = defs.get(p.id);
-    if (!d) continue;
-    if (carries.has(p)) {
-      total += value(p);
-      if (d.cost <= 3) low += value(p);
+    if (!d) return;
+    const r = goal ? goal.units[i] : p;
+    if (carries.has(r)) {
+      total += value(r);
+      if (d.cost <= 3) low += value(r);
     }
-    const remaining = Math.max(0, copies(SHOP.goalStar(d.cost)) - copies(p.star));
-    if (remaining > 0) targets.push({ id: p.id, cost: d.cost, star: p.star, remaining, weight: carries.has(p) ? 1 : SHOP.fillerWeight });
-  }
+    const goalStar = goal ? r.star : SHOP.goalStar(d.cost);
+    const remaining = Math.max(0, copies(goalStar) - copies(p.star));
+    if (remaining > 0) targets.push({ id: p.id, cost: d.cost, star: p.star, remaining, weight: carries.has(r) ? 1 : SHOP.fillerWeight });
+  });
   const lowCostShare = total > 0 ? low / total : 0;
   return {
     level: board.level,

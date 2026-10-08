@@ -3,7 +3,8 @@ import { SetData } from "../api/client";
 import { GameIcon } from "../assets/tft";
 import { AUGMENT_SLOTS, augmentTier, availableAt } from "../planner/augmentStages";
 import { SHOP } from "../planner/augmentPlan";
-import { ASSUMPTIONS, AugmentScore, Confidence, rankAugments } from "../planner/augmentScore";
+import { ASSUMPTIONS, AugmentScore, BoardMode, Confidence, rankAugments } from "../planner/augmentScore";
+import { STAGE_PROGRESS } from "../planner/goalProgress";
 import { BOARD_VALUE_FIT, ITEM_GAIN } from "../planner/boardValue";
 import { Board } from "../planner/board";
 import { Names } from "./stats";
@@ -42,6 +43,8 @@ export function AugmentImpact({
   const slot = slotChoice ?? (firstOpen >= 0 ? firstOpen : 0);
   const stage = AUGMENT_SLOTS[slot].stage;
   const [all, setAll] = useState(false);
+  // "goal": the board is what the player is building towards (the usual use of a planner); "now": what they have.
+  const [mode, setMode] = useState<BoardMode>("goal");
 
   // Ranking all the augments takes tens of milliseconds: let the board editing stay responsive and rank when it settles.
   const settled = useDeferredValue(board);
@@ -49,8 +52,9 @@ export function AugmentImpact({
     const offered = data.augments.filter((a) => availableAt(a, slot) && !settled.augments.some((c, i) => c === a.apiName && i !== slot));
     // Augments picked at earlier stages are already working: each one here is scored on top of them.
     const earlier = settled.augments.slice(0, slot).filter((a): a is string => !!a);
-    return rankAugments(offered, settled, data, stage, undefined, earlier);
-  }, [settled, data, slot, stage]);
+    return rankAugments(offered, settled, data, stage, undefined, earlier, mode);
+  }, [settled, data, slot, stage, mode]);
+  const progress = STAGE_PROGRESS[stage];
   const earlierNames = board.augments
     .slice(0, slot)
     .filter((a): a is string => !!a)
@@ -70,6 +74,24 @@ export function AugmentImpact({
         An estimate, not a measurement: Riot's match data has no augments, so nothing here is learned from augment results. Items, star-ups and stat
         bonuses are priced in average placement with a model fitted on {BOARD_VALUE_FIT.fittedOn.lobbies.toLocaleString()} stored lobbies; the rest is converted through the
         shop. Each row shows the gain in average placement: the longer the bar, the bigger the gain ("−0.31" means 0.31 places better). Open a row for the arithmetic.
+      </p>
+      <div className="augment-impact-mode" role="radiogroup" aria-label="What the board is">
+        <span className="muted">This board is</span>
+        {(
+          [
+            ["goal", "My goal"],
+            ["now", "What I have now"],
+          ] as const
+        ).map(([m, label]) => (
+          <button key={m} type="button" role="radio" aria-checked={mode === m} className={mode === m ? "active" : undefined} onClick={() => setMode(m)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="muted augment-impact-given">
+        {mode === "goal" && progress
+          ? `Priced from a typical position at ${stage} (level ${progress.level}, units up to ${progress.maxStar}★, about ${progress.items} item${progress.items === 1 ? "" : "s"}) towards this board: copies count towards its stars, items towards its item slots, stat bonuses on the finished board.`
+          : "Priced on the board as it is: its stars and items are already yours, so only what it still lacks counts."}
       </p>
       <div className="mode-tabs" role="tablist" aria-label="Augment stage">
         {AUGMENT_SLOTS.map((s, i) => (

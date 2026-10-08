@@ -30,6 +30,7 @@ import raw from "./augmentEffects.data.json";
 import { Plan, SHOP, buildPlan, copyPrice, hitChance } from "./augmentPlan";
 import { Board, COLS, PlacedUnit, ROWS, computeTraits } from "./board";
 import { ITEM_GAIN, copyGain, itemGain } from "./boardValue";
+import { boardAtStage } from "./goalProgress";
 
 export type Confidence = "high" | "medium" | "low" | "none";
 
@@ -432,16 +433,21 @@ const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
  * (a 3-star carry before a 1-star filler: the fit prices items by holder), a few spare
  * slots always count at a discount (swaps, tempo), and items beyond that count a little.
  */
-function itemsDp(n: number, board: Board, data: SetData): { dp: number; note?: string } {
+function itemsDp(n: number, board: Board, data: SetData, goal?: Board): { dp: number; note?: string } {
   const A = ASSUMPTIONS;
   const cost = new Map(data.units.map((u) => [u.apiName, u.cost]));
   const slots: { gain: number; who: string }[] = [];
-  for (const u of board.units) {
+  // Towards a goal that holds items, the free slots are the goal's: each unit up to its goal items, valued at its goal
+  // star. Without items in the goal (or without a goal), every unit up to a full carry.
+  const goalItems = goal?.units.some((u) => u.items.length > 0);
+  board.units.forEach((u, i) => {
     const c = cost.get(u.id);
-    if (!c) continue;
-    const g = itemGain(c, u.star);
-    for (let i = u.items.length; i < A.itemsPerCarry; i++) slots.push({ gain: g, who: `${c}-cost ${u.star}★` });
-  }
+    if (!c) return;
+    const target = goal ? goal.units[i] : u;
+    const capacity = goalItems ? target.items.length : A.itemsPerCarry;
+    const g = itemGain(c, target.star);
+    for (let k = u.items.length; k < capacity; k++) slots.push({ gain: g, who: `${c}-cost ${target.star}★` });
+  });
   slots.sort((a, b) => b.gain - a.gain);
   const carried = slots.slice(0, A.itemSlotsConsidered);
   while (carried.length < A.itemSlotFloor) carried.push({ gain: ITEM_GAIN * A.spareSlotShare, who: "spare" });
@@ -494,7 +500,7 @@ function goldDp(gold: number, plan: Plan): { dp: number; note: string } {
   return { dp, note };
 }
 
-function resourceParts(res: Resources, rec: Recurring | undefined, stage: string, plan: Plan, board: Board, data: SetData): Part[] {
+function resourceParts(res: Resources, rec: Recurring | undefined, stage: string, plan: Plan, board: Board, data: SetData, goal?: Board): Part[] {
   const A = ASSUMPTIONS;
   const f = stageFactors(stage);
   const parts: Part[] = [];
@@ -538,7 +544,7 @@ function resourceParts(res: Resources, rec: Recurring | undefined, stage: string
   for (const n of res.named ?? []) items += itemsOf(n.n, n.kind);
   if (rec?.components?.rounds && res.components) items += itemsOf(res.components * rec.components.rounds, "component");
   if (items) {
-    const r = itemsDp(items, board, data);
+    const r = itemsDp(items, board, data, goal);
     const kinds = [res.components && `${fmt(res.components)} components`, res.completed && `${fmt(res.completed)} completed items`, res.artifacts && `${fmt(res.artifacts)} artifacts`, res.emblems && `${res.emblems} random emblems${emblemUse < 1 ? ` (${Math.round(emblemUse * 100)}% likely to fit)` : ""}`, res.radiants && `${fmt(res.radiants)} radiant items`, ...(res.named ?? []).map((n) => `${n.n} × ${n.name}`)].filter(Boolean);
     add(kinds.join(", "), r.dp, `about ${fmt(items)} items' worth${r.note ? `; ${r.note}` : ""}`);
   }
@@ -664,9 +670,15 @@ function traitPlayed(fx: AugmentEffects, board: Board, data: SetData): boolean {
   return fx.traits.some((t) => (counts.get(t) ?? 0) >= ASSUMPTIONS.playedTraitUnits);
 }
 
-function rawScore(fx: AugmentEffects, board: Board, data: SetData, stage: string): RawScore {
+/**
+ * `board` is where the player is when the augment is picked (resources are priced from there); `goal`, in the
+ * planner's goal mode, is the board they're building towards: stat bonuses are priced on it (it's the board that
+ * has to win), and copies and items count towards its stars and item slots.
+ */
+function rawScore(fx: AugmentEffects, board: Board, data: SetData, stage: string, goal?: Board): RawScore {
   const defs = new Map(data.units.map((u) => [u.apiName, u]));
-  const placed = board.units.filter((u) => defs.has(u.id));
+  const statBoard = goal ?? board;
+  const placed = statBoard.units.filter((u) => defs.has(u.id));
   let confidence: Confidence = fx.confidence;
   const caveats: string[] = [];
   const parts: Part[] = [];
@@ -687,7 +699,7 @@ function rawScore(fx: AugmentEffects, board: Board, data: SetData, stage: string
         if (!appliesTo(e, s)) continue;
         if (e.maxUnits && covered >= e.maxUnits) break;
         covered++;
-        applyStat(s, e, perCount(e, after, board, data), t, board.level);
+        applyStat(s, e, perCount(e, after, statBoard, data), t, statBoard.level);
       }
       if (e.scope === "unknown") assumedScope = true;
       if (covered === 0) caveats.push(`no unit on this board is covered by "${describeEffect(e)}"`);
@@ -701,18 +713,18 @@ function rawScore(fx: AugmentEffects, board: Board, data: SetData, stage: string
     if (fx.effects.some((e) => e.per === "uniqueOther" || e.per === "trait")) caveats.push("scales per ally or unit; an average is assumed");
     if (fx.effects.some((e) => e.everySeconds || e.ramp || e.delay)) caveats.push(`timed bonus, averaged over a ${ASSUMPTIONS.fightSeconds}s fight`);
     if (Math.abs(statLift) > 1e-6) {
-      const k = strengthToPlacement(board, data);
+      const k = strengthToPlacement(statBoard, data);
       parts.push({ label: fx.effects.map(describeEffect).join(", "), dp: statLift * k, lift: statLift, note: `${(statLift * 100).toFixed(1)}% team strength` });
     }
   }
 
-  if (fx.resources || fx.recurring) parts.push(...resourceParts(fx.resources ?? {}, fx.recurring, stage, buildPlan(board, data), board, data));
+  if (fx.resources || fx.recurring) parts.push(...resourceParts(fx.resources ?? {}, fx.recurring, stage, buildPlan(board, data, goal), board, data, goal));
   if (fx.unparsed?.length) caveats.push(...fx.unparsed.map((t) => `not counted: ${t}`));
   if (fx.notes?.length) caveats.push(...fx.notes.map((t) => `not counted again: ${t}`));
   if (fx.conditional?.length) caveats.push(...fx.conditional.map((t) => `counted at half, it depends on something happening: ${t}`));
 
   // Built around a trait this board doesn't play: only what sells or still applies counts.
-  if (!traitPlayed(fx, board, data)) {
+  if (!traitPlayed(fx, statBoard, data)) {
     const gate = ASSUMPTIONS.offTraitShare;
     caveats.push(`built around ${fx.traits!.join("/")}, which this board doesn't play: counted at ${gate * 100}%`);
     confidence = lower(confidence);
@@ -770,13 +782,23 @@ export function mergeEffects(list: AugmentEffects[]): AugmentEffects {
 
 // The picks' own score is the same for every candidate in a ranking: kept per board object, stage and picks.
 const picksCache = new WeakMap<Board, Map<string, RawScore>>();
-function picksAlone(pickFx: AugmentEffects[], picks: string[], board: Board, data: SetData, stage: string): RawScore {
-  const key = `${stage}|${data.version}|${picks.join(",")}`;
+function picksAlone(pickFx: AugmentEffects[], picks: string[], board: Board, data: SetData, stage: string, mode: BoardMode): RawScore {
+  const key = `${stage}|${mode}|${data.version}|${picks.join(",")}`;
   let m = picksCache.get(board);
   if (!m) picksCache.set(board, (m = new Map()));
   let r = m.get(key);
-  if (!r) m.set(key, (r = rawScore(mergeEffects(pickFx), board, data, stage)));
+  if (!r) m.set(key, (r = scoreIn(mergeEffects(pickFx), board, data, stage, mode)));
   return r;
+}
+
+/**
+ * How the planner's board is read: "now" is the board the player has (its stars and items are already there), "goal"
+ * the board they're building towards (each stage is priced from the typical position by then, boardAtStage).
+ */
+export type BoardMode = "now" | "goal";
+
+function scoreIn(fx: AugmentEffects, board: Board, data: SetData, stage: string, mode: BoardMode): RawScore {
+  return mode === "goal" ? rawScore(fx, boardAtStage(board, stage, data), data, stage, board) : rawScore(fx, board, data, stage);
 }
 
 /**
@@ -791,6 +813,7 @@ export function scoreAugment(
   stage: string,
   effects: Record<string, AugmentEffects> = EFFECTS,
   given: string[] = [],
+  mode: BoardMode = "now",
 ): AugmentScore {
   const base: AugmentScore = { apiName: aug.apiName, name: aug.name, tier: aug.tier, dp: null, impact: null, statLift: 0, confidence: "none", parts: [], caveats: [] };
   const fx = effects[aug.apiName];
@@ -801,7 +824,7 @@ export function scoreAugment(
     return base;
   }
 
-  const alone = rawScore(fx, board, data, stage);
+  const alone = scoreIn(fx, board, data, stage, mode);
   const { parts, caveats } = alone;
   let raw = alone.raw;
   let statLift = alone.statLift;
@@ -812,8 +835,8 @@ export function scoreAugment(
   const picks = given.filter((id) => id !== aug.apiName && effects[id] && effects[id].confidence !== "none" && traitPlayed(effects[id], board, data));
   if (picks.length && traitPlayed(fx, board, data)) {
     const pickFx = picks.map((id) => effects[id]);
-    const without = picksAlone(pickFx, picks, board, data, stage);
-    const together = rawScore(mergeEffects([...pickFx, fx]), board, data, stage);
+    const without = picksAlone(pickFx, picks, board, data, stage, mode);
+    const together = scoreIn(mergeEffects([...pickFx, fx]), board, data, stage, mode);
     const marginal = together.raw - without.raw;
     statLift = together.statLift - without.statLift;
     if (Math.abs(alone.raw) > 1e-9) {
@@ -856,8 +879,9 @@ export function rankAugments(
   stage: string,
   effects: Record<string, AugmentEffects> = EFFECTS,
   given: string[] = [],
+  mode: BoardMode = "now",
 ): AugmentScore[] {
   return augments
-    .map((a) => scoreAugment(a, board, data, stage, effects, given))
+    .map((a) => scoreAugment(a, board, data, stage, effects, given, mode))
     .sort((a, b) => (b.impact ?? -Infinity) - (a.impact ?? -Infinity) || a.name.localeCompare(b.name));
 }

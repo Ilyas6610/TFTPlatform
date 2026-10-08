@@ -2547,6 +2547,29 @@ table.partners td:first-child {
   vertical-align: middle;
 }
 
+.augment-impact-mode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 2px;
+  font-size: 0.85rem;
+}
+
+.augment-impact-mode button {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.augment-impact-mode button.active {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
 .augment-impact-given {
   margin: 6px 0 0;
   font-size: 0.85rem;

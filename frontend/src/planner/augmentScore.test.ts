@@ -378,3 +378,32 @@ describe("mergeEffects", () => {
     expect(m.recurring).toMatchObject({ gold: { perRound: 3 }, copies: { perRound: 2, cost: 2 } });
   });
 });
+
+describe("augment score: the board as a goal", () => {
+  // A finished reroll board: two 3-star 1-cost carries holding items.
+  const cheap = { ...data, units: [...data.units, unit("Cheap", 1, 600, 50)] } as unknown as SetData;
+  const goal = board([placed("Cheap", 3 * COLS, ["IE", "JG", "GS"], 3), placed("Cheap", 3 * COLS + 1, ["IE", "JG", "GS"], 3), placed("Tank", 0, [], 2)]);
+  const fxCopies: Record<string, AugmentEffects> = { X: { confidence: "high", resources: { units: [{ n: 3, cost: 1, star: 1 }] } } };
+  const fxItems: Record<string, AugmentEffects> = { X: { confidence: "high", resources: { completed: 2 } } };
+
+  it("prices copies towards the goal's stars: worthless on the finished board, worth something on the way there", () => {
+    const now = scoreAugment(aug("X"), goal, cheap, "2-1", fxCopies, [], "now");
+    const toward = scoreAugment(aug("X"), goal, cheap, "2-1", fxCopies, [], "goal");
+    expect(toward.impact!).toBeGreaterThan(now.impact! * 3);
+  });
+
+  it("prices items towards the goal's item slots: full now, open early in the game", () => {
+    const now = scoreAugment(aug("X"), goal, cheap, "3-2", fxItems, [], "now");
+    const toward = scoreAugment(aug("X"), goal, cheap, "3-2", fxItems, [], "goal");
+    expect(toward.impact!).toBeGreaterThan(now.impact!);
+  });
+
+  it("estimates the position at a stage: stars capped, the goal's items to its carries first, a lower level", async () => {
+    const { boardAtStage } = await import("./goalProgress");
+    const at = boardAtStage(goal, "3-2", cheap);
+    expect(at.level).toBe(6);
+    expect(at.units.map((u) => u.star)).toEqual([2, 2, 2]);
+    expect(at.units.map((u) => u.items.length)).toEqual([2, 0, 0]);
+    expect(boardAtStage(goal, "2-1", cheap).units.every((u) => u.star === 1 && u.items.length === 0)).toBe(true);
+  });
+});

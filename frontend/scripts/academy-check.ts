@@ -2,7 +2,7 @@
 // where do the augments its authors recommend land in our ranking of what that stage offers?
 //
 //   node scripts/fetch-academy-reference.mjs                         # once; local, gitignored
-//   npx vite-node scripts/academy-check.ts <set data json> [--holdout]
+//   npx vite-node scripts/academy-check.ts <set data json> [--holdout] [--goal]
 //
 // It's a reference, not ground truth (a guide lists augments that suit the comp, not a ranking,
 // and its authors weigh things the model can't see), so it is never used to fit numbers. To keep
@@ -26,6 +26,9 @@ const args = process.argv.slice(2).filter((a) => !a.endsWith("academy-check.ts")
 const setFile = args.find((a) => !a.startsWith("--"));
 if (!setFile) throw new Error("usage: vite-node scripts/academy-check.ts <set data json> [--holdout]");
 const holdout = args.includes("--holdout");
+// --goal: read each guide's final board as the goal at every stage (the planner's "my goal" mode); otherwise the
+// early board stands for 2-1 and the final board for 3-2 and 4-2, read as the board the player has.
+const goalMode = args.includes("--goal");
 const data = JSON.parse(readFileSync(setFile, "utf8"));
 const ref = JSON.parse(readFileSync(join(__dirname, ".academy", "reference.json"), "utf8"));
 const unitById = new Map<string, any>(data.units.map((u: any) => [u.apiName, u]));
@@ -50,10 +53,11 @@ function toBoard(units: any[], level: number): Board {
   return { set: data.setNumber, title: "", level, augments: [null, null, null], units: placed };
 }
 
+const finalLevel = (c: any) => Math.max(8, Math.min(10, c.final.length));
 const STAGES = [
-  { label: "2-1", slot: 0, board: (c: any) => toBoard(c.early, Math.max(4, Math.min(6, c.early.length))) },
-  { label: "3-2", slot: 1, board: (c: any) => toBoard(c.final, 7) },
-  { label: "4-2", slot: 2, board: (c: any) => toBoard(c.final, Math.max(8, Math.min(10, c.final.length))) },
+  { label: "2-1", slot: 0, board: (c: any) => (goalMode ? toBoard(c.final, finalLevel(c)) : toBoard(c.early, Math.max(4, Math.min(6, c.early.length)))) },
+  { label: "3-2", slot: 1, board: (c: any) => (goalMode ? toBoard(c.final, finalLevel(c)) : toBoard(c.final, 7)) },
+  { label: "4-2", slot: 2, board: (c: any) => toBoard(c.final, finalLevel(c)) },
 ];
 
 type Row = { comp: string; ranked: string[]; scores: Map<string, number>; recs: string[] };
@@ -61,7 +65,7 @@ const pct = (list: string[], id: string) => list.indexOf(id) / Math.max(1, list.
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN);
 const f = (x: number) => (Number.isNaN(x) ? "  -  " : x.toFixed(3));
 
-console.log(`TFT Academy patch ${ref.patch}, fetched ${ref.fetchedAt.slice(0, 10)}; ${holdout ? "HELD-OUT" : "dev"} half: ${comps.length} of ${ref.comps.length} comps`);
+console.log(`TFT Academy patch ${ref.patch}, fetched ${ref.fetchedAt.slice(0, 10)}; ${holdout ? "HELD-OUT" : "dev"} half: ${comps.length} of ${ref.comps.length} comps; boards read as ${goalMode ? "the goal" : "what the player has"}`);
 let unknownRecs = 0;
 for (const st of STAGES) {
   const pool = data.augments.filter((a: any) => availableAt(a, st.slot));
@@ -69,7 +73,7 @@ for (const st of STAGES) {
   for (const c of comps) {
     const b = st.board(c);
     if (b.units.length === 0) continue;
-    const r = rankAugments(pool, b, data, st.label).filter((x) => x.impact !== null);
+    const r = rankAugments(pool, b, data, st.label, undefined, [], goalMode ? "goal" : "now").filter((x) => x.impact !== null);
     const ranked = r.map((x) => x.apiName);
     const recs = c.augments.filter((id: string) => ranked.includes(id));
     unknownRecs += c.augments.filter((id: string) => !augByName.has(id)).length;
