@@ -544,7 +544,9 @@ function resourceParts(res: Resources, rec: Recurring | undefined, stage: string
   }
 
   // Champions: a copy the board wants is worth its share of a star-up; any other champion sells for its gold.
-  const evUnit = (cost: number, star: number, name?: string, extraCopies = 0): { dp: number; note: string } => {
+  // use: copies that complete a star-up the board wants (what a reroll board's tempo multiplies); sell: the rest,
+  // worth only their gold.
+  const evUnit = (cost: number, star: number, name?: string, extraCopies = 0): { use: number; sell: number; note: string } => {
     const nCopies = 3 ** (star - 1) + extraCopies;
     const same = plan.targets.filter((t) => t.cost === cost);
     let hit = hitChance(cost, plan);
@@ -558,16 +560,19 @@ function resourceParts(res: Resources, rec: Recurring | undefined, stage: string
     }
     const useful = Math.min(nCopies, wanted);
     const sell = A.idleGold * cost;
-    const gotHit = useful * per + (nCopies - useful) * sell;
-    const miss = nCopies * sell;
     return {
-      dp: hit * gotHit + (1 - hit) * miss,
+      use: hit * useful * per,
+      sell: (hit * (nCopies - useful) + (1 - hit) * nCopies) * sell,
       note: hit > 0 ? `${Math.round(hit * 100)}% a copy the board wants (it needs ~${wanted.toFixed(0)} more)` : "no unit of that cost on the board still wants copies",
     };
   };
+  const addUnits = (label: string, use: number, sell: number, note: string) => {
+    if (use > 0 || sell === 0) add(label, use, note, true);
+    if (sell > 0) add(use > 0 ? `${label}: the rest sold` : `${label} (sold)`, sell, use > 0 ? "copies the board doesn't need sell for their gold" : note);
+  };
   for (const u of res.units ?? []) {
     const ev = evUnit(u.cost, u.star, u.name);
-    add(`${u.name ? u.name : `${u.n} × ${u.cost}-cost`}${u.star > 1 ? ` (${u.star}★)` : ""}`, u.n * ev.dp, ev.note, true);
+    addUnits(`${u.name ? u.name : `${u.n} × ${u.cost}-cost`}${u.star > 1 ? ` (${u.star}★)` : ""}`, u.n * ev.use, u.n * ev.sell, ev.note);
   }
   if (res.allOfCost) {
     const n = plan.unitsOfCost[res.allOfCost] ?? 0;
@@ -578,7 +583,8 @@ function resourceParts(res: Resources, rec: Recurring | undefined, stage: string
   if (rec?.copies?.perRound && rec.copies.cost) {
     const extra = rec.copies.perRound * f.rounds;
     const ev = evUnit(rec.copies.cost, 1, undefined, extra);
-    add(`another copy each round`, ev.dp - evUnit(rec.copies.cost, 1).dp, `${f.rounds} rounds left; ${ev.note}`, true);
+    const one = evUnit(rec.copies.cost, 1);
+    addUnits(`another copy each round`, ev.use - one.use, ev.sell - one.sell, `${f.rounds} rounds left; ${ev.note}`);
   }
   // Duplicators copy one unit each: the copy the board wants most (best gain per copy).
   for (const d of res.duplicators ?? []) {
