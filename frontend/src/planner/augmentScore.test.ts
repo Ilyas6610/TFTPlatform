@@ -137,6 +137,13 @@ describe("augment score: resources", () => {
     expect(comp.dp!).toBeCloseTo(done.dp!, 6);
   });
 
+  it("scales a fraction of an item smoothly (a lone component is half an item, not a whole one)", () => {
+    const at = (n: number) => scoreAugment(aug("X"), wants, data, "3-2", fx({ resources: { completed: n } })).dp!;
+    expect(at(0.5)).toBeCloseTo(at(1) / 2, 2); // (the soft cap bends it slightly)
+    const series = [0.5, 1, 1.5, 2, 3, 5].map(at);
+    for (let i = 1; i < series.length; i++) expect(series[i]).toBeGreaterThan(series[i - 1]);
+  });
+
   it("values an item by who can hold it: a 3-star carry before a 1-star filler", () => {
     const carry = board([placed("Carry", 21, ["A", "B", "C"], 3), placed("Tank", 0, [], 3)], 8); // only the 3-star tank has room
     const filler = board([placed("Carry", 21, ["A", "B", "C"], 1), placed("Tank", 0, [], 1)], 8); // only the 1-star tank has room

@@ -170,6 +170,8 @@ export interface Part {
   label: string;
   /** Placement this part is expected to gain (positive is better). */
   dp: number;
+  /** Copies of units: worth more on a board of cheap carries (see rerollTempo). */
+  copies?: boolean;
   /** For stat parts: the lift in team strength, as a fraction. */
   lift?: number;
   note?: string;
@@ -411,15 +413,19 @@ function itemsDp(n: number, board: Board, data: SetData): { dp: number; note?: s
   slots.sort((a, b) => b.gain - a.gain);
   const carried = slots.slice(0, A.itemSlotsConsidered);
   while (carried.length < A.itemSlotFloor) carried.push({ gain: ITEM_GAIN * A.spareSlotShare, who: "spare" });
+  // Whole items fill the best slots in turn; a fraction (a component is half an item) takes that share of the next slot.
   let dp = 0;
   const used: string[] = [];
-  let i = 0;
-  for (; i < Math.min(n, carried.length); i++) {
+  const whole = Math.floor(n);
+  for (let i = 0; i < Math.min(whole, carried.length); i++) {
     dp += carried[i].gain;
     used.push(carried[i].who);
   }
-  const frac = n - Math.floor(n); // components count half an item
-  if (frac > 0 && Math.floor(n) < carried.length) dp += carried[Math.floor(n)].gain * frac - (i > Math.floor(n) ? carried[Math.floor(n)].gain * (1 - frac) : 0);
+  const frac = n - whole;
+  if (frac > 0 && whole < carried.length) {
+    dp += carried[whole].gain * frac;
+    used.push(carried[whole].who);
+  }
   const over = Math.max(0, n - carried.length);
   dp += over * ITEM_GAIN * A.itemOverflowShare;
   const where = [...new Set(used)].slice(0, 3).join(", ");
@@ -456,14 +462,12 @@ function goldDp(gold: number, plan: Plan): { dp: number; note: string } {
   return { dp, note };
 }
 
-const isCopyPart = (label: string) => /duplicator|bench slots|another copy|copy of each|rerolls|cost\)|champion|-cost|\u2605/.test(label);
-
 function resourceParts(res: Resources, rec: Recurring | undefined, stage: string, plan: Plan, board: Board, data: SetData): Part[] {
   const A = ASSUMPTIONS;
   const f = stageFactors(stage);
   const parts: Part[] = [];
-  const add = (label: string, dp: number, note?: string) => {
-    if (Math.abs(dp) > 1e-9) parts.push({ label, dp, note });
+  const add = (label: string, dp: number, note?: string, copies = false) => {
+    if (Math.abs(dp) > 1e-9) parts.push({ label, dp, note, copies });
   };
   const xpShare = A.xpUsefulByLevel[Math.max(6, Math.min(10, board.level))] ?? 1;
   const nameOf = (id: string) => (data.units.find((u) => u.apiName === id)?.name ?? id).replace(/\s*\(.*\)$/, "");
@@ -490,7 +494,7 @@ function resourceParts(res: Resources, rec: Recurring | undefined, stage: string
   const rolls = (res.rerolls ?? 0) + (rec?.rerolls?.perRound ? rec.rerolls.perRound * f.rounds * 0.5 : 0) + (rec?.rerolls?.perStage ? rec.rerolls.perStage * f.stages : 0);
   if (rolls) {
     const g = goldDp(rolls * SHOP.rerollGold, plan);
-    add(`${fmt(rolls)} rerolls`, g.dp, `${(plan.rollIntent * 100).toFixed(0)}% of its gold is used rolling: ${g.note}`);
+    add(`${fmt(rolls)} rerolls`, g.dp, `${(plan.rollIntent * 100).toFixed(0)}% of its gold is used rolling: ${g.note}`, true);
   }
 
   // Items: components count half, completed items one, artifacts and radiants a bit more.
@@ -528,18 +532,18 @@ function resourceParts(res: Resources, rec: Recurring | undefined, stage: string
   };
   for (const u of res.units ?? []) {
     const ev = evUnit(u.cost, u.star, u.name);
-    add(`${u.name ? u.name : `${u.n} × ${u.cost}-cost`}${u.star > 1 ? ` (${u.star}★)` : ""}`, u.n * ev.dp, ev.note);
+    add(`${u.name ? u.name : `${u.n} × ${u.cost}-cost`}${u.star > 1 ? ` (${u.star}★)` : ""}`, u.n * ev.dp, ev.note, true);
   }
   if (res.allOfCost) {
     const n = plan.unitsOfCost[res.allOfCost] ?? 0;
     const wantedHere = plan.targets.filter((t) => t.cost === res.allOfCost);
     const dp = wantedHere.reduce((a, t) => a + copyGain(t.cost, t.star) * t.weight, 0) + Math.max(0, n - wantedHere.length) * A.idleGold * res.allOfCost;
-    add(`a copy of each ${res.allOfCost}-cost (${n})`, dp, `${wantedHere.length} of them are units the board wants`);
+    add(`a copy of each ${res.allOfCost}-cost (${n})`, dp, `${wantedHere.length} of them are units the board wants`, true);
   }
   if (rec?.copies?.perRound && rec.copies.cost) {
     const extra = rec.copies.perRound * f.rounds;
     const ev = evUnit(rec.copies.cost, 1, undefined, extra);
-    add(`another copy each round`, ev.dp - evUnit(rec.copies.cost, 1).dp, `${f.rounds} rounds left; ${ev.note}`);
+    add(`another copy each round`, ev.dp - evUnit(rec.copies.cost, 1).dp, `${f.rounds} rounds left; ${ev.note}`, true);
   }
   // Duplicators copy one unit each: the copy the board wants most (best gain per copy).
   for (const d of res.duplicators ?? []) {
@@ -559,7 +563,7 @@ function resourceParts(res: Resources, rec: Recurring | undefined, stage: string
       if (left <= 0) break;
     }
     dp += left * 2 * A.idleGold;
-    add(`${d.n} duplicator${d.n > 1 ? "s" : ""} (units up to ${d.maxCost}-cost)`, dp, used.length ? `copies of ${[...new Set(used)].join(", ")}` : `no unit up to ${d.maxCost}-cost still wants copies`);
+    add(`${d.n} duplicator${d.n > 1 ? "s" : ""} (units up to ${d.maxCost}-cost)`, dp, used.length ? `copies of ${[...new Set(used)].join(", ")}` : `no unit up to ${d.maxCost}-cost still wants copies`, true);
   }
   // Pandora's Bench: the rightmost bench slots become random champions of the same cost every round.
   if (res.benchTransform && plan.targets.length) {
@@ -571,11 +575,11 @@ function resourceParts(res: Resources, rec: Recurring | undefined, stage: string
     const rounds = f.rounds * A.benchUseShare;
     const per = pool.filter((t) => t.cost === cheapest).reduce((a, t) => a + copyGain(t.cost, t.star) * t.weight, 0) / Math.max(1, pool.filter((t) => t.cost === cheapest).length);
     const wantedCopies = pool.filter((t) => t.cost === cheapest).reduce((a, t) => a + t.remaining, 0);
-    add(`bench slots re-rolled every round`, Math.min(perRound * rounds, wantedCopies) * per, `${perRound.toFixed(2)} copies a round of your ${cheapest}-cost targets over ~${rounds.toFixed(0)} rounds`);
+    add(`bench slots re-rolled every round`, Math.min(perRound * rounds, wantedCopies) * per, `${perRound.toFixed(2)} copies a round of your ${cheapest}-cost targets over ~${rounds.toFixed(0)} rounds`, true);
   }
   // Early arrivals do more than the final board shows (see tempoPerStage), and copies most of all on a board of cheap carries.
   const copyTempo = 1 + A.rerollTempo * plan.lowCostShare;
-  for (const p of parts) p.dp *= f.tempo * (isCopyPart(p.label) ? copyTempo : 1);
+  for (const p of parts) p.dp *= f.tempo * (p.copies ? copyTempo : 1);
   return parts;
 }
 
