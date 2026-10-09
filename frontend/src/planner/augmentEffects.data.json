@@ -2489,10 +2489,10 @@
    "confidence": "high"
   },
   "DA_PrismaticTicket": {
-   "confidence": "none",
-   "unparsed": [
-    "Each time your shop is rerolled you have a 45% chance to gain a free reroll."
-   ]
+   "resources": {
+    "rerollRefund": 0.45
+   },
+   "confidence": "high"
   },
   "DA_PromisedProtection": {
    "effects": [

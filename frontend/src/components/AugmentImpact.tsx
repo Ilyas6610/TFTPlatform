@@ -43,6 +43,8 @@ export function AugmentImpact({
   const slot = slotChoice ?? (firstOpen >= 0 ? firstOpen : 0);
   const stage = AUGMENT_SLOTS[slot].stage;
   const [all, setAll] = useState(false);
+  // An in-game offer is three augments of one tier: 0 shows every tier, 1-3 one of them.
+  const [tierShown, setTierShown] = useState(0);
   // "goal": the board is what the player is building towards (the usual use of a planner); "now": what they have.
   const [mode, setMode] = useState<BoardMode>("goal");
 
@@ -71,8 +73,10 @@ export function AugmentImpact({
     setSlot(next >= 0 ? next : slot);
   };
 
-  const scored = ranked.filter((r) => r.impact !== null);
-  const unscored = ranked.filter((r) => r.impact === null);
+  const inTier = ranked.filter((r) => tierShown === 0 || augmentTier(r) === tierShown);
+  const scored = inTier.filter((r) => r.impact !== null);
+  const unscored = inTier.filter((r) => r.impact === null);
+  const tierCount = (t: number) => ranked.filter((r) => r.impact !== null && augmentTier(r) === t).length;
   const top = scored[0]?.impact ?? 0;
   const shown = all ? scored : scored.slice(0, SHOWN);
 
@@ -108,6 +112,14 @@ export function AugmentImpact({
         {AUGMENT_SLOTS.map((s, i) => (
           <button key={s.stage} type="button" role="tab" aria-selected={slot === i} onClick={() => setSlot(i)}>
             {s.stage} <span className="muted">{board.augments[i] ? names.name(board.augments[i]!) : s.label.split(" ")[0]}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="augment-impact-tiers" role="radiogroup" aria-label="Augment tier">
+        {[0, 1, 2, 3].map((t) => (
+          <button key={t} type="button" role="radio" aria-checked={tierShown === t} className={tierShown === t ? "active" : undefined} onClick={() => setTierShown(t)}>
+            {t === 0 ? "All tiers" : `${TIER[t]} (${tierCount(t)})`}
           </button>
         ))}
       </div>
@@ -186,8 +198,8 @@ function coverageText(c: ReturnType<typeof picksCoverage>): string {
     const left = Math.max(0, c.itemSlots - c.items);
     said.push(`${+c.items.toFixed(1)} items' worth of the ${c.itemSlots} item slots that count most (${left > 0 ? `${+left.toFixed(1)} left` : "all filled"})`);
   }
-  if (said.length === 0) return "It gives no copies or items, so only augments whose stat bonuses stack with it change.";
-  return `It covers ${said.join(" and ")}. An augment giving more of the same is worth less only for what goes past what's left.`;
+  if (said.length === 0) return "Every augment adds less once earlier picks have lifted the board (it can only place so much higher).";
+  return `It covers ${said.join(" and ")}. More of the same counts only for what's left, and every augment adds less once earlier picks have lifted the board (it can only place so much higher).`;
 }
 
 function AugmentRow({ r, top, names, data, earlier, onPick }: { r: AugmentScore; top: number; names: Names; data: SetData; earlier: string[]; onPick: () => void }) {

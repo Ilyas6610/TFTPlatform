@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SetData } from "../api/client";
 import { AugmentEffects, ASSUMPTIONS, EFFECTS, mergeEffects, picksCoverage, rankAugments, scoreAugment } from "./augmentScore";
 import { ITEM_GAIN, itemGain } from "./boardValue";
@@ -30,6 +30,16 @@ const basic = board([placed("Tank", 0), placed("Carry", 3 * COLS, ["IE", "JG"])]
 
 const aug = (apiName: string) => ({ apiName, name: apiName, tier: 2 });
 const fx = (e: Partial<AugmentEffects> & { confidence?: AugmentEffects["confidence"] }): Record<string, AugmentEffects> => ({ X: { confidence: "high", ...e } as AugmentEffects });
+
+// The tests below price each mechanism on its own: the player's own rolling (which finds copies before augments do) is
+// off unless a test turns it on.
+const OWN_ROLL = ASSUMPTIONS.ownRollGold;
+beforeEach(() => {
+  ASSUMPTIONS.ownRollGold = {};
+});
+afterEach(() => {
+  ASSUMPTIONS.ownRollGold = OWN_ROLL;
+});
 
 describe("augment score: stats", () => {
   it("scores team stat bonuses by the strength they add, and more of a stat is worth more", () => {
@@ -361,6 +371,15 @@ describe("augment score: on top of earlier picks", () => {
     expect(twice.impact).toBeCloseTo(s("Amp").impact!, 6); // a pick isn't counted against itself
   });
 
+  it("the cap holds for the picks together: after a strong pick, even an unrelated augment adds less", () => {
+    const strong: Record<string, AugmentEffects> = { ...effects, Big: { confidence: "high", resources: { completed: 40 } } };
+    const t = (id: string, given: string[] = []) => scoreAugment(aug(id), basic, data, "3-2", strong, given);
+    const after = t("Amp", ["Big"]);
+    expect(after.impact!).toBeLessThan(t("Amp").impact! * 0.8);
+    expect(after.alone).toBeCloseTo(t("Amp").impact!, 6);
+    expect(after.parts.reduce((a, p) => a + p.dp, 0)).toBeCloseTo(after.impact!, 6);
+  });
+
   it("ignores earlier picks built around a trait the board doesn't play", () => {
     expect(s("Items", ["OffTrait"]).impact).toBeCloseTo(s("Items").impact!, 6);
   });
@@ -424,5 +443,30 @@ describe("augment score: the board as a goal", () => {
     expect(at.units.map((u) => u.star)).toEqual([2, 2, 2]);
     expect(at.units.map((u) => u.items.length)).toEqual([2, 0, 0]);
     expect(boardAtStage(goal, "2-1", cheap).units.every((u) => u.star === 1 && u.items.length === 0)).toBe(true);
+  });
+});
+
+describe("augment score: the player's own rolling", () => {
+  // The 2-cost Tank (2★) wants 6 more copies.
+  const fx2: Record<string, AugmentEffects> = {
+    Dup: { confidence: "high", resources: { duplicators: [{ n: 4, maxCost: 3 }] } },
+    Ticket: { confidence: "high", resources: { rerollRefund: 0.45 } },
+  };
+  const d = (id: string, given: string[] = []) => scoreAugment(aug(id), basic, data, "3-2", fx2, given);
+
+  it("copies the player would find rolling aren't wanted from augments", () => {
+    const without = d("Dup").impact!;
+    ASSUMPTIONS.ownRollGold = { "3-2": 30 };
+    expect(d("Dup").impact!).toBeLessThan(without);
+    expect(picksCoverage([], basic, data, "3-2", "now", fx2).copiesWanted).toBeLessThan(6);
+  });
+
+  it("a reroll refund stretches the player's rolling gold, and leaves less for copy augments", () => {
+    expect(d("Ticket").impact).toBe(0); // nothing to stretch without rolling
+    ASSUMPTIONS.ownRollGold = { "3-2": 10 };
+    const ticket = d("Ticket");
+    expect(ticket.impact!).toBeGreaterThan(0);
+    expect(ticket.parts[0].note).toMatch(/1\.8× as far/);
+    expect(d("Dup", ["Ticket"]).impact!).toBeLessThan(d("Dup").impact!);
   });
 });

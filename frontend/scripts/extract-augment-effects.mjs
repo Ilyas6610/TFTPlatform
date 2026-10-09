@@ -244,6 +244,10 @@ function parseAugment(a, itemsByName, unitCosts) {
     take(/(?:now and|then)\s+(\d+)\s+(?:every|each) round/gi, (m) => {
       if (/re-?roll/i.test(s)) (recurring.rerolls ??= {}).perRound = Number(m[1]);
     });
+    // "Each time your shop is rerolled you have a 45% chance to gain a free reroll"
+    take(/(\d+)%\s+chance to (?:gain|get)\s+a\s+free\s+(?:Shop\s+)?re-?roll/gi, (m) => {
+      if (/rerolled/i.test(s)) res.rerollRefund = Number(m[1]) / 100;
+    });
     take(/(?:gain|get)\s+(a|an)\s+(?:free\s+)?Shop reroll/gi, (m) => {
       res.rerolls += count(m[1]);
       if (/every round/i.test(s)) (recurring.rerolls ??= {}).perRound = count(m[1]);
@@ -374,7 +378,7 @@ function parseAugment(a, itemsByName, unitCosts) {
 
   const resourceTotal =
     res.gold + res.xp + res.rerolls + res.components + res.completed + res.artifacts + res.emblems + (res.radiants ?? 0) + res.units.length + res.named.length +
-    (res.duplicators?.length ?? 0) + (res.benchTransform ? 1 : 0) + (res.allOfCost ? 1 : 0);
+    (res.duplicators?.length ?? 0) + (res.benchTransform ? 1 : 0) + (res.allOfCost ? 1 : 0) + (res.rerollRefund ? 1 : 0);
   const hasResources = resourceTotal > 0 || Object.keys(recurring).length > 0;
   const out = {};
   if (effects.length) out.effects = effects;

@@ -27,7 +27,7 @@
 
 import { SetAugment, SetData, SetUnit } from "../api/client";
 import raw from "./augmentEffects.data.json";
-import { Plan, SHOP, buildPlan, copyPrice, hitChance } from "./augmentPlan";
+import { Plan, SHOP, SHOP_ODDS, buildPlan, hitChance } from "./augmentPlan";
 import { Board, COLS, PlacedUnit, ROWS, computeTraits } from "./board";
 import { ITEM_GAIN, copyGain, itemGain } from "./boardValue";
 import { boardAtStage } from "./goalProgress";
@@ -60,6 +60,8 @@ export interface Resources {
   gold?: number;
   xp?: number;
   rerolls?: number;
+  /** Chance that a reroll gives a free one back ("each time your shop is rerolled, 45% chance to gain a free reroll"). */
+  rerollRefund?: number;
   components?: number;
   completed?: number;
   artifacts?: number;
@@ -169,6 +171,18 @@ export const ASSUMPTIONS = {
   rerollTempo: 6,
   /** No augment moves a placement by more than about this: totals are squeezed towards it (tanh), keeping their order. */
   softCap: 0.8,
+  /**
+   * With earlier picks, the cap holds for all the augments together and grows as (number of augments)^this: 1 lets two
+   * augments move placement by up to ~1.6 and three by ~2.4. An augment is worth what it adds to the squeezed total
+   * (both totals under the same cap), so a pick after a strong one has less room left.
+   */
+  combinedCapGrowth: 1,
+  /**
+   * Gold the player rolls with from that stage on, before the board's roll intent (a reroll board uses all of it, one
+   * of expensive carries about a third). The copies it buys come first: an augment's copies count only for what the
+   * player's own rolling wouldn't find, and a reroll refund multiplies this gold. A typical game's rolling, not measured.
+   */
+  ownRollGold: { "2-1": 100, "3-2": 80, "4-2": 50 } as Record<string, number>,
   /** Share of the rounds left in which the re-rolled bench slots hold spare units of the cost you want. */
   benchUseShare: 0.4,
   /**
@@ -480,33 +494,38 @@ function itemSlots(board: Board, data: SetData, goal?: Board): { gain: number; w
 }
 
 /**
- * Placement gained by `gold` spent on the copies the board wants: the best gain
- * per gold first (a copy's gain over what it costs to roll), only as many copies
- * as each unit still needs; the rest is idle. A board that doesn't roll uses
- * little of it that way.
+ * Placement gained by `gold` spent rolling for the copies the board wants. One roll shows every wanted unit at once
+ * (a board waiting on five 3-costs hits one of them far more often than any one of them), so gold buys rolls, each
+ * finding the expected copies of every unit still short of its goal (the standard odds, 5 slots) and paying for them.
+ * Only `rollIntent` of the gold is used that way (a board of expensive carries rolls little); the rest is idle.
+ * What it buys comes off the plan's counts (the caller's own copy).
  */
 function goldDp(gold: number, plan: Plan): { dp: number; note: string } {
   const A = ASSUMPTIONS;
   const spendable = gold * plan.rollIntent;
-  const options = plan.targets
-    .map((t) => ({ t, price: copyPrice(t.cost, plan), gain: copyGain(t.cost, t.star) * t.weight }))
-    .filter((o) => o.gain > 0)
-    .sort((a, b) => b.gain / b.price - a.gain / a.price);
+  const odds = SHOP_ODDS[Math.max(1, Math.min(10, plan.level))] ?? SHOP_ODDS[10];
+  const perRoll = (cost: number) => (SHOP.slots * (odds[cost - 1] ?? 0)) / 100 / Math.max(1, plan.unitsOfCost[cost] ?? 1);
   let left = spendable;
   let dp = 0;
   let copies = 0;
-  for (const o of options) {
-    const take = Math.min(o.t.remaining, left / o.price);
-    if (take <= 0) continue;
-    dp += take * o.gain;
-    copies += take;
-    o.t.remaining -= take; // the plan is resourceParts' own copy: later gold can't buy the same copies again
-    left -= take * o.price;
-    if (left <= 0) break;
+  for (let i = 0; i < 400 && left > 1e-6; i++) {
+    const open = plan.targets.filter((t) => t.remaining > 1e-6 && perRoll(t.cost) > 0);
+    if (open.length === 0) break;
+    // One roll: its price, and what it finds (never more than a unit still wants).
+    const hits = open.map((t) => Math.min(t.remaining, perRoll(t.cost)));
+    const price = SHOP.rerollGold + open.reduce((a, t, k) => a + hits[k] * t.cost, 0);
+    const share = Math.min(1, left / price);
+    open.forEach((t, k) => {
+      const n = hits[k] * share;
+      dp += n * copyGain(t.cost, t.star) * t.weight;
+      copies += n;
+      t.remaining -= n;
+    });
+    left -= price * share;
   }
   const idle = left + (gold - spendable);
   dp += idle * A.idleGold;
-  const note = copies > 0.05 ? `buys about ${copies.toFixed(1)} copies the board wants` : "nothing the board still needs to buy: idle gold";
+  const note = copies > 0.05 ? `finds about ${copies.toFixed(1)} copies the board wants` : "nothing the board still needs to buy: idle gold";
   return { dp, note };
 }
 
@@ -522,13 +541,17 @@ function itemEquivalents(res: Resources, rec: Recurring | undefined, board: Boar
   return items;
 }
 
-function resourceParts(res: Resources, rec: Recurring | undefined, stage: string, sharedPlan: Plan, board: Board, data: SetData, goal?: Board, out?: { copiesLeft: number }): Part[] {
+function resourceParts(res: Resources, rec: Recurring | undefined, stage: string, sharedPlan: Plan, board: Board, data: SetData, goal?: Board, out?: { copiesLeft: number; copiesWanted: number }): Part[] {
   const A = ASSUMPTIONS;
   // One count of the copies each unit still needs, shared by every source below (and, through mergeEffects, by
   // several augments): copies one source covers aren't wanted again from the next. Sources that give specific copies
   // go first, gold last (it can buy whatever is still missing).
   const plan: Plan = { ...sharedPlan, targets: sharedPlan.targets.map((t) => ({ ...t })) };
   const take = (t: Plan["targets"][number], n: number) => (t.remaining = Math.max(0, t.remaining - n));
+  // The player's own rolling finds copies too: those aren't wanted from augments.
+  const ownGold = A.ownRollGold[stage] ?? 0;
+  goldDp(ownGold, plan);
+  if (out) out.copiesWanted = plan.targets.reduce((a, t) => a + t.remaining, 0);
   const f = stageFactors(stage);
   const parts: Part[] = [];
   const add = (label: string, dp: number, note?: string, copies = false) => {
@@ -632,6 +655,12 @@ function resourceParts(res: Resources, rec: Recurring | undefined, stage: string
     const got = Math.min(perRound * rounds, wantedCopies);
     for (const t of cheap) take(t, wantedCopies > 0 ? (got * t.remaining) / wantedCopies : 0);
     add(`bench slots re-rolled every round`, got * per, `${perRound.toFixed(2)} copies a round of your ${cheapest}-cost targets over ~${rounds.toFixed(0)} rounds`, true);
+  }
+  // A reroll refund: each paid reroll gives another with chance p, so the player's rolling gold goes 1/(1-p) times as far.
+  if (res.rerollRefund) {
+    const p = Math.min(0.9, res.rerollRefund);
+    const g = goldDp((ownGold * p) / (1 - p), plan);
+    add(`free rerolls (${Math.round(p * 100)}% a reroll)`, g.dp, `your ~${ownGold} gold of rolling goes ${(1 / (1 - p)).toFixed(1)}× as far; ${g.note}`, true);
   }
   // Gold: now, per round, per stage; XP counts as gold while the level still matters; a reroll saves its gold.
   const gold = res.gold ?? 0;
@@ -846,12 +875,12 @@ export function picksCoverage(given: string[], board: Board, data: SetData, stag
   const goal = mode === "goal" ? board : undefined;
   const fx = mergeEffects(given.map((id) => effects[id]).filter((e) => e && e.confidence !== "none"));
   const plan = buildPlan(at, data, goal);
-  const copiesWanted = plan.targets.reduce((a, t) => a + t.remaining, 0);
-  const out = { copiesLeft: copiesWanted };
-  if (fx.resources || fx.recurring) resourceParts(fx.resources ?? {}, fx.recurring, stage, plan, at, data, goal, out);
+  const out = { copiesLeft: 0, copiesWanted: 0 };
+  resourceParts(fx.resources ?? {}, fx.recurring, stage, plan, at, data, goal, out);
   return {
-    copiesWanted,
-    copiesCovered: copiesWanted - out.copiesLeft,
+    /** Copies still wanted after the player's own rolling. */
+    copiesWanted: out.copiesWanted,
+    copiesCovered: out.copiesWanted - out.copiesLeft,
     itemSlots: itemSlots(at, data, goal).length,
     items: fx.resources ? itemEquivalents(fx.resources, fx.recurring, at, data) : 0,
   };
@@ -882,44 +911,46 @@ export function scoreAugment(
 
   const alone = scoreIn(fx, board, data, stage, mode);
   const { parts, caveats } = alone;
-  let raw = alone.raw;
+  // Diminishing returns: a board can only place so much better. Totals are squeezed towards a cap (tanh, so the order
+  // is kept); with earlier picks the cap holds for all of them together, growing with their number, and an augment is
+  // worth what it adds to the squeezed total: after a strong pick, the next one has less room left.
+  const squeeze = (x: number, k: number) => {
+    const c = ASSUMPTIONS.softCap * k ** ASSUMPTIONS.combinedCapGrowth;
+    return x > 0 ? c * Math.tanh(x / c) : x;
+  };
+  let dp = squeeze(alone.raw, 1);
   let statLift = alone.statLift;
-  let aloneRaw: number | undefined;
+  let liftShare = 1;
+  let aloneDp: number | undefined;
+  if (alone.raw > 0 && dp < 0.9 * alone.raw) caveats.push("a very large total is squeezed (diminishing returns)");
 
-  // On top of earlier picks: what the two together are worth, minus the picks alone. Picks built around a trait the
-  // board doesn't play add almost nothing, so they're left out; so is a candidate like that (its value is mostly
-  // what sells).
+  // On top of earlier picks: what they and this one are worth together, minus the picks alone. Picks built around a
+  // trait the board doesn't play add almost nothing, so they're left out; so is a candidate like that (its value is
+  // mostly what sells).
   const picks = given.filter((id) => id !== aug.apiName && effects[id] && effects[id].confidence !== "none" && traitPlayed(effects[id], board, data));
   if (picks.length && traitPlayed(fx, board, data)) {
     const pickFx = picks.map((id) => effects[id]);
     const without = picksAlone(pickFx, picks, board, data, stage, mode);
     const together = scoreIn(mergeEffects([...pickFx, fx]), board, data, stage, mode);
-    const marginal = together.raw - without.raw;
+    aloneDp = dp;
+    // The room left under the cap for all the picks, but never more than what it adds counts as a single augment (the
+    // larger shared cap mustn't make an augment worth more after a weak pick than it is alone).
+    const k = picks.length + 1;
+    dp = Math.min(squeeze(together.raw, k) - squeeze(without.raw, k), squeeze(together.raw - without.raw, 1));
     statLift = together.statLift - without.statLift;
-    if (Math.abs(alone.raw) > 1e-9) {
-      const share = marginal / alone.raw;
-      for (const p of parts) {
-        p.dp *= share;
-        if (p.lift !== undefined) p.lift *= share;
-      }
-      if (Math.abs(share - 1) >= 0.05) {
-        const names = picks.map((id) => data.augments.find((a) => a.apiName === id)?.name ?? id).join(", ");
-        caveats.unshift(`with ${picks.length > 1 ? "your earlier picks" : "your earlier pick"} (${names}): worth ${Math.round(share * 100)}% of what it adds alone`);
-      }
+    if (Math.abs(alone.raw) > 1e-9) liftShare = (together.raw - without.raw) / alone.raw;
+    if (Math.abs(aloneDp) > 1e-9 && Math.abs(dp / aloneDp - 1) >= 0.05) {
+      const names = picks.map((id) => data.augments.find((a) => a.apiName === id)?.name ?? id).join(", ");
+      caveats.unshift(`with ${picks.length > 1 ? "your earlier picks" : "your earlier pick"} (${names}): worth ${Math.round((dp / aloneDp) * 100)}% of what it adds alone`);
     }
-    raw = marginal;
-    aloneRaw = alone.raw;
   }
-
-  // Diminishing returns: keep the order, squeeze the very large totals (parts shrink with the total so the breakdown still adds up).
-  const cap = ASSUMPTIONS.softCap;
-  const squeeze = (x: number) => (x > 0 ? cap * Math.tanh(x / cap) : x);
-  const dp = squeeze(raw);
-  if (raw > 0 && dp < raw) {
-    for (const p of parts) p.dp *= dp / raw;
-    if (dp < 0.9 * raw) caveats.push("a very large total is squeezed (diminishing returns)");
+  // The breakdown scaled to the shown total, so it still adds up.
+  const scale = Math.abs(alone.raw) > 1e-9 ? dp / alone.raw : 0;
+  for (const p of parts) {
+    p.dp *= scale;
+    if (p.lift !== undefined) p.lift *= liftShare;
   }
-  return { ...base, dp, impact: dp, statLift, confidence: alone.confidence, parts, caveats, ...(aloneRaw !== undefined ? { alone: squeeze(aloneRaw) } : {}) };
+  return { ...base, dp, impact: dp, statLift, confidence: alone.confidence, parts, caveats, ...(aloneDp !== undefined ? { alone: aloneDp } : {}) };
 }
 
 function describeEffect(e: StatEffect): string {
