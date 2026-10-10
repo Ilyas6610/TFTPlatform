@@ -303,6 +303,13 @@ function parseAugment(a, itemsByName, unitCosts) {
       res.emblems += 1;
       hit = true;
     }
+    // "Gain the same one again every time you level up": one more copy of that champion per level gained.
+    if (/^gain the same one again every time you level up/i.test(s) && res.units.length) {
+      const last = res.units[res.units.length - 1];
+      recurring.copies = { perLevel: 1, cost: last.cost, n: 1 };
+      hit = true;
+    }
+    if (/^champion:\s*\d*$/i.test(s)) hit = true; // a tracker label ("Champion: 0")
     if (/^gain another after \d+ player combats/i.test(s) && res.duplicators?.length) {
       res.duplicators[res.duplicators.length - 1].n += 1;
       hit = true;

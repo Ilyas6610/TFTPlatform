@@ -539,11 +539,14 @@
      }
     ]
    },
-   "confidence": "low",
-   "unparsed": [
-    "Gain the same one again every time you level up.",
-    "Champion: 0"
-   ]
+   "recurring": {
+    "copies": {
+     "perLevel": 1,
+     "cost": 2,
+     "n": 1
+    }
+   },
+   "confidence": "high"
   },
   "DA_CaretakersFavor": {
    "resources": {

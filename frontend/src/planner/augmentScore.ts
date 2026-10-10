@@ -90,7 +90,7 @@ export interface Recurring {
   /** An artifact anvil again after every N player combats. */
   artifacts?: { everyCombats: number };
   /** Another copy of the champion(s) gained, every round. */
-  copies?: { perRound?: number; cost?: number; n?: number };
+  copies?: { perRound?: number; perLevel?: number; cost?: number; n?: number };
 }
 
 export interface AugmentEffects {
@@ -168,11 +168,13 @@ export const ASSUMPTIONS = {
   /** Share of an item beyond the free slots that still counts. */
   itemOverflowShare: 0.3,
   /**
-   * Placement per gold the board doesn't spend on copies it wants: it buys levels, interest and safety. Set from how the
-   * designers price gold against items within a tier (Gold: 21 gold beside 1-2.25 items; Prismatic: 22 gold beside ~2;
-   * Silver: 8-12 gold beside 0.5-1): about 15 gold for one completed item.
+   * Placement per gold the board doesn't spend on copies it wants: it buys levels, interest and safety. The designers
+   * price gold against items within a tier at about 15 gold an item (Gold: 21 gold beside 1-2.25 items; Prismatic: 22
+   * gold beside ~2; Silver: 8-12 gold beside 0.5-1), but that is what an augment gives, not what it does: spare gold
+   * only pays through what it buys later. Taken at 40 gold an item (at 15-25, plain gold augments outranked the copies
+   * and items TFT Academy's guides pick on both halves of its comps; the old 0.003 was ~100 gold an item).
    */
-  idleGold: ITEM_GAIN / 25,
+  idleGold: ITEM_GAIN / 40,
   /** Spare gold saturates: x gold counts as spareGoldScale × (1 − e^(−x/spareGoldScale)) (20 gold ≈ 85%, 60 ≈ 63%, 126 ≈ 41% of face value). */
   spareGoldScale: 60,
   /**
@@ -184,6 +186,8 @@ export const ASSUMPTIONS = {
   /** Stages left after the stage an augment is picked at, and rounds per stage, for recurring gains. */
   stagesLeft: { "2-1": 5, "3-2": 4, "4-2": 3 } as Record<string, number>,
   roundsPerStage: 6,
+  /** The player's level at each augment stage (as in goalProgress's STAGE_PROGRESS). */
+  stageLevel: { "2-1": 4, "3-2": 6, "4-2": 7 } as Record<string, number>,
   /** Player combats a stage (the rest are a carousel and a monster round). */
   combatsPerStage: 5,
   /** XP matters less the higher the level (level 9 and 10 have little left to buy). */
@@ -621,9 +625,13 @@ function itemFit(build: Build | null, data: SetData) {
   const A = ASSUMPTIONS;
   const byId = new Map(data.items.map((i) => [i.apiName, i]));
   const compName = (id: string) => byId.get(id)?.name ?? id;
-  const standard = data.items.filter((i) => i.kind === "component" && data.items.some((c) => c.kind === "completed" && c.composition?.includes(i.apiName) && c.composition.every((x) => byId.get(x)?.kind === "component")));
   const completed = data.items.filter((i) => i.kind === "completed" && (i.composition?.length ?? 0) === 2);
   const usesComp = (name: string) => (build?.components.get(name) ?? 0) > 0;
+  // A Spatula or Frying Pan makes an emblem with anything, so it fits whatever the board builds (its value is the emblem's).
+  const emblemMaker = (name: string) => {
+    const id = data.items.find((i) => i.name === name)?.apiName;
+    return !!id && data.items.some((i) => i.kind === "emblem" && i.composition?.includes(id));
+  };
   const completedFit = (it: { name: string; composition?: string[] }) => {
     if (!build || build.items.has(it.name)) return 1;
     const share = (it.composition ?? []).filter((c) => usesComp(compName(c))).length / Math.max(1, it.composition?.length ?? 1);
@@ -632,8 +640,10 @@ function itemFit(build: Build | null, data: SetData) {
   const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 1);
   return {
     /** n of the named component: fully when the board's recipes use that kind (copies pair into its items too). */
-    component: (name: string, n: number) => (!build || usesComp(name) ? n : n * A.offBuildComponentShare),
-    randomComponent: build ? mean(standard.map((c) => (usesComp(c.name) ? 1 : A.offBuildComponentShare))) : 1,
+    component: (name: string, n: number) => (!build || usesComp(name) || emblemMaker(name) ? n : n * A.offBuildComponentShare),
+    // Random components go into whatever the board builds (two of them make an item, any pair): no discount. A pile of
+    // one named component is different (4 Rods on an attack-damage board).
+    randomComponent: 1,
     completed: (name: string) => {
       const it = data.items.find((i) => i.name === name);
       return it ? completedFit(it) : build ? A.offBuildItemShare : 1;
@@ -757,6 +767,17 @@ function resourceParts(res: Resources, rec: Recurring | undefined, stage: string
     plan.targets.forEach((t, i) => (t.remaining = saved[i]));
     const ev = evUnit(rec.copies.cost, 1, undefined, extra);
     addUnits(`another copy each round`, ev.use - one.use, ev.sell - one.sell, `${f.rounds} rounds left; ${ev.note}`, 1);
+  }
+  // "The same one again every time you level up": a copy of the same random champion per level gained by the goal.
+  if (rec?.copies?.perLevel && rec.copies.cost) {
+    const levels = Math.max(0, (goal ?? board).level - (A.stageLevel[stage] ?? board.level)) * rec.copies.perLevel;
+    if (levels > 0) {
+      const saved = plan.targets.map((t) => t.remaining);
+      const one = evUnit(rec.copies.cost, 1);
+      plan.targets.forEach((t, i) => (t.remaining = saved[i]));
+      const ev = evUnit(rec.copies.cost, 1, undefined, levels);
+      addUnits(`another copy each level (${levels})`, ev.use - one.use, ev.sell - one.sell, ev.note, 1);
+    }
   }
   // Duplicators copy one unit each: the copy the board wants most (best gain per copy).
   for (const d of res.duplicators ?? []) {
@@ -943,7 +964,9 @@ function rawScore(fx: AugmentEffects, board: Board, data: SetData, stage: string
     if (fx.effects.some((e) => e.everySeconds || e.ramp || e.delay)) caveats.push(`timed bonus, averaged over a ${ASSUMPTIONS.fightSeconds}s fight`);
     if (Math.abs(statLift) > 1e-6) {
       const k = strengthToPlacement(statBoard, data);
-      parts.push({ label: fx.effects.map(describeEffect).join(", "), dp: statLift * k, lift: statLift, note: `${(statLift * 100).toFixed(1)}% team strength` });
+      // A bonus picked early also wins the fights before the final board, like the items and gold it competes with.
+      const tempo = stageFactors(stage).tempo;
+      parts.push({ label: fx.effects.map(describeEffect).join(", "), dp: statLift * k * tempo, lift: statLift, note: `${(statLift * 100).toFixed(1)}% team strength` });
     }
   }
 

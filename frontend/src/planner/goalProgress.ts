@@ -14,7 +14,8 @@ export interface StageProgress {
   items: number;
   /**
    * Units the goal has at 3 stars and that cost this much or less are already 3-star by then: a reroll comp rolls for
-   * its carries before the 4-2 augment (1-costs around 3-1, 2-costs around 3-2, 3-costs at 4-1 on level 7), so by 4-2 it no longer wants their copies.
+   * its cheap carries before the 4-2 augment (1-costs around 3-1, 2-costs around 3-2), so by 4-2 it no longer wants their
+   * copies. 3-costs roll at 4-1 on level 7 and often still want copies at 4-2 (TFT Academy's guides differ on it).
    */
   threeStarUpToCost: number;
 }
@@ -22,7 +23,7 @@ export interface StageProgress {
 export const STAGE_PROGRESS: Record<string, StageProgress> = {
   "2-1": { level: 4, maxStar: 1, items: 0.5, threeStarUpToCost: 0 },
   "3-2": { level: 6, maxStar: 2, items: 2, threeStarUpToCost: 0 },
-  "4-2": { level: 7, maxStar: 2, items: 4, threeStarUpToCost: 3 },
+  "4-2": { level: 7, maxStar: 2, items: 4, threeStarUpToCost: 2 },
 };
 
 /**

@@ -1,6 +1,6 @@
 // Prints what the augment estimate suggests for a spread of boards, for a person to read and judge:
 //
-//   npx vite-node scripts/augment-review.ts <set data json> [comp slug filter] [--now] [--n=6]
+//   npx vite-node scripts/augment-review.ts <set data json> [comp slug filter] [--now] [--n=6] [--explain=<augment name>]
 //
 // Boards: TFT Academy's guides from the dev half (see academy-check.ts; their final board read as the goal), with the
 // augments the guide recommends marked "*" and listed after; never the held-out half.
@@ -15,6 +15,7 @@ const [setFile, filter] = args.filter((a) => !a.startsWith("--"));
 const mode = args.includes("--now") ? "now" : "goal";
 if (process.env.RT) (await import("../src/planner/augmentScore")).ASSUMPTIONS.rerollTempo = Number(process.env.RT);
 const N = Number(args.find((a) => a.startsWith("--n="))?.slice(4) ?? 6);
+const explain = args.find((a) => a.startsWith("--explain="))?.slice(10);
 const data = JSON.parse(readFileSync(setFile, "utf8"));
 const ref = JSON.parse(readFileSync(join(__dirname, ".academy", "reference.json"), "utf8"));
 const unitById = new Map<string, any>(data.units.map((u: any) => [u.apiName, u]));
@@ -45,5 +46,7 @@ for (const c of comps) {
     const top = r.slice(0, N).map((x) => `${c.augments.includes(x.apiName) ? "*" : ""}${x.name} ${x.impact!.toFixed(2)} {${x.parts.slice().sort((p, q) => Math.abs(q.dp) - Math.abs(p.dp)).slice(0, 1).map((p) => p.label.slice(0, 40)).join("")}}`);
     const recs = c.augments.map((id: string) => { const i = r.findIndex((x) => x.apiName === id); return i >= 0 ? `${r[i].name}#${i + 1}` : null; }).filter(Boolean);
     console.log(`  ${st}: ${top.join(" | ")}\n        guide: ${recs.join(", ")}`);
+    const x = explain && r.find((y) => y.name === explain);
+    if (x) console.log(`        ${x.name} #${r.indexOf(x) + 1} ${x.impact!.toFixed(3)}: ${x.parts.map((p) => `${p.label} ${p.dp.toFixed(3)}${p.note ? ` (${p.note})` : ""}`).join("; ")}`);
   }
 }
