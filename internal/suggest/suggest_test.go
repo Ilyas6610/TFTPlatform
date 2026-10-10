@@ -175,22 +175,48 @@ func comp(avg float64, boards int, units ...comps.BoardUnit) comps.Comp {
 	return comps.Comp{Stats: comps.Stats{Boards: boards, AvgPlacement: avg}, Board: units}
 }
 
-func TestAdvise_CompsRankedByOwnedUnits(t *testing.T) {
+func TestAdvise_CompsRankedByWhatUnitsAndItemsSay(t *testing.T) {
 	in := Input{
 		Units: []string{"A", "B", "C"}, Items: []string{"Sword", "Glove"}, Recipes: rec,
 		Comps: []comps.Comp{
-			comp(2.0, 100, comps.BoardUnit{ID: "A"}, comps.BoardUnit{ID: "X"}, comps.BoardUnit{ID: "Y"}),                       // 1 owned: dropped
-			comp(4.0, 50, comps.BoardUnit{ID: "A", Items: []string{"IE"}}, comps.BoardUnit{ID: "B"}, comps.BoardUnit{ID: "Z"}), // 2 owned
-			comp(4.5, 40, comps.BoardUnit{ID: "A"}, comps.BoardUnit{ID: "B"}, comps.BoardUnit{ID: "C"}),                        // 3 owned
+			comp(2.0, 100, comps.BoardUnit{ID: "A"}, comps.BoardUnit{ID: "X"}, comps.BoardUnit{ID: "Y"}),                       // one stray unit: too little
+			comp(4.0, 50, comps.BoardUnit{ID: "A", Items: []string{"IE"}}, comps.BoardUnit{ID: "B"}, comps.BoardUnit{ID: "Z"}), // 2 owned, and the items make A's IE
+			comp(4.5, 40, comps.BoardUnit{ID: "A"}, comps.BoardUnit{ID: "B"}, comps.BoardUnit{ID: "C"}),                        // 3 owned, items unused
 		},
 	}
 	r := Advise(in)
-	if len(r.Comps) != 2 || len(r.Comps[0].Have) != 3 {
+	if len(r.Comps) != 2 {
 		t.Fatalf("comps = %+v", r.Comps)
 	}
-	second := r.Comps[1]
-	if !slices.Equal(second.Need, []string{"Z"}) || len(second.Fits) != 1 || second.Fits[0].Unit != "A" || len(second.Fits[0].Missing) != 0 {
-		t.Errorf("second = %+v (A's IE can be made from Sword+Glove)", second)
+	first := r.Comps[0]
+	if !slices.Equal(first.Need, []string{"Z"}) || len(first.Fits) != 1 || first.Fits[0].Unit != "A" || len(first.Fits[0].Missing) != 0 {
+		t.Errorf("first = %+v: the items make the carry's IE, which says more than a third filler unit", first)
+	}
+	if len(r.Comps[1].Have) != 3 {
+		t.Errorf("second = %+v", r.Comps[1])
+	}
+}
+
+func TestAdvise_CompsWeighOwnedUnitsByCostAndStar(t *testing.T) {
+	costs := map[string]int{"One1": 1, "One2": 1, "Four": 4, "Re": 1}
+	boards := []comps.Comp{
+		comp(4, 50, comps.BoardUnit{ID: "One1"}, comps.BoardUnit{ID: "One2"}, comps.BoardUnit{ID: "X"}),
+		comp(4, 50, comps.BoardUnit{ID: "Four", Items: []string{"IE"}}, comps.BoardUnit{ID: "Y"}, comps.BoardUnit{ID: "Z"}),
+	}
+	r := Advise(Input{Units: []string{"One1", "One2", "Four"}, UnitCosts: costs, Comps: boards})
+	if len(r.Comps) == 0 || r.Comps[0].Have[0] != "Four" {
+		t.Fatalf("comps = %+v: one 4-cost carry says more than two 1-costs", r.Comps)
+	}
+	if len(r.Comps) != 1 {
+		t.Errorf("two 1-costs alone shouldn't suggest a comp: %+v", r.Comps)
+	}
+	// A 3-star 1-cost is a reroll: it decides the board.
+	re := Advise(Input{Units: []string{"Re", "Four"}, Stars: map[string]int{"Re": 3}, UnitCosts: costs, Comps: []comps.Comp{
+		comp(4, 50, comps.BoardUnit{ID: "Re", Items: []string{"IE"}}, comps.BoardUnit{ID: "Y"}),
+		comp(4, 50, comps.BoardUnit{ID: "Four"}, comps.BoardUnit{ID: "Z"}),
+	}})
+	if len(re.Comps) == 0 || re.Comps[0].Have[0] != "Re" {
+		t.Errorf("comps = %+v: the 3-star 1-cost carry should lead", re.Comps)
 	}
 }
 
