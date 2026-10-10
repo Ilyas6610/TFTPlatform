@@ -990,6 +990,57 @@ function rawScore(fx: AugmentEffects, board: Board, data: SetData, stage: string
   return { raw: parts.reduce((a, p) => a + p.dp, 0), parts, statLift, confidence: parts.length === 0 ? "none" : confidence, caveats };
 }
 
+/** What an augment supplies, by type, for the needs model (planner/augmentNeeds.ts): read with this file's readers. */
+export interface Supply {
+  /** Completed items' worth, after the fit to the goal's build. */
+  items: number;
+  /** Gold now, and gold arriving over the rest of the game (per round or stage, level rewards). */
+  goldNow: number;
+  goldLater: number;
+  xp: number;
+  /** Free rerolls (and reroll refunds) as the gold they replace. */
+  rerollGold: number;
+  /** Copies of units the goal still wants (beyond what the player's own rolling finds). */
+  copies: number;
+  /** Team strength lift from stat effects on the goal board, and the lift one more item gives the same board. */
+  statLift: number;
+  liftPerItem: number;
+  /** Built around a trait: whether the goal plays it. */
+  trait: "none" | "played" | "unplayed";
+}
+
+export function augmentSupply(fx: AugmentEffects, goal: Board, data: SetData, stage: string): Supply {
+  const A = ASSUMPTIONS;
+  const f = stageFactors(stage);
+  const res = fx.resources ?? {};
+  const rec = fx.recurring;
+  const at = boardAtStage(goal, stage, data);
+  // Items, with Living Forge's later anvils.
+  const moreAnvils = rec?.artifacts?.everyCombats ? Math.floor((f.stages * A.combatsPerStage) / rec.artifacts.everyCombats) : 0;
+  const items = itemEquivalents({ ...res, artifacts: (res.artifacts ?? 0) + moreAnvils }, rec, at, data, goal);
+  const late = res.atLevel ? goal.level >= res.atLevel : true;
+  const goldNow = res.atLevel ? 0 : res.gold ?? 0;
+  const goldLater = (res.atLevel && late ? res.gold ?? 0 : 0) + (rec?.gold?.perRound ?? 0) * f.rounds + (rec?.gold?.perStage ?? 0) * f.stages;
+  const xp = (res.xp ?? 0) * (1 + (rec?.xp?.rounds ?? 0)) + (rec?.xp?.perStage ?? 0) * f.stages + (rec?.xp?.perCombat ?? 0) * f.stages * A.combatsPerStage;
+  const rolls = (res.atLevel && !late ? 0 : res.rerolls ?? 0) + (rec?.rerolls?.perRound ? rec.rerolls.perRound * f.rounds * 0.5 : 0) + (rec?.rerolls?.perStage ?? 0) * f.stages;
+  const plan = buildPlan(at, data, goal);
+  const ownRolled = (A.ownRollGold[stage] ?? 0) * plan.rollIntent;
+  const p = Math.min(0.9, res.rerollRefund ?? 0);
+  const rerollGold = rolls * SHOP.rerollGold + (p ? (ownRolled * p) / (1 - p) : 0);
+  // Copies of wanted units from champions, duplicators, per-round copies and Pandora's Bench (gold and rolls are counted above).
+  const copyRes: Resources = { units: res.units, duplicators: res.duplicators, benchTransform: res.benchTransform, allOfCost: res.allOfCost };
+  const copyRec: Recurring | undefined = rec?.copies ? { copies: rec.copies } : undefined;
+  const out = { copiesLeft: 0, copiesWanted: 0 };
+  resourceParts(copyRes, copyRec, stage, plan, at, data, goal, out);
+  const copies = Math.max(0, out.copiesWanted - out.copiesLeft);
+  // Stat lift on the goal board, and what one more item does to it.
+  const statLift = fx.effects?.length ? rawScore({ effects: fx.effects, confidence: fx.confidence }, goal, data, stage, goal).statLift : 0;
+  const k = strengthToPlacement(goal, data);
+  const liftPerItem = k > 0 ? ITEM_GAIN / k : 0;
+  const trait = !fx.traits?.length ? "none" : traitPlayed(fx, goal, data) ? "played" : "unplayed";
+  return { items, goldNow, goldLater, xp, rerollGold, copies, statLift, liftPerItem, trait };
+}
+
 /**
  * Several augments' effects as one, so the model can price them together: stat effects apply together (a second
  * damage bonus lands on an already stronger team), and resources add up before they're priced (a second item

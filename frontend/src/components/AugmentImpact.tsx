@@ -4,7 +4,7 @@ import { GameIcon } from "../assets/tft";
 import { AUGMENT_SLOTS, augmentTier, availableAt } from "../planner/augmentStages";
 import { SHOP } from "../planner/augmentPlan";
 import { ASSUMPTIONS, AugmentScore, BoardMode, Confidence, picksCoverage, rankAugments } from "../planner/augmentScore";
-import { STAGE_PROGRESS } from "../planner/goalProgress";
+import { needsOf, rankByNeeds } from "../planner/augmentNeeds";
 import { BOARD_VALUE_FIT, ITEM_GAIN } from "../planner/boardValue";
 import { Board } from "../planner/board";
 import { Names } from "./stats";
@@ -54,13 +54,13 @@ export function AugmentImpact({
     const offered = data.augments.filter((a) => availableAt(a, slot) && !settled.augments.some((c, i) => c === a.apiName && i !== slot));
     // Augments picked at earlier stages are already working: each one here is scored on top of them.
     const earlier = settled.augments.slice(0, slot).filter((a): a is string => !!a);
-    return rankAugments(offered, settled, data, stage, undefined, earlier, mode);
+    // "My goal": what the board still needs (econ, items, combat, copies) at this stage; "what I have now": the older pricing.
+    return mode === "goal" ? rankByNeeds(offered, settled, data, stage, earlier) : rankAugments(offered, settled, data, stage, undefined, earlier, mode);
   }, [settled, data, slot, stage, mode]);
   const coverage = useMemo(() => {
     const earlier = settled.augments.slice(0, slot).filter((a): a is string => !!a);
-    return earlier.length && settled.units.length ? picksCoverage(earlier, settled, data, stage, mode) : null;
+    return earlier.length && settled.units.length && mode === "now" ? picksCoverage(earlier, settled, data, stage, mode) : null;
   }, [settled, data, slot, stage, mode]);
-  const progress = STAGE_PROGRESS[stage];
   const earlierNames = board.augments
     .slice(0, slot)
     .filter((a): a is string => !!a)
@@ -104,8 +104,8 @@ export function AugmentImpact({
         ))}
       </div>
       <p className="muted augment-impact-given">
-        {mode === "goal" && progress
-          ? `Priced from a typical position at ${stage} (level ${progress.level}, units up to ${progress.maxStar}★${progress.threeStarUpToCost ? `, 3★ 1-${progress.threeStarUpToCost} costs already done` : ""}, about ${progress.items} item${progress.items === 1 ? "" : "s"}) towards this board: copies count towards its stars, items towards its item slots, stat bonuses on the finished board.`
+        {mode === "goal" && board.units.length
+          ? `What an average game is short of on the way to this board, and what each augment fills: ${needsOf(settled, data).notes.join("; ")}. Econ is worth most at 2-1, items until the carries and tank are full, combat once they are.`
           : "Priced on the board as it is: its stars and items are already yours, so only what it still lacks counts."}
       </p>
       <div className="mode-tabs" role="tablist" aria-label="Augment stage">

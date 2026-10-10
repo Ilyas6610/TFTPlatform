@@ -19,6 +19,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { rankAugments } from "../src/planner/augmentScore";
+import { rankByNeeds } from "../src/planner/augmentNeeds";
 import { augmentTier, availableAt } from "../src/planner/augmentStages";
 import { Board } from "../src/planner/board";
 
@@ -28,7 +29,9 @@ if (!setFile) throw new Error("usage: vite-node scripts/academy-check.ts <set da
 const holdout = args.includes("--holdout");
 // --goal: read each guide's final board as the goal at every stage (the planner's "my goal" mode); otherwise the
 // early board stands for 2-1 and the final board for 3-2 and 4-2, read as the board the player has.
-const goalMode = args.includes("--goal");
+const goalMode = args.includes("--goal") || args.includes("--needs");
+// --needs: rank with the needs model (planner/augmentNeeds.ts), boards read as the goal.
+const needsMode = args.includes("--needs");
 const data = JSON.parse(readFileSync(setFile, "utf8"));
 const ref = JSON.parse(readFileSync(join(__dirname, ".academy", "reference.json"), "utf8"));
 const unitById = new Map<string, any>(data.units.map((u: any) => [u.apiName, u]));
@@ -73,7 +76,7 @@ for (const st of STAGES) {
   for (const c of comps) {
     const b = st.board(c);
     if (b.units.length === 0) continue;
-    const r = rankAugments(pool, b, data, st.label, undefined, [], goalMode ? "goal" : "now").filter((x) => x.impact !== null);
+    const r = (needsMode ? rankByNeeds(pool, b, data, st.label) : rankAugments(pool, b, data, st.label, undefined, [], goalMode ? "goal" : "now")).filter((x) => x.impact !== null);
     const ranked = r.map((x) => x.apiName);
     const recs = c.augments.filter((id: string) => ranked.includes(id));
     unknownRecs += c.augments.filter((id: string) => !augByName.has(id)).length;
