@@ -1013,8 +1013,11 @@ export interface Supply {
   goldNow: number;
   goldLater: number;
   xp: number;
-  /** Free rerolls (and reroll refunds) as the gold they replace. */
+  /** XP arriving over the game (per stage, per player combat). */
+  xpLater: number;
+  /** Free rerolls (and reroll refunds) as the gold they replace; rerollGoldLater: the per-round or per-stage ones. */
   rerollGold: number;
+  rerollGoldLater: number;
   /** Copies of units the goal still wants (beyond what the player's own rolling finds). */
   copies: number;
   /** Team strength lift from stat effects on the goal board, and the lift one more item gives the same board. */
@@ -1037,12 +1040,15 @@ export function augmentSupply(fx: AugmentEffects, goal: Board, data: SetData, st
   const late = res.atLevel ? goal.level >= res.atLevel : true;
   const goldNow = res.atLevel ? 0 : res.gold ?? 0;
   const goldLater = (res.atLevel && late ? res.gold ?? 0 : 0) + (rec?.gold?.perRound ?? 0) * f.rounds + (rec?.gold?.perStage ?? 0) * f.stages;
-  const xp = (res.xp ?? 0) * (1 + (rec?.xp?.rounds ?? 0)) + (rec?.xp?.perStage ?? 0) * f.stages + (rec?.xp?.perCombat ?? 0) * f.stages * A.combatsPerStage;
-  const rolls = (res.atLevel && !late ? 0 : res.rerolls ?? 0) + (rec?.rerolls?.perRound ? rec.rerolls.perRound * f.rounds * 0.5 : 0) + (rec?.rerolls?.perStage ?? 0) * f.stages;
+  const xp = (res.xp ?? 0) * (1 + (rec?.xp?.rounds ?? 0));
+  const xpLater = (rec?.xp?.perStage ?? 0) * f.stages + (rec?.xp?.perCombat ?? 0) * f.stages * A.combatsPerStage;
+  const rolls = res.atLevel && !late ? 0 : res.rerolls ?? 0;
+  const rollsLater = (rec?.rerolls?.perRound ? rec.rerolls.perRound * f.rounds * 0.5 : 0) + (rec?.rerolls?.perStage ?? 0) * f.stages;
   const plan = buildPlan(at, data, goal);
   const ownRolled = (A.ownRollGold[stage] ?? 0) * plan.rollIntent;
   const p = Math.min(0.9, res.rerollRefund ?? 0);
-  const rerollGold = rolls * SHOP.rerollGold + (p ? (ownRolled * p) / (1 - p) : 0);
+  const rerollGold = (res.atLevel ? 0 : rolls * SHOP.rerollGold) + (p ? (ownRolled * p) / (1 - p) : 0);
+  const rerollGoldLater = rollsLater * SHOP.rerollGold + (res.atLevel && late ? (res.rerolls ?? 0) * SHOP.rerollGold : 0);
   // Copies of wanted units from champions, duplicators, per-round copies and Pandora's Bench (gold and rolls are counted above).
   const copyRes: Resources = { units: res.units, duplicators: res.duplicators, benchTransform: res.benchTransform, allOfCost: res.allOfCost };
   const copyRec: Recurring | undefined = rec?.copies ? { copies: rec.copies } : undefined;
@@ -1054,7 +1060,7 @@ export function augmentSupply(fx: AugmentEffects, goal: Board, data: SetData, st
   const k = strengthToPlacement(goal, data);
   const liftPerItem = k > 0 ? ITEM_GAIN / k : 0;
   const trait = !fx.traits?.length ? "none" : traitPlayed(fx, goal, data) ? "played" : "unplayed";
-  return { items, goldNow, goldLater, xp, rerollGold, copies, statLift, liftPerItem, trait };
+  return { items, goldNow, goldLater, xp, xpLater, rerollGold, rerollGoldLater, copies, statLift, liftPerItem, trait };
 }
 
 /**

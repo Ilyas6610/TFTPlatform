@@ -4,7 +4,7 @@ import { GameIcon } from "../assets/tft";
 import { AUGMENT_SLOTS, augmentTier, availableAt } from "../planner/augmentStages";
 import { SHOP } from "../planner/augmentPlan";
 import { ASSUMPTIONS, AugmentScore, BoardMode, Confidence, picksCoverage, rankAugments } from "../planner/augmentScore";
-import { needsOf, rankByNeeds } from "../planner/augmentNeeds";
+import { archetypeFrom, archetypeOf, needsOf, rankByNeeds } from "../planner/augmentNeeds";
 import { BOARD_VALUE_FIT, ITEM_GAIN } from "../planner/boardValue";
 import { Board, COLS, encodeBoard } from "../planner/board";
 import { Names } from "./stats";
@@ -57,16 +57,18 @@ export function AugmentImpact({
   names: Names;
   onPick: (slot: number, apiName: string) => void;
 }) {
+  // "goal": the board is what the player is building towards (the usual use of a planner); "now": what they have.
+  const [mode, setMode] = useState<BoardMode>("goal");
   // Default to the first slot that's still empty.
   const firstOpen = board.augments.findIndex((a) => !a);
   const [slotChoice, setSlot] = useState<number | null>(null);
-  const slot = slotChoice ?? (firstOpen >= 0 ? firstOpen : 0);
+  // "What I have now": the stage follows the board's level (level 8 is usually 4-2) until a tab is chosen.
+  const levelSlot = board.level >= 8 ? 2 : board.level >= 6 ? 1 : 0;
+  const slot = slotChoice ?? (mode === "now" && board.units.length ? Math.max(levelSlot, firstOpen >= 0 ? firstOpen : 0) : firstOpen >= 0 ? firstOpen : 0);
   const stage = AUGMENT_SLOTS[slot].stage;
   const [all, setAll] = useState(false);
   // An in-game offer is three augments of one tier: 0 shows every tier, 1-3 one of them.
   const [tierShown, setTierShown] = useState(0);
-  // "goal": the board is what the player is building towards (the usual use of a planner); "now": what they have.
-  const [mode, setMode] = useState<BoardMode>("goal");
 
   // Ranking all the augments takes tens of milliseconds: let the board editing stay responsive and rank when it settles.
   const settled = useDeferredValue(board);
@@ -86,7 +88,20 @@ export function AugmentImpact({
     settled.units.forEach((u) => u.items.forEach((i) => q.append("have_item", i)));
     let live = true;
     getExploreSuggest(q.toString())
-      .then((r) => live && setSuggestions(r.comps.filter((c) => c.comp.boards >= MIN_COMP_BOARDS && c.have.length >= 2).slice(0, 3)))
+      .then(
+        (r) =>
+          live &&
+          setSuggestions(
+            r.comps
+              .filter((c) => c.comp.boards >= MIN_COMP_BOARDS && c.have.length >= 2)
+              // A reroll comp is no plan for a board that is past its reroll (level 8 without its carries at 2 stars).
+              .filter((c) => {
+                const goal = compBoard(c, data);
+                return archetypeFrom(goal, data, settled) === archetypeOf(goal, data);
+              })
+              .slice(0, 3),
+          ),
+      )
       .catch(() => live && setSuggestions([]));
     setGoalChoice(0);
     return () => {

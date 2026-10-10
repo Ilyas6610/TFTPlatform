@@ -125,6 +125,20 @@ export function archetypeOf(goal: Board, data: SetData): Archetype {
 }
 
 // Per goal, per current board (or none), per stage.
+/**
+ * The plan the player is actually on: a reroll goal only while the reroll is still possible. A board already at level 8
+ * whose reroll carries aren't 2-star is past the reroll window and plays as a level 8 board (Fast 8, or Fast 9 for 5-cost
+ * carries).
+ */
+export function archetypeFrom(goal: Board, data: SetData, now: Board): Archetype {
+  const arche = archetypeOf(goal, data);
+  if (!arche.startsWith("reroll") || now.level < 8) return arche;
+  const cost = arche === "reroll1" ? 1 : arche === "reroll2" ? 2 : 3;
+  const carries = goal.units.filter((u) => u.star === 3).map((u) => u.id);
+  const started = now.units.some((u) => carries.includes(u.id) && u.star >= 2 && (data.units.find((d) => d.apiName === u.id)?.cost ?? 9) <= cost);
+  return started ? arche : goal.units.some((u) => u.items.length >= 2 && (data.units.find((d) => d.apiName === u.id)?.cost ?? 0) === 5) ? "fast9" : "fast8";
+}
+
 const needsCache = new WeakMap<Board, { avg?: Needs; byNow: WeakMap<Board, Map<string, Needs>> }>();
 /**
  * `now` (with its `stage`): the player's board when known. Copies of goal units they already hold and items already on
@@ -140,7 +154,7 @@ export function needsOf(goal: Board, data: SetData, now?: Board, stage?: string)
     const hit = perStage.get(stage ?? "");
     if (hit) return hit;
   } else if (entry.avg) return entry.avg;
-  const arche = archetypeOf(goal, data);
+  const arche = now ? archetypeFrom(goal, data, now) : archetypeOf(goal, data);
   const plan = PLANS[arche];
   const [spike, spikeLevel] = plan.spike;
   const us = unitInfo(goal, data);
@@ -210,7 +224,8 @@ export function needsOf(goal: Board, data: SetData, now?: Board, stage?: string)
 
 /** Totals of what a set of picks supplies, each at the stage it was picked (gold weighted by its stage). */
 interface Taken {
-  gold: number; // gold-equivalent, already weighted by stage
+  gold: number; // gold-equivalent that can fill the shortfall (arrives before the spike), weighted by stage
+  spareGold: number; // gold-equivalent arriving after the spike: only spare (levels later, interest, safety)
   items: number;
   combat: number; // items' worth of combat, before readiness
   direction: number;
@@ -221,13 +236,22 @@ function supplyOf(fx: AugmentEffects, goal: Board, data: SetData, stage: string,
   const arche = needs.archetype;
   const rate = NEEDS.goldRate[stage] ?? 1;
   const copiesGold = needs.perCopy ? s.copies * needs.perCopy : 0;
-  const gold = rate * (s.goldNow + NEEDS.laterGold * s.goldLater + NEEDS.xpShare[arche] * s.xp + NEEDS.rerollShare[arche] * s.rerollGold) + copiesGold * (stage === "4-2" && arche !== "reroll3" && arche !== "fast9" ? 0.3 : 1);
+  // Income over the rest of the game: only the part arriving before the board's spike can pay for it.
+  const roundsLeft = (ASSUMPTIONS.stagesLeft[stage] ?? 3) * NEEDS.roundsPerStage;
+  const beforeSpike = Math.max(0, Math.min(1, (idx(needs.spike) - idx(stage)) / roundsLeft));
+  const xs = NEEDS.xpShare[arche];
+  const rs = NEEDS.rerollShare[arche];
+  const later = NEEDS.laterGold * s.goldLater + xs * s.xpLater + rs * s.rerollGoldLater;
+  const upfront = s.goldNow + xs * s.xp + rs * s.rerollGold;
+  const gold = rate * (upfront + later * beforeSpike) + copiesGold * (stage === "4-2" && arche !== "reroll3" && arche !== "fast9" ? 0.3 : 1);
+  const spareGold = rate * later * (1 - beforeSpike);
   const combat = s.liftPerItem > 0 ? (s.statLift / s.liftPerItem) * (NEEDS.combatReady[stage] ?? 1) : 0;
   const gate = s.trait === "unplayed" ? ASSUMPTIONS.offTraitShare : 1;
   return {
     s,
     t: {
       gold: gold * gate,
+      spareGold: spareGold * gate,
       items: s.items * (NEEDS.itemTempo[stage] ?? 1) * gate,
       combat: combat * gate,
       direction: s.trait === "played" ? (NEEDS.directionPrior[stage] ?? 0.7) : 0,
@@ -237,9 +261,9 @@ function supplyOf(fx: AugmentEffects, goal: Board, data: SetData, stage: string,
 
 /** The value (in items) of everything taken, against the board's needs. */
 function valueOf(t: Taken, needs: Needs) {
-  // Gold fills the shortfall at the short rate, then saturates as spare gold.
+  // Gold fills the shortfall at the short rate, then saturates as spare gold (with what arrives after the spike).
   const short = Math.min(t.gold, needs.shortfall);
-  const spare = Math.max(0, t.gold - needs.shortfall);
+  const spare = Math.max(0, t.gold - needs.shortfall) + t.spareGold;
   const gold = short / NEEDS.shortGoldPerItem + (NEEDS.spareScale * (1 - Math.exp(-spare / NEEDS.spareScale))) / NEEDS.spareGoldPerItem;
   // Items fill the room on the carries and tank, then count as spares (saturating).
   const extra = Math.max(0, t.items - needs.itemRoom);
@@ -250,8 +274,8 @@ function valueOf(t: Taken, needs: Needs) {
   return { gold, items, combat, direction: t.direction };
 }
 
-const add = (a: Taken, b: Taken): Taken => ({ gold: a.gold + b.gold, items: a.items + b.items, combat: a.combat + b.combat, direction: a.direction + b.direction });
-const ZERO: Taken = { gold: 0, items: 0, combat: 0, direction: 0 };
+const add = (a: Taken, b: Taken): Taken => ({ gold: a.gold + b.gold, spareGold: a.spareGold + b.spareGold, items: a.items + b.items, combat: a.combat + b.combat, direction: a.direction + b.direction });
+const ZERO: Taken = { gold: 0, spareGold: 0, items: 0, combat: 0, direction: 0 };
 
 /**
  * Scores one augment by the needs it fills, picked at `stage` on top of the augments picked at earlier stages (`given`,
@@ -290,7 +314,7 @@ export function scoreByNeeds(
   const direction = v1.direction - v0.direction;
   const fmt = (x: number) => (Math.abs(x - Math.round(x)) < 0.05 ? String(Math.round(x)) : x.toFixed(1));
   if (Math.abs(gold) > 1e-6) {
-    const what = [s.goldNow && `${fmt(s.goldNow)} gold`, s.goldLater && `${fmt(s.goldLater)} gold over the game`, s.xp && `${fmt(s.xp)} XP`, s.rerollGold && `rerolls worth ${fmt(s.rerollGold)} gold`, s.copies && `${fmt(s.copies)} wanted copies`].filter(Boolean).join(", ");
+    const what = [s.goldNow && `${fmt(s.goldNow)} gold`, s.goldLater && `${fmt(s.goldLater)} gold over the game`, (s.xp + s.xpLater) && `${fmt(s.xp + s.xpLater)} XP`, (s.rerollGold + s.rerollGoldLater) && `rerolls worth ${fmt(s.rerollGold + s.rerollGoldLater)} gold`, s.copies && `${fmt(s.copies)} wanted copies`].filter(Boolean).join(", ");
     const left = Math.max(0, needs.shortfall - before.gold);
     parts.push({ label: `Econ / copies: ${what}`, dp: gold * P, note: left > 0 ? `the board is ~${Math.round(left)} gold short of its ${needs.spike} spike; gold at ${stage} counts ×${NEEDS.goldRate[stage]}` : "the spike is already covered: spare gold" });
   }
