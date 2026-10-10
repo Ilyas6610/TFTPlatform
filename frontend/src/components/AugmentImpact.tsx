@@ -3,11 +3,36 @@ import { SetData, SuggestComp, getExploreSuggest } from "../api/client";
 import { GameIcon } from "../assets/tft";
 import { AUGMENT_SLOTS, augmentTier, availableAt } from "../planner/augmentStages";
 import { SHOP } from "../planner/augmentPlan";
-import { ASSUMPTIONS, AugmentScore, BoardMode, Confidence, picksCoverage, rankAugments } from "../planner/augmentScore";
+import { ASSUMPTIONS, AugmentScore, BoardMode, Confidence, EFFECTS, picksCoverage, rankAugments } from "../planner/augmentScore";
 import { archetypeFrom, archetypeOf, needsOf, rankByNeeds } from "../planner/augmentNeeds";
 import { BOARD_VALUE_FIT, ITEM_GAIN } from "../planner/boardValue";
-import { Board, COLS, encodeBoard } from "../planner/board";
+import { Board, COLS, computeTraits, encodeBoard } from "../planner/board";
 import { Names } from "./stats";
+
+/**
+ * How much the augments already taken point at a comp: econ augments at Fast 8/9 boards, free rerolls and copies at
+ * reroll boards, a trait augment at boards that play the trait. Added to the server's fit score (items' worth).
+ */
+function augmentLean(picked: (string | null)[], goal: Board, data: SetData): number {
+  const arche = archetypeOf(goal, data);
+  const reroll = arche.startsWith("reroll");
+  let lean = 0;
+  for (const id of picked) {
+    const fx = id ? EFFECTS[id] : undefined;
+    if (!fx || fx.confidence === "none") continue;
+    const r = fx.resources ?? {};
+    const rec = fx.recurring;
+    const econ = (r.gold ?? 0) + (r.xp ?? 0) + (rec?.gold ? 10 : 0) + (rec?.xp ? 10 : 0) >= 15;
+    const rolls = (r.rerolls ?? 0) >= 4 || !!r.rerollRefund || !!rec?.rerolls || !!r.duplicators?.length || !!r.benchTransform || !!rec?.copies;
+    if (rolls) lean += reroll ? 1.5 : -0.5;
+    else if (econ) lean += reroll ? -0.5 : 1;
+    if (fx.traits?.length) {
+      const played = new Set(computeTraits(goal, data).filter((t) => t.count >= ASSUMPTIONS.playedTraitUnits).map((t) => t.name));
+      lean += fx.traits.some((t) => played.has(t)) ? 2 : -1;
+    }
+  }
+  return lean;
+}
 
 /** Suggested boards need this many stored games: a comp seen a handful of times isn't a plan. */
 const MIN_COMP_BOARDS = 20;
@@ -78,13 +103,14 @@ export function AugmentImpact({
   const [suggestions, setSuggestions] = useState<SuggestComp[] | null>(null);
   const [goalChoice, setGoalChoice] = useState(0);
   const haveKey = useMemo(
-    () => [...settled.units.map((u) => u.id), "|", ...settled.units.flatMap((u) => u.items)].join(","),
+    () => [...settled.units.map((u) => `${u.id}*${u.star}`), "|", ...settled.units.flatMap((u) => u.items), "|", ...settled.augments.map((a) => a ?? "")].join(","),
     [settled],
   );
   useEffect(() => {
     if (mode !== "now" || settled.units.length === 0) return;
     const q = new URLSearchParams({ set: String(data.setNumber), queue: "1100" });
-    settled.units.forEach((u) => q.append("have_unit", u.id));
+    // With its star: a 3-star cheap unit is a reroll, a 2-star 4-cost a carry (the server weighs units by cost and star).
+    settled.units.forEach((u) => q.append("have_unit", `${u.id}*${u.star}`));
     settled.units.forEach((u) => u.items.forEach((i) => q.append("have_item", i)));
     let live = true;
     getExploreSuggest(q.toString())
@@ -93,12 +119,17 @@ export function AugmentImpact({
           live &&
           setSuggestions(
             r.comps
-              .filter((c) => c.comp.boards >= MIN_COMP_BOARDS && c.have.length >= 2)
+              // How strongly the units and items point at a comp is the server's score (units by cost and star, items made).
+              .filter((c) => c.comp.boards >= MIN_COMP_BOARDS)
               // A reroll comp is no plan for a board that is past its reroll (level 8 without its carries at 2 stars).
               .filter((c) => {
                 const goal = compBoard(c, data);
                 return archetypeFrom(goal, data, settled) === archetypeOf(goal, data);
               })
+              // The augments taken point at a kind of board too.
+              .map((c) => ({ c, s: (c.score ?? 0) + augmentLean(settled.augments, compBoard(c, data), data) }))
+              .sort((a, b) => b.s - a.s)
+              .map((x) => x.c)
               .slice(0, 3),
           ),
       )

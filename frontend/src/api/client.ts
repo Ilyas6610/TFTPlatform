@@ -574,6 +574,8 @@ export interface SuggestEmblemFit {
 
 export interface SuggestComp {
   comp: MetaComp;
+  /** How strongly the held units (by cost and star) and items point at this comp; absent from older servers. */
+  score?: number;
   have: string[];
   need: string[];
   fits: SuggestFit[];
