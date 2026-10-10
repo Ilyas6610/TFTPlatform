@@ -79,6 +79,13 @@ describe("augment needs: the rules", () => {
     expect(v(reroll3, "Copies", "3-2", ["Ticket"])).toBeLessThan(v(reroll3, "Copies", "3-2"));
     expect(v(reroll3, "Items", "3-2", ["Ticket"])).toBeGreaterThan(v(reroll3, "Copies", "3-2", ["Ticket"]));
   });
+  it("after an item augment, a combat augment is worth more (the carries are more itemized) and another item augment less", () => {
+    expect(v(fast8, "Combat", "4-2", ["Items"])).toBeGreaterThan(v(fast8, "Combat", "4-2"));
+    const twice: Record<string, AugmentEffects> = { ...fx, Items2: { confidence: "high", resources: { completed: 2 } } };
+    const a = scoreByNeeds(aug("Items2"), fast8, data, "3-2", [], twice).impact!;
+    const b = scoreByNeeds(aug("Items2"), fast8, data, "3-2", ["Items"], twice).impact!;
+    expect(b).toBeLessThan(a);
+  });
   it("items past what the carries and tank can hold count as spares", () => {
     const lots: Record<string, AugmentEffects> = { Many: { confidence: "high", resources: { completed: 12 } } };
     const twelve = scoreByNeeds(aug("Many"), fast8, data, "3-2", [], lots).impact!;

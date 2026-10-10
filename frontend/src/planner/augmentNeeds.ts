@@ -49,8 +49,13 @@ export const NEEDS = {
   xpShare: { reroll1: 0.3, reroll2: 0.5, reroll3: 0.7, fast8: 1, fast9: 1 } as Record<Archetype, number>,
   /** Free rerolls are worth this share of gold (a fast board only rolls at 8 or 9). */
   rerollShare: { reroll1: 1, reroll2: 1, reroll3: 1, fast8: 0.75, fast9: 0.6 } as Record<Archetype, number>,
-  /** Items beyond what the board can use (carries' and tank's slots) count at this share. */
+  /** Items beyond what the board can use (carries' and tank's slots) count at this share, saturating over spareItemScale items. */
   spareItemShare: 0.3,
+  spareItemScale: 3,
+  /** Every board wants at least this many items (two carry sets and tank items), even before its carries are on it. */
+  minItemDemand: 10,
+  /** Combat readiness also grows with how itemized the carries are: × (combatItemBase + (1 − combatItemBase) × itemized share). */
+  combatItemBase: 0.5,
   /** Items early win streaks and save HP. */
   itemTempo: { "2-1": 1.15, "3-2": 1.1, "4-2": 1 } as Record<string, number>,
   /** Combat bonuses: how ready the board is to use them at the stage (units fielded, carries itemized). */
@@ -97,6 +102,8 @@ export interface Needs {
   /** Items the board can use (a set per carry-capable unit up to 3, one more each beyond, 2 for tanks) and the room left after an average game's items. */
   itemDemand: number;
   itemRoom: number;
+  /** Items the game will have by the end before augments. */
+  itemsEnd: number;
   notes: string[];
 }
 
@@ -175,7 +182,7 @@ export function needsOf(goal: Board, data: SetData, now?: Board, stage?: string)
   const earned = incomeUntil(spike);
   const shortfall = Math.max(0, rollGold * NEEDS.hitMargin + levelGold + NEEDS.boardGold - earned);
   const capable = us.filter((u) => u.items.length >= 2 || u.star === 3 || (u.cost >= 4 && u.star >= 2)).length;
-  const itemDemand = 3 * Math.min(capable, 3) + Math.max(0, capable - 3) + 2;
+  const itemDemand = Math.max(NEEDS.minItemDemand, 3 * Math.min(capable, 3) + Math.max(0, capable - 3) + 2);
   // Items a game will have by the end: an average game's, or what the player holds now plus what's still to come.
   const holdable = new Set(data.items.filter((i) => ["completed", "emblem", "artifact", "radiant"].includes(i.kind)).map((i) => i.apiName));
   const heldItems = now ? now.units.reduce((a, u) => a + u.items.filter((i) => holdable.has(i)).length, 0) : 0;
@@ -188,6 +195,7 @@ export function needsOf(goal: Board, data: SetData, now?: Board, stage?: string)
     perCopy: copies ? rollGold / copies : 0,
     itemDemand,
     itemRoom: Math.max(0, itemDemand - itemsEnd),
+    itemsEnd,
     notes: [
       `${plan.label}: spike at ${spike} on level ${spikeLevel}`,
       ...(now ? [`from your board at ${stage}: ${heldItems} item${heldItems === 1 ? "" : "s"} held`] : []),
@@ -233,10 +241,12 @@ function valueOf(t: Taken, needs: Needs) {
   const short = Math.min(t.gold, needs.shortfall);
   const spare = Math.max(0, t.gold - needs.shortfall);
   const gold = short / NEEDS.shortGoldPerItem + (NEEDS.spareScale * (1 - Math.exp(-spare / NEEDS.spareScale))) / NEEDS.spareGoldPerItem;
-  // Items fill the room on the carries and tank, then count as spares.
-  const items = Math.min(t.items, needs.itemRoom) + Math.max(0, t.items - needs.itemRoom) * NEEDS.spareItemShare;
-  // Combat: stat bonuses stack with diminishing returns (a second one lands on an already stronger team).
-  const combat = 2 * (1 - Math.exp(-t.combat / 2));
+  // Items fill the room on the carries and tank, then count as spares (saturating).
+  const extra = Math.max(0, t.items - needs.itemRoom);
+  const items = Math.min(t.items, needs.itemRoom) + NEEDS.spareItemShare * NEEDS.spareItemScale * (1 - Math.exp(-extra / NEEDS.spareItemScale));
+  // Combat: worth more the more itemized the carries are (items taken count), with diminishing returns between bonuses.
+  const itemized = Math.min(1, (needs.itemsEnd + t.items) / needs.itemDemand);
+  const combat = 2 * (1 - Math.exp(-t.combat / 2)) * (NEEDS.combatItemBase + (1 - NEEDS.combatItemBase) * itemized);
   return { gold, items, combat, direction: t.direction };
 }
 

@@ -96,15 +96,25 @@ export function AugmentImpact({
   }, [mode, haveKey, data.setNumber]);
   const suggested = mode === "now" ? suggestions?.[goalChoice] : undefined;
   const suggestedGoal = useMemo(() => (suggested ? compBoard(suggested, data) : null), [suggested, data]);
-  const ranked = useMemo(() => {
+  const { ranked, moved } = useMemo(() => {
     const offered = data.augments.filter((a) => availableAt(a, slot) && !settled.augments.some((c, i) => c === a.apiName && i !== slot));
     // Augments picked at earlier stages are already working: each one here is scored on top of them.
     const earlier = settled.augments.slice(0, slot).filter((a): a is string => !!a);
     // "My goal": what the board still needs (econ, items, combat, copies) at this stage. "What I have now": the same,
     // towards the chosen suggested board, starting from the player's board (without a suggestion, the older pricing).
-    if (mode === "goal") return rankByNeeds(offered, settled, data, stage, earlier);
-    if (suggestedGoal) return rankByNeeds(offered, suggestedGoal, data, stage, earlier, undefined, settled);
-    return rankAugments(offered, settled, data, stage, undefined, earlier, mode);
+    const rank = (given: string[]) =>
+      mode === "goal"
+        ? rankByNeeds(offered, settled, data, stage, given)
+        : suggestedGoal
+          ? rankByNeeds(offered, suggestedGoal, data, stage, given, undefined, settled)
+          : rankAugments(offered, settled, data, stage, undefined, given, mode);
+    const withPicks = rank(earlier);
+    // What the earlier picks changed at the top of the list (the rows themselves say "was −0.xx").
+    if (!earlier.length) return { ranked: withPicks, moved: null };
+    const top = (r: AugmentScore[]) => r.filter((x) => x.impact !== null).slice(0, 5).map((x) => x.name);
+    const before = top(rank([]));
+    const after = top(withPicks);
+    return { ranked: withPicks, moved: { out: before.filter((n) => !after.includes(n)), in: after.filter((n) => !before.includes(n)) } };
   }, [settled, data, slot, stage, mode, suggestedGoal]);
   const coverage = useMemo(() => {
     const earlier = settled.augments.slice(0, slot).filter((a): a is string => !!a);
@@ -208,6 +218,7 @@ export function AugmentImpact({
       {earlierNames.length > 0 && board.units.length > 0 && (
         <p className="muted augment-impact-given">
           Scored on top of your {earlierNames.length > 1 ? "earlier picks" : "earlier pick"}: {earlierNames.join(", ")}.{" "}
+          {moved && (moved.out.length > 0 ? `Out of the top 5 because of ${earlierNames.length > 1 ? "them" : "it"}: ${moved.out.join(", ")}; in: ${moved.in.join(", ")}. ` : "The top 5 is the same without it: it fills a different need than these. ")}
           {coverage && coverageText(coverage)}
         </p>
       )}
