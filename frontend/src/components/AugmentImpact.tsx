@@ -105,7 +105,7 @@ export function AugmentImpact({
       </div>
       <p className="muted augment-impact-given">
         {mode === "goal" && progress
-          ? `Priced from a typical position at ${stage} (level ${progress.level}, units up to ${progress.maxStar}★, about ${progress.items} item${progress.items === 1 ? "" : "s"}) towards this board: copies count towards its stars, items towards its item slots, stat bonuses on the finished board.`
+          ? `Priced from a typical position at ${stage} (level ${progress.level}, units up to ${progress.maxStar}★${progress.threeStarUpToCost ? `, 3★ 1-${progress.threeStarUpToCost} costs already done` : ""}, about ${progress.items} item${progress.items === 1 ? "" : "s"}) towards this board: copies count towards its stars, items towards its item slots, stat bonuses on the finished board.`
           : "Priced on the board as it is: its stars and items are already yours, so only what it still lacks counts."}
       </p>
       <div className="mode-tabs" role="tablist" aria-label="Augment stage">

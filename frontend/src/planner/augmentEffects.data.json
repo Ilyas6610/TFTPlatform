@@ -929,6 +929,14 @@
    "confidence": "high"
   },
   "DA_CryMeARiver": {
+   "effects": [
+    {
+     "kind": "stat",
+     "scope": "team",
+     "stat": "manaRegen",
+     "flat": 1
+    }
+   ],
    "resources": {
     "named": [
      {
@@ -938,9 +946,8 @@
      }
     ]
    },
-   "confidence": "low",
+   "confidence": "medium",
    "unparsed": [
-    "Your team gains 1 Mana Regen.",
     "After 12 seconds in combat, increase this to 4."
    ]
   },
@@ -977,6 +984,12 @@
      "scope": "holders",
      "stat": "health",
      "flat": 100
+    },
+    {
+     "kind": "stat",
+     "scope": "holders",
+     "stat": "manaRegen",
+     "flat": 2
     }
    ],
    "resources": {
@@ -1046,6 +1059,12 @@
   },
   "DA_DeadlierCaps": {
    "effects": [
+    {
+     "kind": "stat",
+     "scope": "holders",
+     "stat": "manaRegen",
+     "flat": 1
+    },
     {
      "kind": "stat",
      "scope": "holders",
@@ -1158,12 +1177,10 @@
   },
   "DA_EpicRolldown": {
    "resources": {
-    "rerolls": 10
+    "rerolls": 20,
+    "atLevel": 8
    },
-   "confidence": "high",
-   "conditional": [
-    "When you reach Level 8, gain 20 Shop rerolls."
-   ]
+   "confidence": "high"
   },
   "DA_Epoch": {
    "resources": {
@@ -1939,30 +1956,33 @@
    "effects": [
     {
      "kind": "stat",
-     "scope": "team",
+     "scope": "cost",
+     "cost": 5,
      "stat": "health",
      "pct": 0.12
     },
     {
      "kind": "stat",
-     "scope": "team",
+     "scope": "cost",
+     "cost": 5,
      "stat": "as",
      "pct": 0.12
     }
    ],
-   "resources": {
-    "xp": 2
+   "resources": {},
+   "recurring": {
+    "xp": {
+     "perCombat": 2
+    }
    },
    "confidence": "high"
   },
   "DA_LateGameSpecialist": {
    "resources": {
-    "gold": 13.5
+    "gold": 27,
+    "atLevel": 9
    },
-   "confidence": "high",
-   "conditional": [
-    "When you reach Level 9, gain 27 gold."
-   ]
+   "confidence": "high"
   },
   "DA_LatentForge": {
    "resources": {
@@ -1974,19 +1994,21 @@
    "effects": [
     {
      "kind": "stat",
-     "scope": "holders",
+     "scope": "cost",
+     "cost": 3,
      "stat": "health",
      "flat": 150
     },
     {
      "kind": "stat",
-     "scope": "holders",
+     "scope": "cost",
+     "cost": 3,
      "stat": "as",
      "pct": 0.12
     }
    ],
    "resources": {
-    "emblems": 2
+    "emblems": 1
    },
    "confidence": "high"
   },
@@ -2000,6 +2022,11 @@
   "DA_LivingForge": {
    "resources": {
     "artifacts": 1
+   },
+   "recurring": {
+    "artifacts": {
+     "everyCombats": 10
+    }
    },
    "confidence": "high"
   },
@@ -2122,6 +2149,13 @@
       "fixed": true,
       "name": "Lux"
      }
+    ],
+    "named": [
+     {
+      "name": "Spear of Shojin",
+      "n": 1,
+      "kind": "completed"
+     }
     ]
    },
    "confidence": "low",
@@ -2206,19 +2240,22 @@
      "kind": "stat",
      "scope": "team",
      "stat": "health",
-     "pct": 0.01
+     "pct": 0.01,
+     "per": "combat"
     },
     {
      "kind": "stat",
      "scope": "team",
      "stat": "ad",
-     "pct": 0.01
+     "pct": 0.01,
+     "per": "combat"
     },
     {
      "kind": "stat",
      "scope": "team",
      "stat": "ap",
-     "pct": 0.01
+     "pct": 0.01,
+     "per": "combat"
     }
    ],
    "confidence": "medium",
@@ -2339,6 +2376,11 @@
    "resources": {
     "named": [
      {
+      "name": "Blue Buff",
+      "n": 1,
+      "kind": "completed"
+     },
+     {
       "name": "Red Buff",
       "n": 1,
       "kind": "completed"
@@ -2426,8 +2468,11 @@
    "confidence": "high"
   },
   "DA_PatientStudy": {
-   "resources": {
-    "xp": 2
+   "resources": {},
+   "recurring": {
+    "xp": {
+     "perCombat": 2.5
+    }
    },
    "confidence": "high"
   },
@@ -2877,12 +2922,9 @@
   },
   "DA_SpreadingRoots": {
    "resources": {
-    "emblems": 1
+    "emblems": 2
    },
-   "confidence": "medium",
-   "unparsed": [
-    "After 3 combats, gain another."
-   ]
+   "confidence": "high"
   },
   "DA_SpreadingRootsPlus": {
    "resources": {
@@ -2893,7 +2935,14 @@
   },
   "DA_Staffsmith": {
    "resources": {
-    "completed": 2
+    "named": [
+     {
+      "name": "completed items from Needlessly Large Rod",
+      "n": 2,
+      "kind": "completed",
+      "from": "Needlessly Large Rod"
+     }
+    ]
    },
    "confidence": "high"
   },
@@ -3051,7 +3100,14 @@
   },
   "DA_Swordsmith": {
    "resources": {
-    "completed": 2
+    "named": [
+     {
+      "name": "completed items from B.F. Sword",
+      "n": 2,
+      "kind": "completed",
+      "from": "B.F. Sword"
+     }
+    ]
    },
    "confidence": "high"
   },
@@ -3288,9 +3344,17 @@
    "effects": [
     {
      "kind": "stat",
-     "scope": "unknown",
+     "scope": "holders",
+     "heldKind": "emblem",
      "stat": "as",
      "pct": 0.2
+    },
+    {
+     "kind": "stat",
+     "scope": "holders",
+     "heldKind": "emblem",
+     "stat": "manaRegen",
+     "flat": 3
     }
    ],
    "resources": {

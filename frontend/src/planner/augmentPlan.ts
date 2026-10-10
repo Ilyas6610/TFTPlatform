@@ -60,6 +60,10 @@ export interface Plan {
   lowCostShare: number;
   /** How much a free reroll is worth, as a share of its gold: high for a board that wants copies of cheap units. */
   rollIntent: number;
+  /** Ledgers kept while pricing (augmentScore's resourceParts, on its own copy): spare gold already counted, and the
+   * player's own rolling gold that free rerolls haven't replaced yet. */
+  spareGold?: number;
+  rollBudget?: number;
 }
 
 const copies = (star: number) => 3 ** (star - 1);

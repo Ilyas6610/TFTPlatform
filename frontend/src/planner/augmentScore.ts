@@ -39,13 +39,15 @@ export interface StatEffect {
   scope: "team" | "holders" | "unheld" | "front" | "back" | "cost" | "trait" | "unknown";
   /** For scope "trait": the units that have it. */
   trait?: string;
-  stat: "health" | "armor" | "mr" | "ad" | "ap" | "as" | "crit" | "critDmg" | "damageAmp" | "durability" | "omnivamp" | "abilityCrit";
+  stat: "health" | "armor" | "mr" | "ad" | "ap" | "as" | "crit" | "critDmg" | "damageAmp" | "durability" | "omnivamp" | "abilityCrit" | "manaRegen";
   flat?: number;
   /** The flat bonus grows by this much per player level. */
   plusPerLevel?: number;
   pct?: number;
   /** The bonus repeats per ... (see perCount). */
-  per?: "trait" | "activeTrait" | "bronzeTrait" | "frontRowUnit" | "level" | "item" | "oneUnitItem" | "emblem" | "uniqueOther";
+  per?: "trait" | "activeTrait" | "bronzeTrait" | "frontRowUnit" | "level" | "item" | "oneUnitItem" | "emblem" | "uniqueOther" | "combat";
+  /** For scope "holders": only holders of this kind of item ("Champions holding Spatula or Frying Pan items"). */
+  heldKind?: "emblem";
   rows?: number;
   /** At most this many of the covered units get it (the holders of the items the augment gave), the most itemized first. */
   maxUnits?: number;
@@ -60,6 +62,8 @@ export interface Resources {
   gold?: number;
   xp?: number;
   rerolls?: number;
+  /** The reward comes on reaching this level ("When you reach Level 9, gain 27 gold"): only for a board that gets there, late. */
+  atLevel?: number;
   /** Chance that a reroll gives a free one back ("each time your shop is rerolled, 45% chance to gain a free reroll"). */
   rerollRefund?: number;
   components?: number;
@@ -68,7 +72,8 @@ export interface Resources {
   emblems?: number;
   radiants?: number;
   units?: { n: number; cost: number; star: number; fixed?: boolean; name?: string }[];
-  named?: { name: string; n: number; kind: string }[];
+  /** Named items; `from` marks random completed items that build from that component ("2 items that build from B.F. Sword"). */
+  named?: { name: string; n: number; kind: string; from?: string }[];
   /** Champion Duplicators: each copies a unit of up to maxCost. */
   duplicators?: { n: number; maxCost: number }[];
   /** The rightmost bench slots turn into random champions of the same cost every round. */
@@ -79,9 +84,11 @@ export interface Resources {
 
 export interface Recurring {
   gold?: { perRound?: number; perStage?: number };
-  xp?: { perStage?: number; rounds?: number };
+  xp?: { perStage?: number; rounds?: number; perCombat?: number };
   rerolls?: { perRound?: number; perStage?: number };
   components?: { rounds?: number };
+  /** An artifact anvil again after every N player combats. */
+  artifacts?: { everyCombats: number };
   /** Another copy of the champion(s) gained, every round. */
   copies?: { perRound?: number; cost?: number; n?: number };
 }
@@ -116,6 +123,8 @@ export const ASSUMPTIONS = {
   itemAbility: 0.3,
   /** Share of a unit's damage that comes from its ability (the rest is auto-attacks). */
   abilityShare: 0.5,
+  /** Mana a unit gains a second without regen: 10 per attack at its attack speed plus this much from damage taken. */
+  manaFromDamage: 2,
   /** How much of attack speed's gain reaches ability damage (faster mana generation). */
   abilityFromAttackSpeed: 0.5,
   /** Length of a fight that bonuses are averaged over. */
@@ -148,10 +157,24 @@ export const ASSUMPTIONS = {
   /** Items always have some use when the carries are full (spares for others, swaps, tempo): usable slots never fall below this, at a share of an average item. */
   itemSlotFloor: 3,
   spareSlotShare: 0.7,
+  /**
+   * What an item off the board's build is worth next to one in it (the board's items say what it builds: which completed
+   * items, made of which components). A completed item the board doesn't hold counts this much, more when its components
+   * are ones the board builds from; a component the board's recipes don't use (a Rod for an attack-damage board) counts
+   * offBuildComponentShare. Random items count at their expected fit. Unmeasured; a board without items counts every item fully.
+   */
+  offBuildItemShare: 0.5,
+  offBuildComponentShare: 0.5,
   /** Share of an item beyond the free slots that still counts. */
   itemOverflowShare: 0.3,
-  /** Placement per gold that nothing on the board needs to buy (interest, safety). */
-  idleGold: 0.003,
+  /**
+   * Placement per gold the board doesn't spend on copies it wants: it buys levels, interest and safety. Set from how the
+   * designers price gold against items within a tier (Gold: 21 gold beside 1-2.25 items; Prismatic: 22 gold beside ~2;
+   * Silver: 8-12 gold beside 0.5-1): about 15 gold for one completed item.
+   */
+  idleGold: ITEM_GAIN / 25,
+  /** Spare gold saturates: x gold counts as spareGoldScale × (1 − e^(−x/spareGoldScale)) (20 gold ≈ 85%, 60 ≈ 63%, 126 ≈ 41% of face value). */
+  spareGoldScale: 60,
   /**
    * Gold, copies and items picked early do more than the final board shows: they arrive before the fights they decide,
    * save rolling later and compound. Their value grows by this per stage left (the fit sees only final boards, so it
@@ -161,6 +184,8 @@ export const ASSUMPTIONS = {
   /** Stages left after the stage an augment is picked at, and rounds per stage, for recurring gains. */
   stagesLeft: { "2-1": 5, "3-2": 4, "4-2": 3 } as Record<string, number>,
   roundsPerStage: 6,
+  /** Player combats a stage (the rest are a carousel and a monster round). */
+  combatsPerStage: 5,
   /** XP matters less the higher the level (level 9 and 10 have little left to buy). */
   xpUsefulByLevel: { 6: 1, 7: 1, 8: 0.6, 9: 0.2, 10: 0 } as Record<number, number>,
   /**
@@ -168,7 +193,7 @@ export const ASSUMPTIONS = {
    * can't show (star-ups at level 5-6 beat the lobby), so their value is multiplied by 1 + this x the carries' low-cost
    * share. Domain knowledge, not measured: the fit sees only final boards.
    */
-  rerollTempo: 6,
+  rerollTempo: 2,
   /** No augment moves a placement by more than about this: totals are squeezed towards it (tanh), keeping their order. */
   softCap: 0.8,
   /**
@@ -197,8 +222,10 @@ export interface Part {
   label: string;
   /** Placement this part is expected to gain (positive is better). */
   dp: number;
-  /** Copies of units: worth more on a board of cheap carries (see rerollTempo). */
-  copies?: boolean;
+  /** Share of the part that arrives over the rest of the game (per round or stage) rather than now: it gets the tempo of halfway through. */
+  later?: number;
+  /** Copies of units: worth more on a board of cheap carries (see rerollTempo); a number is the share of the part that is copies (gold buys some, the rest sits idle). */
+  copies?: boolean | number;
   /** For stat parts: the lift in team strength, as a fraction. */
   lift?: number;
   note?: string;
@@ -240,13 +267,17 @@ interface UnitState {
   damageAmp: number;
   durability: number;
   omnivamp: number;
+  /** Mana regenerated a second. */
+  manaRegen: number;
   items: number;
+  /** Emblems (Spatula and Frying Pan items) it holds. */
+  emblems: number;
   row: number;
   traits: string[];
   cost: number;
 }
 
-function unitState(u: PlacedUnit, def: SetUnit): UnitState {
+function unitState(u: PlacedUnit, def: SetUnit, emblemIds?: Set<string>): UnitState {
   const A = ASSUMPTIONS;
   const star = A.starMultiplier[u.star - 1] ?? 1;
   const items = u.items.length;
@@ -270,7 +301,9 @@ function unitState(u: PlacedUnit, def: SetUnit): UnitState {
     damageAmp: 0,
     durability: 0,
     omnivamp: 0,
+    manaRegen: 0,
     items,
+    emblems: emblemIds ? u.items.filter((i) => emblemIds.has(i)).length : 0,
     row: Math.floor(u.pos / COLS),
     traits: def.traits,
     cost: def.cost,
@@ -289,7 +322,10 @@ function dps(s: UnitState): number {
   const auto = s.ad * s.attackSpeed * (1 + crit);
   // Ability damage: its share of the unit's base damage, scaled by ability power and (partly) attack speed.
   const asGain = s.attackSpeed / 0.7 - 1;
-  const ability = s.abilityBase * (1 + s.apBonus) * (1 + A.abilityFromAttackSpeed * Math.max(0, asGain)) * (1 + (s.abilityCrit ? crit : 0));
+  // Mana regen casts the ability more often: its share of the mana the unit gains a second.
+  const income = 10 * s.attackSpeed + A.manaFromDamage;
+  const regen = 1 + s.manaRegen / income;
+  const ability = s.abilityBase * (1 + s.apBonus) * (1 + A.abilityFromAttackSpeed * Math.max(0, asGain)) * (1 + (s.abilityCrit ? crit : 0)) * regen;
   return (auto + ability) * (1 + s.damageAmp);
 }
 
@@ -322,7 +358,7 @@ export function randomEmblemUse(board: Board, data: SetData): number {
 // -------------------------------------------------------------- stat effects
 
 /** How many times a "per ..." bonus applies to a unit. */
-function perCount(e: StatEffect, states: UnitState[], board: Board, data: SetData): number {
+function perCount(e: StatEffect, states: UnitState[], board: Board, data: SetData, combats = 0): number {
   switch (e.per) {
     case undefined:
       return 1;
@@ -344,6 +380,9 @@ function perCount(e: StatEffect, states: UnitState[], board: Board, data: SetDat
       return 1;
     case "uniqueOther":
       return 3;
+    case "combat":
+      // Stacks after every player combat: a fight sees half of what the rest of the game builds, on average.
+      return combats / 2;
   }
 }
 
@@ -353,7 +392,7 @@ function appliesTo(e: StatEffect, s: UnitState): boolean {
     case "unknown":
       return true;
     case "holders":
-      return s.items > 0;
+      return e.heldKind === "emblem" ? s.emblems > 0 : s.items > 0;
     case "unheld":
       return s.items === 0;
     case "front":
@@ -425,6 +464,9 @@ function applyStat(s: UnitState, e: StatEffect, n: number, t: number, level: num
       break;
     case "durability":
       s.durability += pct;
+      break;
+    case "manaRegen":
+      s.manaRegen += flat;
       break;
     case "omnivamp":
       s.omnivamp += pct;
@@ -500,9 +542,23 @@ function itemSlots(board: Board, data: SetData, goal?: Board): { gain: number; w
  * Only `rollIntent` of the gold is used that way (a board of expensive carries rolls little); the rest is idle.
  * What it buys comes off the plan's counts (the caller's own copy).
  */
-function goldDp(gold: number, plan: Plan): { dp: number; note: string } {
+/** Placement from spare gold (levels, interest, safety), on the plan's shared ledger: a board can only use so much. */
+function spareDp(gold: number, plan: Plan): number {
   const A = ASSUMPTIONS;
-  const spendable = gold * plan.rollIntent;
+  const s0 = plan.spareGold ?? 0;
+  const F = (x: number) => A.spareGoldScale * (1 - Math.exp(-x / A.spareGoldScale));
+  plan.spareGold = s0 + gold;
+  return (F(s0 + gold) - F(s0)) * A.idleGold;
+}
+
+function goldDp(
+  gold: number,
+  plan: Plan,
+  opts: { rolls?: "only" | "none"; savedCap?: number; own?: boolean } = {},
+): { dp: number; copyShare: number; note: string } {
+  // Rerolls can only roll (what they don't find copies with saves the player's own rolling gold, up to savedCap);
+  // XP can't roll at all; gold rolls with the board's roll intent.
+  const spendable = opts.rolls === "only" ? gold : opts.rolls === "none" ? 0 : gold * plan.rollIntent;
   const odds = SHOP_ODDS[Math.max(1, Math.min(10, plan.level))] ?? SHOP_ODDS[10];
   const perRoll = (cost: number) => (SHOP.slots * (odds[cost - 1] ?? 0)) / 100 / Math.max(1, plan.unitsOfCost[cost] ?? 1);
   let left = spendable;
@@ -523,21 +579,96 @@ function goldDp(gold: number, plan: Plan): { dp: number; note: string } {
     });
     left -= price * share;
   }
-  const idle = left + (gold - spendable);
-  dp += idle * A.idleGold;
-  const note = copies > 0.05 ? `finds about ${copies.toFixed(1)} copies the board wants` : "nothing the board still needs to buy: idle gold";
-  return { dp, note };
+  const idle = opts.rolls === "only" ? Math.min(left, opts.savedCap ?? 0) : left + (gold - spendable);
+  const copyDp = dp;
+  // Spare gold buys levels, interest and safety, with diminishing returns over all the picks' gold together (the
+  // plan's ledger): a board can only use so much. The player's own gold isn't counted (it's the baseline).
+  if (!opts.own) dp += spareDp(idle, plan);
+  const note = copies > 0.05 ? `finds about ${copies.toFixed(1)} copies the board wants` : opts.rolls === "none" ? "spare: levels and interest" : "nothing the board still needs to buy: spare gold";
+  return { dp, copyShare: dp > 0 ? copyDp / dp : 0, note };
 }
 
-/** Items' worth of what an augment gives: components count half, completed items one, artifacts and radiants a bit more. */
-function itemEquivalents(res: Resources, rec: Recurring | undefined, board: Board, data: SetData): number {
+/** What a board builds: how many of its items use each component, and which completed items it holds (by name). */
+interface Build {
+  components: Map<string, number>;
+  items: Map<string, number>;
+}
+const buildCache = new WeakMap<Board, Build | null>();
+function buildOf(board: Board, data: SetData): Build | null {
+  if (buildCache.has(board)) return buildCache.get(board)!;
+  const byId = new Map(data.items.map((i) => [i.apiName, i]));
+  const components = new Map<string, number>();
+  const items = new Map<string, number>();
+  let any = false;
+  for (const u of board.units)
+    for (const id of u.items) {
+      const it = byId.get(id);
+      if (!it || it.kind !== "completed") continue;
+      any = true;
+      items.set(it.name, (items.get(it.name) ?? 0) + 1);
+      for (const c of it.composition ?? []) {
+        const name = byId.get(c)?.name;
+        if (name) components.set(name, (components.get(name) ?? 0) + 1);
+      }
+    }
+  const b = any ? { components, items } : null;
+  buildCache.set(board, b);
+  return b;
+}
+
+/** How well items fit the board's build, each 0..1 of a fitting item (see offBuildItemShare). */
+function itemFit(build: Build | null, data: SetData) {
+  const A = ASSUMPTIONS;
+  const byId = new Map(data.items.map((i) => [i.apiName, i]));
+  const compName = (id: string) => byId.get(id)?.name ?? id;
+  const standard = data.items.filter((i) => i.kind === "component" && data.items.some((c) => c.kind === "completed" && c.composition?.includes(i.apiName) && c.composition.every((x) => byId.get(x)?.kind === "component")));
+  const completed = data.items.filter((i) => i.kind === "completed" && (i.composition?.length ?? 0) === 2);
+  const usesComp = (name: string) => (build?.components.get(name) ?? 0) > 0;
+  const completedFit = (it: { name: string; composition?: string[] }) => {
+    if (!build || build.items.has(it.name)) return 1;
+    const share = (it.composition ?? []).filter((c) => usesComp(compName(c))).length / Math.max(1, it.composition?.length ?? 1);
+    return A.offBuildItemShare + (1 - A.offBuildItemShare) * 0.5 * share;
+  };
+  const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 1);
+  return {
+    /** n of the named component: fully when the board's recipes use that kind (copies pair into its items too). */
+    component: (name: string, n: number) => (!build || usesComp(name) ? n : n * A.offBuildComponentShare),
+    randomComponent: build ? mean(standard.map((c) => (usesComp(c.name) ? 1 : A.offBuildComponentShare))) : 1,
+    completed: (name: string) => {
+      const it = data.items.find((i) => i.name === name);
+      return it ? completedFit(it) : build ? A.offBuildItemShare : 1;
+    },
+    randomCompleted: build ? mean(completed.map(completedFit)) : 1,
+    completedFrom: (comp: string) => {
+      const id = data.items.find((i) => i.name === comp)?.apiName;
+      return build ? mean(completed.filter((i) => id && i.composition?.includes(id)).map(completedFit)) : 1;
+    },
+  };
+}
+
+/**
+ * Items' worth of what an augment gives: components count half, completed items one, artifacts and radiants a bit
+ * more; components and completed items scaled by how well they fit what the board builds (`build`: the goal's items in
+ * goal mode, else the board's own).
+ */
+function itemEquivalents(res: Resources, rec: Recurring | undefined, board: Board, data: SetData, build: Board = board): number {
+  const fit = itemFit(buildOf(build, data), data);
   const itemsOf = (n: number, kind: string) => n * (ASSUMPTIONS.itemEquivalents[kind] ?? 1);
   // Emblems here are random ones ("Gain 3 random Emblems"; a named emblem is under named): one is only as good as an
   // item if its trait is one the board plays, so it counts at the share of the set's emblem traits this board plays.
   const emblemUse = res.emblems ? randomEmblemUse(board, data) : 1;
-  let items = itemsOf(res.components ?? 0, "component") + itemsOf(res.completed ?? 0, "completed") + itemsOf(res.artifacts ?? 0, "artifact") + itemsOf(res.emblems ?? 0, "emblem") * emblemUse + itemsOf(res.radiants ?? 0, "radiant");
-  for (const n of res.named ?? []) items += itemsOf(n.n, n.kind);
-  if (rec?.components?.rounds && res.components) items += itemsOf(res.components * rec.components.rounds, "component");
+  const comps = (res.components ?? 0) + (rec?.components?.rounds && res.components ? res.components * rec.components.rounds : 0);
+  let items =
+    itemsOf(comps, "component") * fit.randomComponent +
+    itemsOf(res.completed ?? 0, "completed") * fit.randomCompleted +
+    itemsOf(res.artifacts ?? 0, "artifact") +
+    itemsOf(res.emblems ?? 0, "emblem") * emblemUse +
+    itemsOf(res.radiants ?? 0, "radiant");
+  for (const n of res.named ?? []) {
+    if (n.kind === "component") items += itemsOf(fit.component(n.name, n.n), "component");
+    else if (n.kind === "completed") items += itemsOf(n.n, "completed") * (n.from ? fit.completedFrom(n.from) : fit.completed(n.name));
+    else items += itemsOf(n.n, n.kind);
+  }
   return items;
 }
 
@@ -550,22 +681,28 @@ function resourceParts(res: Resources, rec: Recurring | undefined, stage: string
   const take = (t: Plan["targets"][number], n: number) => (t.remaining = Math.max(0, t.remaining - n));
   // The player's own rolling finds copies too: those aren't wanted from augments.
   const ownGold = A.ownRollGold[stage] ?? 0;
-  goldDp(ownGold, plan);
+  goldDp(ownGold, plan, { own: true });
+  plan.spareGold = 0;
+  plan.rollBudget = ownGold * plan.rollIntent;
   if (out) out.copiesWanted = plan.targets.reduce((a, t) => a + t.remaining, 0);
   const f = stageFactors(stage);
   const parts: Part[] = [];
-  const add = (label: string, dp: number, note?: string, copies = false) => {
-    if (Math.abs(dp) > 1e-9) parts.push({ label, dp, note, copies });
+  const add = (label: string, dp: number, note?: string, copies: boolean | number = false, later = 0) => {
+    if (Math.abs(dp) > 1e-9) parts.push({ label, dp, note, copies, later });
   };
   const xpShare = A.xpUsefulByLevel[Math.max(6, Math.min(10, board.level))] ?? 1;
   const nameOf = (id: string) => (data.units.find((u) => u.apiName === id)?.name ?? id).replace(/\s*\(.*\)$/, "");
 
   const emblemUse = res.emblems ? randomEmblemUse(board, data) : 1;
-  const items = itemEquivalents(res, rec, board, data);
+  // Anvils again every N player combats: as many as the stages left hold, arriving later in the game.
+  const moreAnvils = rec?.artifacts?.everyCombats ? Math.floor((f.stages * A.combatsPerStage) / rec.artifacts.everyCombats) : 0;
+  if (moreAnvils) res = { ...res, artifacts: (res.artifacts ?? 0) + moreAnvils };
+  const items = itemEquivalents(res, rec, board, data, goal ?? board);
+  const laterItems = moreAnvils * (A.itemEquivalents.artifact ?? 1) + (rec?.components?.rounds && res.components ? res.components * rec.components.rounds * (A.itemEquivalents.component ?? 0.5) : 0);
   if (items) {
     const r = itemsDp(items, board, data, goal);
     const kinds = [res.components && `${fmt(res.components)} components`, res.completed && `${fmt(res.completed)} completed items`, res.artifacts && `${fmt(res.artifacts)} artifacts`, res.emblems && `${res.emblems} random emblems${emblemUse < 1 ? ` (${Math.round(emblemUse * 100)}% likely to fit)` : ""}`, res.radiants && `${fmt(res.radiants)} radiant items`, ...(res.named ?? []).map((n) => `${n.n} × ${n.name}`)].filter(Boolean);
-    add(kinds.join(", "), r.dp, `about ${fmt(items)} items' worth${r.note ? `; ${r.note}` : ""}`);
+    add(kinds.join(", "), r.dp, `about ${fmt(items)} items' worth${r.note ? `; ${r.note}` : ""}`, false, Math.min(1, laterItems / items));
   }
 
   // Champions: a copy the board wants is worth its share of a star-up; any other champion sells for its gold.
@@ -584,7 +721,6 @@ function resourceParts(res: Resources, rec: Recurring | undefined, stage: string
       per = t ? copyGain(t.cost, t.star) * t.weight : 0;
     }
     const useful = Math.min(nCopies, wanted);
-    const sell = A.idleGold * cost;
     const got = hit * useful;
     if (name) {
       const t = same.find((x) => nameOf(x.id) === name);
@@ -592,13 +728,15 @@ function resourceParts(res: Resources, rec: Recurring | undefined, stage: string
     } else for (const t of same) take(t, got / same.length);
     return {
       use: hit * useful * per,
-      sell: (hit * (nCopies - useful) + (1 - hit) * nCopies) * sell,
+      /** Gold the unwanted copies sell for. */
+      sell: (hit * (nCopies - useful) + (1 - hit) * nCopies) * cost,
       note: hit > 0 ? `${Math.round(hit * 100)}% a copy the board wants (it needs ~${wanted.toFixed(0)} more)` : "no unit of that cost on the board still wants copies",
     };
   };
-  const addUnits = (label: string, use: number, sell: number, note: string) => {
-    if (use > 0 || sell === 0) add(label, use, note, true);
-    if (sell > 0) add(use > 0 ? `${label}: the rest sold` : `${label} (sold)`, sell, use > 0 ? "copies the board doesn't need sell for their gold" : note);
+  const addUnits = (label: string, use: number, sellGold: number, note: string, later = 0) => {
+    const sell = sellGold > 0 ? spareDp(sellGold, plan) : 0;
+    if (use > 0 || sell === 0) add(label, use, note, true, later);
+    if (sell > 0) add(use > 0 ? `${label}: the rest sold` : `${label} (sold)`, sell, use > 0 ? "copies the board doesn't need sell for their gold" : note, false, later);
   };
   for (const u of res.units ?? []) {
     const ev = evUnit(u.cost, u.star, u.name);
@@ -608,7 +746,7 @@ function resourceParts(res: Resources, rec: Recurring | undefined, stage: string
     const n = plan.unitsOfCost[res.allOfCost] ?? 0;
     const wantedHere = plan.targets.filter((t) => t.cost === res.allOfCost);
     const still = wantedHere.filter((t) => t.remaining >= 1);
-    const dp = still.reduce((a, t) => a + copyGain(t.cost, t.star) * t.weight, 0) + Math.max(0, n - still.length) * A.idleGold * res.allOfCost;
+    const dp = still.reduce((a, t) => a + copyGain(t.cost, t.star) * t.weight, 0) + spareDp(Math.max(0, n - still.length) * res.allOfCost, plan);
     for (const t of still) take(t, 1);
     add(`a copy of each ${res.allOfCost}-cost (${n})`, dp, `${wantedHere.length} of them are units the board wants`, true);
   }
@@ -618,7 +756,7 @@ function resourceParts(res: Resources, rec: Recurring | undefined, stage: string
     const one = evUnit(rec.copies.cost, 1);
     plan.targets.forEach((t, i) => (t.remaining = saved[i]));
     const ev = evUnit(rec.copies.cost, 1, undefined, extra);
-    addUnits(`another copy each round`, ev.use - one.use, ev.sell - one.sell, `${f.rounds} rounds left; ${ev.note}`);
+    addUnits(`another copy each round`, ev.use - one.use, ev.sell - one.sell, `${f.rounds} rounds left; ${ev.note}`, 1);
   }
   // Duplicators copy one unit each: the copy the board wants most (best gain per copy).
   for (const d of res.duplicators ?? []) {
@@ -638,7 +776,7 @@ function resourceParts(res: Resources, rec: Recurring | undefined, stage: string
       left -= n;
       if (left <= 0) break;
     }
-    dp += left * 2 * A.idleGold;
+    dp += spareDp(left * 2, plan);
     add(`${d.n} duplicator${d.n > 1 ? "s" : ""} (units up to ${d.maxCost}-cost)`, dp, used.length ? `copies of ${[...new Set(used)].join(", ")}` : `no unit up to ${d.maxCost}-cost still wants copies`, true);
   }
   // Pandora's Bench: the rightmost bench slots become random champions of the same cost every round.
@@ -654,43 +792,62 @@ function resourceParts(res: Resources, rec: Recurring | undefined, stage: string
     const wantedCopies = cheap.reduce((a, t) => a + t.remaining, 0);
     const got = Math.min(perRound * rounds, wantedCopies);
     for (const t of cheap) take(t, wantedCopies > 0 ? (got * t.remaining) / wantedCopies : 0);
-    add(`bench slots re-rolled every round`, got * per, `${perRound.toFixed(2)} copies a round of your ${cheapest}-cost targets over ~${rounds.toFixed(0)} rounds`, true);
+    add(`bench slots re-rolled every round`, got * per, `${perRound.toFixed(2)} copies a round of your ${cheapest}-cost targets over ~${rounds.toFixed(0)} rounds`, true, 1);
   }
   // A reroll refund: each paid reroll gives another with chance p, so the player's rolling gold goes 1/(1-p) times as far.
   if (res.rerollRefund) {
     const p = Math.min(0.9, res.rerollRefund);
-    const g = goldDp((ownGold * p) / (1 - p), plan);
-    add(`free rerolls (${Math.round(p * 100)}% a reroll)`, g.dp, `your ~${ownGold} gold of rolling goes ${(1 / (1 - p)).toFixed(1)}× as far; ${g.note}`, true);
+    const rolled = ownGold * plan.rollIntent;
+    const g = goldDp((rolled * p) / (1 - p), plan, { rolls: "only", savedCap: rolled * p });
+    add(`free rerolls (${Math.round(p * 100)}% a reroll)`, g.dp, `your ~${Math.round(ownGold * plan.rollIntent)} gold of rolling goes ${(1 / (1 - p)).toFixed(1)}× as far; ${g.note}`, g.copyShare);
   }
   // Gold: now, per round, per stage; XP counts as gold while the level still matters; a reroll saves its gold.
   const gold = res.gold ?? 0;
   if (gold) {
     const g = goldDp(gold, plan);
-    add(`${res.gold} gold`, g.dp, g.note);
+    add(`${res.gold} gold`, g.dp, g.note, g.copyShare);
   }
   if (rec?.gold?.perRound) {
     const g = goldDp(rec.gold.perRound * f.rounds, plan);
-    add(`${rec.gold.perRound} gold a round`, g.dp, `${f.rounds} rounds left; ${g.note}`);
+    add(`${rec.gold.perRound} gold a round`, g.dp, `${f.rounds} rounds left; ${g.note}`, g.copyShare, 1);
   }
   if (rec?.gold?.perStage) {
     const g = goldDp(rec.gold.perStage * f.stages, plan);
-    add(`${rec.gold.perStage} gold a stage`, g.dp, `${f.stages} stages left; ${g.note}`);
+    add(`${rec.gold.perStage} gold a stage`, g.dp, `${f.stages} stages left; ${g.note}`, g.copyShare, 1);
   }
-  const xp = (res.xp ?? 0) + (rec?.xp?.perStage ?? 0) * f.stages + (res.xp && rec?.xp?.rounds ? res.xp * rec.xp.rounds : 0);
+  const laterXp = (rec?.xp?.perStage ?? 0) * f.stages + (rec?.xp?.perCombat ?? 0) * f.stages * A.combatsPerStage;
+  const xp = (res.xp ?? 0) + laterXp + (res.xp && rec?.xp?.rounds ? res.xp * rec.xp.rounds : 0);
   if (xp) {
-    const g = goldDp(xp * xpShare, plan);
-    add(`${fmt(xp)} XP`, g.dp, xpShare < 1 ? `XP is worth ${Math.round(xpShare * 100)}% at level ${board.level}` : g.note);
+    const g = goldDp(xp * xpShare, plan, { rolls: "none" });
+    add(`${fmt(xp)} XP`, g.dp, xpShare < 1 ? `XP is worth ${Math.round(xpShare * 100)}% at level ${board.level}` : g.note, false, laterXp / xp);
   }
-  const rolls = (res.rerolls ?? 0) + (rec?.rerolls?.perRound ? rec.rerolls.perRound * f.rounds * 0.5 : 0) + (rec?.rerolls?.perStage ? rec.rerolls.perStage * f.stages : 0);
+  const laterRolls = (rec?.rerolls?.perRound ? rec.rerolls.perRound * f.rounds * 0.5 : 0) + (rec?.rerolls?.perStage ? rec.rerolls.perStage * f.stages : 0);
+  const rolls = (res.rerolls ?? 0) + laterRolls;
   if (rolls) {
-    const g = goldDp(rolls * SHOP.rerollGold, plan);
-    add(`${fmt(rolls)} rerolls`, g.dp, `${(plan.rollIntent * 100).toFixed(0)}% of its gold is used rolling: ${g.note}`, true);
+    // Free rerolls replace rolls the player would pay for, up to their own rolling budget (shared by the picks).
+    const budget = plan.rollBudget ?? 0;
+    const g = goldDp(rolls * SHOP.rerollGold, plan, { rolls: "only", savedCap: budget });
+    plan.rollBudget = Math.max(0, budget - rolls * SHOP.rerollGold);
+    add(`${fmt(rolls)} rerolls`, g.dp, `${(plan.rollIntent * 100).toFixed(0)}% of its gold is used rolling: ${g.note}`, g.copyShare, laterRolls / rolls);
   }
 
   // Early arrivals do more than the final board shows (see tempoPerStage), and copies most of all on a board of cheap carries.
   if (out) out.copiesLeft = plan.targets.reduce((a, t) => a + t.remaining, 0);
+  if (res.atLevel) {
+    // Only a board that reaches the level gets it, and only then (late).
+    const reaches = (goal ?? board).level >= res.atLevel;
+    for (const p of parts) {
+      if (!reaches) p.dp = 0;
+      p.later = 1;
+    }
+    if (!reaches) parts.push({ label: `needs level ${res.atLevel}`, dp: 0, note: `this board stops at level ${(goal ?? board).level}` });
+  }
   const copyTempo = 1 + A.rerollTempo * plan.lowCostShare;
-  for (const p of parts) p.dp *= f.tempo * (p.copies ? copyTempo : 1);
+  for (const p of parts) {
+    const share = p.copies === true ? 1 : typeof p.copies === "number" ? p.copies : 0;
+    const tempo = (1 - (p.later ?? 0)) * f.tempo + (p.later ?? 0) * (1 + (f.tempo - 1) / 2);
+    p.dp *= tempo * (1 + (copyTempo - 1) * share);
+  }
   return parts;
 }
 
@@ -751,10 +908,12 @@ function rawScore(fx: AugmentEffects, board: Board, data: SetData, stage: string
   // Stat effects: recompute strength with every effect applied to the units it covers.
   let statLift = 0;
   if (fx.effects?.length) {
-    const states = placed.map((u) => unitState(u, defs.get(u.id)!));
+    const emblemIds = new Set(data.items.filter((i) => i.kind === "emblem").map((i) => i.apiName));
+    const states = placed.map((u) => unitState(u, defs.get(u.id)!, emblemIds));
     const before = teamPower(states);
     const after = states.map((s) => ({ ...s }));
     let assumedScope = false;
+    const combatsLeft = stageFactors(stage).stages * ASSUMPTIONS.combatsPerStage;
     for (const e of fx.effects) {
       const t = timing(e);
       let covered = 0;
@@ -763,7 +922,13 @@ function rawScore(fx: AugmentEffects, board: Board, data: SetData, stage: string
         if (!appliesTo(e, s)) continue;
         if (e.maxUnits && covered >= e.maxUnits) break;
         covered++;
-        applyStat(s, e, perCount(e, after, statBoard, data), t, statBoard.level);
+        applyStat(s, e, perCount(e, after, statBoard, data, combatsLeft), t, statBoard.level);
+      }
+      // "Champions holding Spatula or Frying Pan items" on a board without any: the emblem the augment hands out makes one.
+      if (covered === 0 && e.heldKind === "emblem" && order.length) {
+        const s = [...after].sort((x, y) => y.items - x.items)[0];
+        applyStat(s, e, perCount(e, after, statBoard, data, combatsLeft), t, statBoard.level);
+        covered = 1;
       }
       if (e.scope === "unknown") assumedScope = true;
       if (covered === 0) caveats.push(`no unit on this board is covered by "${describeEffect(e)}"`);
@@ -835,6 +1000,7 @@ export function mergeEffects(list: AugmentEffects[]): AugmentEffects {
     if (c) {
       for (const k of ["gold", "rerolls"] as const) if (c[k]) num(((rec as any)[k] ??= {}), c[k]);
       if (c.xp?.perStage) num((rec.xp ??= {}), { perStage: c.xp.perStage }); // xp.rounds was folded into the total above
+      if (c.xp?.perCombat) num((rec.xp ??= {}), { perCombat: c.xp.perCombat });
       // Per-round copies of one champion: two such augments rarely give the same one, so the larger is kept.
       if (c.copies && (!rec.copies || (c.copies.perRound ?? 0) > (rec.copies.perRound ?? 0))) rec.copies = { ...c.copies };
     }
@@ -882,7 +1048,7 @@ export function picksCoverage(given: string[], board: Board, data: SetData, stag
     copiesWanted: out.copiesWanted,
     copiesCovered: out.copiesWanted - out.copiesLeft,
     itemSlots: itemSlots(at, data, goal).length,
-    items: fx.resources ? itemEquivalents(fx.resources, fx.recurring, at, data) : 0,
+    items: fx.resources ? itemEquivalents(fx.resources, fx.recurring, at, data, goal ?? at) : 0,
   };
 }
 
@@ -955,8 +1121,8 @@ export function scoreAugment(
 
 function describeEffect(e: StatEffect): string {
   const v = e.pct !== undefined ? `${+(e.pct * 100).toFixed(1)}%` : `${e.flat}${e.plusPerLevel ? ` (+${e.plusPerLevel} per level)` : ""}`;
-  const stat = { health: "health", armor: "armor", mr: "magic resist", ad: "attack damage", ap: "ability power", as: "attack speed", crit: "crit chance", critDmg: "crit damage", damageAmp: "damage amp", durability: "durability", omnivamp: "omnivamp", abilityCrit: "ability damage can crit" }[e.stat];
-  const who = { team: "team", holders: "item holders", unheld: "unequipped units", front: "front row", back: "back row", cost: `${e.cost}-cost units`, trait: `${e.trait} units`, unknown: "some units" }[e.scope];
+  const stat = { health: "health", armor: "armor", mr: "magic resist", ad: "attack damage", ap: "ability power", as: "attack speed", crit: "crit chance", critDmg: "crit damage", damageAmp: "damage amp", durability: "durability", omnivamp: "omnivamp", abilityCrit: "ability damage can crit", manaRegen: "mana regen" }[e.stat];
+  const who = { team: "team", holders: e.heldKind === "emblem" ? "emblem holders" : "item holders", unheld: "unequipped units", front: "front row", back: "back row", cost: `${e.cost}-cost units`, trait: `${e.trait} units`, unknown: "some units" }[e.scope];
   if (e.stat === "abilityCrit") return `${stat} (${who})`;
   return `+${v} ${stat} (${who}${e.per ? `, per ${e.per}` : ""})`;
 }

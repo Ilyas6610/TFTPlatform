@@ -12,12 +12,17 @@ export interface StageProgress {
   maxStar: 1 | 2 | 3;
   /** Completed items held by then (a component is half), spread over the goal's carries first. */
   items: number;
+  /**
+   * Units the goal has at 3 stars and that cost this much or less are already 3-star by then: a reroll comp rolls for
+   * its carries before the 4-2 augment (1-costs around 3-1, 2-costs around 3-2, 3-costs at 4-1 on level 7), so by 4-2 it no longer wants their copies.
+   */
+  threeStarUpToCost: number;
 }
 
 export const STAGE_PROGRESS: Record<string, StageProgress> = {
-  "2-1": { level: 4, maxStar: 1, items: 0.5 },
-  "3-2": { level: 6, maxStar: 2, items: 2 },
-  "4-2": { level: 7, maxStar: 2, items: 4 },
+  "2-1": { level: 4, maxStar: 1, items: 0.5, threeStarUpToCost: 0 },
+  "3-2": { level: 6, maxStar: 2, items: 2, threeStarUpToCost: 0 },
+  "4-2": { level: 7, maxStar: 2, items: 4, threeStarUpToCost: 3 },
 };
 
 /**
@@ -27,7 +32,8 @@ export const STAGE_PROGRESS: Record<string, StageProgress> = {
 export function boardAtStage(goal: Board, stage: string, data: SetData): Board {
   const p = STAGE_PROGRESS[stage];
   if (!p) return goal;
-  const known = new Set(data.units.map((u) => u.apiName));
+  const cost = new Map(data.units.map((u) => [u.apiName, u.cost]));
+  const known = new Set(cost.keys());
   const order = goal.units
     .map((u, i) => ({ u, i }))
     .filter((x) => known.has(x.u.id) && x.u.items.length > 0)
@@ -44,6 +50,9 @@ export function boardAtStage(goal: Board, stage: string, data: SetData): Board {
   return {
     ...goal,
     level: Math.min(goal.level, p.level),
-    units: goal.units.map((u, i) => ({ ...u, star: Math.min(u.star, p.maxStar) as 1 | 2 | 3, items: items[i] })),
+    units: goal.units.map((u, i) => {
+      const done = u.star === 3 && (cost.get(u.id) ?? 99) <= p.threeStarUpToCost;
+      return { ...u, star: (done ? 3 : Math.min(u.star, p.maxStar)) as 1 | 2 | 3, items: items[i] };
+    }),
   };
 }

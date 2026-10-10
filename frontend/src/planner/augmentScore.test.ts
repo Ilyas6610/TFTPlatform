@@ -134,11 +134,11 @@ describe("augment score: resources", () => {
   it("buys copies the board wants, and says what's left over is idle", () => {
     const r = scoreAugment(aug("X"), wants, data, "3-2", gold(30));
     expect(r.parts[0].note).toMatch(/copies the board wants/);
-    // A board with nothing left to buy can only bank the gold.
+    // A board with nothing left to buy only has spare gold: levels and interest, worth less than the copies.
     const done = board([placed("Tank", 0, [], 3), placed("Carry", 1, [], 3)], 9);
     const idle = scoreAugment(aug("X"), done, data, "3-2", gold(30));
-    expect(idle.parts[0].note).toMatch(/idle gold/);
-    expect(idle.dp!).toBeLessThan(r.dp! / 3);
+    expect(idle.parts[0].note).toMatch(/spare gold/);
+    expect(idle.dp!).toBeLessThan(r.dp! / 2);
   });
 
   it("counts a component as half an item and a completed item as one", () => {

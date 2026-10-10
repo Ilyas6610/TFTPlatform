@@ -51,6 +51,7 @@ const STATS = [
   ["Omnivamp", ["omnivamp"]],
   ["Armor", ["armor"]],
   ["Health", ["health"]],
+  ["Mana Regen", ["manaRegen"]],
 ];
 const STAT_RE = new RegExp(
   `(\\d+(?:\\.\\d+)?)(%?)\\s+(?:permanent\\s+)?(?:max\\s+)?(${STATS.map(([n]) => n.replace(/[&]/g, "\\&")).join("|")})\\b`,
@@ -69,13 +70,15 @@ function scopeOf(s) {
   if (/(back row|back 2 rows)/.test(t)) return { scope: "back", rows: /back 2 rows/.test(t) ? 2 : 1 };
   if (/(front row|first row|center of the front)/.test(t)) return { scope: "front" };
   if (/(without items|aren't holding items|no items equipped)/.test(t)) return { scope: "unheld" };
+  // "Your 3-cost champions and all allies equipped with an Emblem": the cost is the main group (few hold emblems).
+  const cost = t.match(/your (\d)-cost champions/);
+  if (cost) return { scope: "cost", cost: Number(cost[1]) };
+  if (/(holding (?:spatula|frying pan)|equipped with an? emblem|holding an? emblem)/.test(t)) return { scope: "holders", heldKind: "emblem" };
   if (/(holding an item|holding items|equipped with|holding a|holding the|with an item)/.test(t)) return { scope: "holders" };
   if (/(your team|all allies|your units|allies gain|your champions gain|champions gain|allies in the same row)/.test(t)) return { scope: "team" };
   if (/(grants?|gains?) (?:the|its|their) holders?|their holders|whenever their holders/.test(t)) return { scope: "holders" };
   if (/adjacent champions|nearby ally|nearest champion/.test(t)) return { scope: "team" };
   if (/^your [a-z'’. ]+s (?:grant|give)/.test(t) || /^[a-z'’. ]+ grants its holder/.test(t) || /allies holding/.test(t)) return { scope: "holders" };
-  const cost = t.match(/your (\d)-cost champions/);
-  if (cost) return { scope: "cost", cost: Number(cost[1]) };
   return { scope: "unknown" };
 }
 
@@ -159,6 +162,8 @@ function parseAugment(a, itemsByName, unitCosts) {
             ? "bronzeTrait"
             : /for each champion that starts combat in your front row/.test(lower)
               ? "frontRowUnit"
+              : /after (?:each |every )?player combat/.test(lower)
+                ? "combat"
               : /per player level/.test(lower) && !/increased by \d+ per player level/.test(lower)
                 ? "level"
                 : /for each item equipped to that champion/.test(lower)
@@ -229,7 +234,12 @@ function parseAugment(a, itemsByName, unitCosts) {
       if (everyRound) (recurring.gold ??= {}).perRound = Number(m[1]);
     });
     take(/(\d+)\s+gold\s+at the start of (?:every|each) stage/gi, (m) => ((recurring.gold ??= {}).perStage = Number(m[1])));
+    // "Gain 2 XP at the start of player combat rounds", "After player combat, gain 2 XP if you won or 3 XP if you lost":
+    // every player combat (the two amounts averaged); the scorer counts the combats left.
+    const perCombat = /(?:at the start of player combat rounds|after player combat)/i.test(s) && [...s.matchAll(/(\d+)\s+XP/gi)].map((x) => Number(x[1]));
+    if (perCombat && perCombat.length) (recurring.xp ??= {}).perCombat = perCombat.reduce((a, b) => a + b, 0) / perCombat.length;
     take(/(?:gain|get)\s+(\d+)\s+XP/gi, (m) => {
+      if (perCombat && perCombat.length) return; // counted per combat above
       res.xp += Number(m[1]);
       if (everyStage) (recurring.xp ??= {}).perStage = Number(m[1]);
       if (nextRounds) (recurring.xp ??= {}).rounds = Number(nextRounds[1]);
@@ -260,7 +270,13 @@ function parseAugment(a, itemsByName, unitCosts) {
     take(/(a|an|\d+|two)\s+(?:random\s+)?component anvils?/gi, (m) => (res.components += 1.3 * count(m[1])));
     // (not "Completed Item anvils": the anvil pattern below counts those)
     take(/(a|an|\d+|two)\s+(?:random\s+)?(?:completed\s+)?(?:item|items)\b(?!\s+anvils?)/gi, (m) => {
-      if (/completed/i.test(m[0])) res.completed += count(m[1]);
+      if (!/completed/i.test(m[0])) return;
+      // "2 random completed items that build from Needlessly Large Rod": items of one component, kept apart so the
+      // scorer can value them by how much the board builds from it.
+      const from = s.match(/build(?:s)?\s+from\s+(?:a\s+|an\s+)?(.+?)\.?\s*$/i);
+      const comp = from && [...itemsByName].find(([n, it]) => it.kind === "component" && n.toLowerCase() === from[1].toLowerCase())?.[1];
+      if (comp) res.named.push({ name: `completed items from ${comp.name}`, n: count(m[1]), kind: "completed", from: comp.name });
+      else res.completed += count(m[1]);
     });
     take(/(a|an|\d+|two)\s+(?:random\s+)?Completed Item anvils?/gi, (m) => (res.completed += 1.3 * count(m[1])));
     // Radiant items are their own kind in the scorer; a named radiant (the Lucky Item Chest, Thief's Gloves) is counted once, by name below.
@@ -268,6 +284,7 @@ function parseAugment(a, itemsByName, unitCosts) {
     take(/(a|an|\d+|two)\s+(?:random\s+)?Artifacts?(?:\s+anvils?)?/gi, (m) => (res.artifacts += count(m[1])));
     take(/(a|an|\d+|two|three)\s+(?:random\s+)?Emblems?/gi, (m) => {
       if (/matches their class|that trait|that Emblem|of that/i.test(s) && /champion/i.test(s)) return;
+      if (/(with|holding)\s*$/i.test(work.slice(Math.max(0, m.index - 9), m.index))) return; // "allies equipped with an Emblem"
       res.emblems += count(m[1]);
     });
     take(/(a|an|\d+|two)\s+Reforgers?/gi, (m) => (res.components += 1.5 * count(m[1])));
@@ -276,6 +293,16 @@ function parseAugment(a, itemsByName, unitCosts) {
     take(/(a|an|\d+|two)\s+(Lesser\s+)?Champion Duplicators?/gi, (m) =>
       (res.duplicators ??= []).push({ n: count(m[1]), maxCost: m[2] ? 3 : 4 }),
     );
+    // "Gain an Artifact Anvil now and after every 10 player combats": how many more depends on the stage (the scorer counts them).
+    const everyCombats = s.match(/now and after every (\d+) player combats/i);
+    if (everyCombats && /artifact/i.test(s)) {
+      recurring.artifacts = { everyCombats: Number(everyCombats[1]) };
+      hit = true;
+    }
+    if (/^after \d+ (?:player )?combats, gain another/i.test(s) && res.emblems > 0 && !res.duplicators?.length) {
+      res.emblems += 1;
+      hit = true;
+    }
     if (/^gain another after \d+ player combats/i.test(s) && res.duplicators?.length) {
       res.duplicators[res.duplicators.length - 1].n += 1;
       hit = true;
@@ -327,11 +354,14 @@ function parseAugment(a, itemsByName, unitCosts) {
     // Longest names first, each match blanked out, so "a Tear of the Goddess" isn't also read as "a Tear".
     let rest = s;
     for (const [name, item] of [...itemsByName].sort((a, b) => b[0].length - a[0].length)) {
-      const re = new RegExp(`(?:gain|get)\\s+(a|an|\\d+|two|three|four)\\s+(?:random\\s+)?${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}s?\\b`, "i");
+      // "Gain a Red Buff, a Blue Buff, and a Champion Duplicator": every item of the list after "gain".
+      const re = new RegExp(`(\\b(?:gain|get)\\s+(?:[^.]*?(?:,|\\band)\\s+)?)(a|an|\\d+|two|three|four)\\s+(?:random\\s+)?${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}s?\\b`, "i");
       const mm = rest.match(re);
       if (mm) {
-        res.named.push({ name: item.name, n: count(mm[1]), kind: item.kind });
-        rest = rest.replace(mm[0], " ");
+        res.named.push({ name: item.name, n: count(mm[2]), kind: item.kind });
+        // Blank only this item (not the "gain ..." before it, which may name another).
+        const from = mm.index + mm[1].length;
+        rest = rest.slice(0, from) + " ".repeat(mm[0].length - mm[1].length) + rest.slice(mm.index + mm[0].length);
         hit = true;
       }
     }
@@ -351,7 +381,13 @@ function parseAugment(a, itemsByName, unitCosts) {
 
     // "Flip a coin. If heads, gain X. If tails, gain Y" (two branches), and rewards that depend on something
     // happening ("When 2 players are eliminated, gain 40 gold"): count half.
-    const conditional = /^(when|if)\b/i.test(s) && !/if heads|if tails/i.test(s);
+    // "When you reach Level 9, gain 27 gold": certain for a board that gets there; the scorer checks the level.
+    // Only when it is the augment's whole reward (Max Build's 10 rerolls come now, its level-9 part stays a half).
+    const had = JSON.parse(before);
+    const nothingYet = ["gold", "xp", "rerolls", "components", "completed", "artifacts", "emblems"].every((k) => !had[k]) && !had.units.length && !had.named.length && !had.duplicators?.length;
+    const reach = nothingYet && s.match(/^when you reach level (\d+)/i);
+    if (reach && JSON.stringify(res) !== before) res.atLevel = Number(reach[1]);
+    const conditional = /^(when|if)\b/i.test(s) && !/if heads|if tails/i.test(s) && !reach;
     if (conditional && JSON.stringify(res) !== before) conditionalText.push(s);
     if (/if heads|if tails/i.test(s) || conditional) {
       const was = JSON.parse(before);

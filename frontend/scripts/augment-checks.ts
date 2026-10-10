@@ -49,6 +49,8 @@ const sum = new Map<string, { n: number; s: number; tier: number }>();
 const top1 = new Map<string, number>();
 const all: number[] = [];
 const lowB: number[] = [], highB: number[] = [];
+// The same in goal mode (the planner's default): the board as the goal, each stage priced from the way there.
+const lowG: number[] = [], highG: number[] = [];
 const midScores: Map<string, number>[] = [];
 let traitTop = 0, traitMismatch = 0;
 for (const b of boards) {
@@ -65,6 +67,10 @@ for (const b of boards) {
       e.n++; e.s += x.impact; sum.set(x.apiName, e);
       if (group && s < 2 && isCopy(x.apiName)) group.push(1 - i / r.length);
     });
+    if (group && s < 2) {
+      const rg = rankAugments(pools[s], b, data, stages[s], undefined, [], "goal");
+      rg.forEach((x, i) => x.impact !== null && isCopy(x.apiName) && (group === lowB ? lowG : highG).push(1 - i / rg.length));
+    }
     top1.set(r[0].name, (top1.get(r[0].name) ?? 0) + 1);
     for (const x of r.slice(0, 5)) {
       const traits: string[] = data.augments.find((a: any) => a.apiName === x.apiName)?.traits ?? [];
@@ -80,7 +86,7 @@ const q = (p: number) => all[Math.floor(p * (all.length - 1))];
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / Math.max(1, xs.length);
 let agree = 0, an = 0;
 for (let i = 0; i + 1 < midScores.length; i += 2) { const keys = [...midScores[i].keys()]; agree += spearman(keys.map((k) => midScores[i].get(k)!), keys.map((k) => midScores[i + 1].get(k)!)); an++; }
-const copyDelta = mean(lowB) - mean(highB);
+const copyDelta = mean(lowG) - mean(highG);
 const distinct = top1.size;
 // An augment and its upgraded variants (Golden Gamble, +, ++) are one line: no line should be the top pick on most boards.
 const family = (n: string) => n.replace(/\++$/, "").replace(/ (I|II|III|IV)$/, "");
@@ -111,7 +117,11 @@ const checks: [string, boolean, string][] = [
   ["median augment moves placement by 0.03-0.2", q(0.5) >= 0.03 && q(0.5) <= 0.2, `median ${q(0.5).toFixed(3)}, p90 ${q(0.9).toFixed(2)}, p99 ${q(0.99).toFixed(2)}`],
   ["no augment above the cap", q(1) <= ASSUMPTIONS.softCap + 1e-9, `max ${q(1).toFixed(2)} (cap ${ASSUMPTIONS.softCap})`],
   ["rankings differ between boards (mean Spearman between two boards < 0.97)", agree / an < 0.97, (agree / an).toFixed(3)],
-  ["copy-giving augments rank higher on cheap-carry boards than on expensive-carry boards", copyDelta >= 0.05, `${mean(lowB).toFixed(3)} vs ${mean(highB).toFixed(3)} (n ${lowB.length / 1} / ${highB.length} scores)`],
+  [
+    "copy-giving augments rank higher on cheap-carry boards than on expensive-carry boards (goal mode)",
+    copyDelta >= 0.05,
+    `${mean(lowG).toFixed(3)} vs ${mean(highG).toFixed(3)} (n ${lowG.length} / ${highG.length} scores); on the finished boards ("now", little left to copy): ${mean(lowB).toFixed(3)} vs ${mean(highB).toFixed(3)}`,
+  ],
   ["at least 5 different top picks across boards and stages", distinct >= 5, `${distinct} distinct over ${boards.length * 3}`],
 ];
 console.log(`${boards.length} real boards x 3 stages; ${sum.size} augments scored`);
