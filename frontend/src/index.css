@@ -2690,3 +2690,66 @@ table.partners td:first-child {
 .augment-impact-tiers {
   margin-top: 8px;
 }
+
+/* "What I have now": boards the player could be building (units they have at full strength, the rest dimmed). */
+.augment-impact-goals {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 0.85rem;
+}
+
+.augment-impact-goals ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.augment-impact-goals li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.augment-impact-goals button {
+  display: grid;
+  gap: 4px;
+  flex: 1 1 260px;
+  min-width: 0;
+  text-align: left;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.augment-impact-goals button.active {
+  border-color: var(--accent);
+}
+
+.goal-units {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.goal-units > span {
+  opacity: 0.4;
+}
+
+.goal-units > span.have {
+  opacity: 1;
+}
+
+.goal-meta {
+  color: var(--text-dim);
+}
+
+.goal-open {
+  font-size: 0.8rem;
+}

@@ -1,13 +1,33 @@
-import { useDeferredValue, useMemo, useState } from "react";
-import { SetData } from "../api/client";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { SetData, SuggestComp, getExploreSuggest } from "../api/client";
 import { GameIcon } from "../assets/tft";
 import { AUGMENT_SLOTS, augmentTier, availableAt } from "../planner/augmentStages";
 import { SHOP } from "../planner/augmentPlan";
 import { ASSUMPTIONS, AugmentScore, BoardMode, Confidence, picksCoverage, rankAugments } from "../planner/augmentScore";
 import { needsOf, rankByNeeds } from "../planner/augmentNeeds";
 import { BOARD_VALUE_FIT, ITEM_GAIN } from "../planner/boardValue";
-import { Board } from "../planner/board";
+import { Board, COLS, encodeBoard } from "../planner/board";
 import { Names } from "./stats";
+
+/** Suggested boards need this many stored games: a comp seen a handful of times isn't a plan. */
+const MIN_COMP_BOARDS = 20;
+
+/** A real comp's most played board as a planner board: melee units in front, the rest behind, itemized carries last row. */
+function compBoard(sg: SuggestComp, data: SetData): Board {
+  const defs = new Map(data.units.map((u) => [u.apiName, u]));
+  let front = 0;
+  let back = 3 * COLS;
+  let mid = 2 * COLS;
+  const units = sg.comp.board
+    .filter((u) => defs.has(u.id))
+    .map((u) => {
+      const melee = (defs.get(u.id)!.stats.range ?? 1) <= 1;
+      const pos = melee && front < COLS ? front++ : back < 4 * COLS ? back++ : mid++;
+      return { id: u.id, star: Math.max(1, Math.min(3, u.star)) as 1 | 2 | 3, pos, items: u.items.slice(0, 3), extra: [] as string[] };
+    });
+  const slots = sg.comp.board.reduce((a, u) => a + (u.id.includes("ElderDragon") ? 2 : 1), 0);
+  return { set: data.setNumber, title: "", level: Math.max(7, Math.min(10, slots)), augments: [null, null, null], units };
+}
 
 const TIER: Record<number, string> = { 1: "Silver", 2: "Gold", 3: "Prismatic" };
 const SHOWN = 12;
@@ -50,17 +70,46 @@ export function AugmentImpact({
 
   // Ranking all the augments takes tens of milliseconds: let the board editing stay responsive and rank when it settles.
   const settled = useDeferredValue(board);
+
+  // "What I have now": the boards the player could be building, from real comps that share their units and items
+  // (the Explorer's build advisor); the chosen one is the goal the augments are scored towards.
+  const [suggestions, setSuggestions] = useState<SuggestComp[] | null>(null);
+  const [goalChoice, setGoalChoice] = useState(0);
+  const haveKey = useMemo(
+    () => [...settled.units.map((u) => u.id), "|", ...settled.units.flatMap((u) => u.items)].join(","),
+    [settled],
+  );
+  useEffect(() => {
+    if (mode !== "now" || settled.units.length === 0) return;
+    const q = new URLSearchParams({ set: String(data.setNumber), queue: "1100" });
+    settled.units.forEach((u) => q.append("have_unit", u.id));
+    settled.units.forEach((u) => u.items.forEach((i) => q.append("have_item", i)));
+    let live = true;
+    getExploreSuggest(q.toString())
+      .then((r) => live && setSuggestions(r.comps.filter((c) => c.comp.boards >= MIN_COMP_BOARDS && c.have.length >= 2).slice(0, 3)))
+      .catch(() => live && setSuggestions([]));
+    setGoalChoice(0);
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, haveKey, data.setNumber]);
+  const suggested = mode === "now" ? suggestions?.[goalChoice] : undefined;
+  const suggestedGoal = useMemo(() => (suggested ? compBoard(suggested, data) : null), [suggested, data]);
   const ranked = useMemo(() => {
     const offered = data.augments.filter((a) => availableAt(a, slot) && !settled.augments.some((c, i) => c === a.apiName && i !== slot));
     // Augments picked at earlier stages are already working: each one here is scored on top of them.
     const earlier = settled.augments.slice(0, slot).filter((a): a is string => !!a);
-    // "My goal": what the board still needs (econ, items, combat, copies) at this stage; "what I have now": the older pricing.
-    return mode === "goal" ? rankByNeeds(offered, settled, data, stage, earlier) : rankAugments(offered, settled, data, stage, undefined, earlier, mode);
-  }, [settled, data, slot, stage, mode]);
+    // "My goal": what the board still needs (econ, items, combat, copies) at this stage. "What I have now": the same,
+    // towards the chosen suggested board, starting from the player's board (without a suggestion, the older pricing).
+    if (mode === "goal") return rankByNeeds(offered, settled, data, stage, earlier);
+    if (suggestedGoal) return rankByNeeds(offered, suggestedGoal, data, stage, earlier, undefined, settled);
+    return rankAugments(offered, settled, data, stage, undefined, earlier, mode);
+  }, [settled, data, slot, stage, mode, suggestedGoal]);
   const coverage = useMemo(() => {
     const earlier = settled.augments.slice(0, slot).filter((a): a is string => !!a);
-    return earlier.length && settled.units.length && mode === "now" ? picksCoverage(earlier, settled, data, stage, mode) : null;
-  }, [settled, data, slot, stage, mode]);
+    return earlier.length && settled.units.length && mode === "now" && !suggestedGoal ? picksCoverage(earlier, settled, data, stage, mode) : null;
+  }, [settled, data, slot, stage, mode, suggestedGoal]);
   const earlierNames = board.augments
     .slice(0, slot)
     .filter((a): a is string => !!a)
@@ -106,8 +155,40 @@ export function AugmentImpact({
       <p className="muted augment-impact-given">
         {mode === "goal" && board.units.length
           ? `What an average game is short of on the way to this board, and what each augment fills: ${needsOf(settled, data).notes.join("; ")}. Econ is worth most at 2-1, items until the carries and tank are full, combat once they are.`
-          : "Priced on the board as it is: its stars and items are already yours, so only what it still lacks counts."}
+          : suggestedGoal
+            ? `Scored towards the board below, from yours: ${needsOf(suggestedGoal, data, settled, stage).notes.join("; ")}.`
+            : suggestions && suggestions.length === 0
+              ? "No stored comp shares enough of these units yet: priced on the board as it is."
+              : "Priced on the board as it is: its stars and items are already yours, so only what it still lacks counts."}
       </p>
+      {mode === "now" && suggestions && suggestions.length > 0 && (
+        <div className="augment-impact-goals">
+          <span className="muted">Boards you could be building</span>
+          <ul role="radiogroup" aria-label="Board you're building">
+            {suggestions.map((sg, i) => {
+              const carries = sg.comp.board.filter((u) => u.items.length > 0).map((u) => names.name(u.id));
+              const goal = compBoard(sg, data);
+              return (
+                <li key={i}>
+                  <button type="button" role="radio" aria-checked={goalChoice === i} className={goalChoice === i ? "active" : undefined} onClick={() => setGoalChoice(i)}>
+                    <span className="goal-units">
+                      {sg.comp.board.map((u) => (
+                        <span key={u.id} className={sg.have.includes(u.id) ? "have" : undefined} title={`${names.name(u.id)} ${"★".repeat(u.star)}${sg.have.includes(u.id) ? " (on your board)" : ""}`}>
+                          <GameIcon kind="champions" id={u.id} size={22} fallbackName={names.name(u.id)} />
+                        </span>
+                      ))}
+                    </span>
+                    <span className="goal-meta">
+                      {carries.slice(0, 2).join(" + ") || names.name(sg.comp.board[0].id)} · you have {sg.have.length} of {sg.comp.board.length} · avg {sg.comp.avgPlacement.toFixed(2)} over {sg.comp.boards} games
+                    </span>
+                  </button>
+                  <a className="muted goal-open" href={`?${encodeBoard({ ...goal, augments: board.augments }).toString()}`}>open as my goal</a>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
       <div className="mode-tabs" role="tablist" aria-label="Augment stage">
         {AUGMENT_SLOTS.map((s, i) => (
           <button key={s.stage} type="button" role="tab" aria-selected={slot === i} onClick={() => setSlot(i)}>

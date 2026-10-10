@@ -117,10 +117,22 @@ export function archetypeOf(goal: Board, data: SetData): Archetype {
   return carries.some((u) => u.cost === 5) || goal.level >= 9 ? "fast9" : "fast8";
 }
 
-const needsCache = new WeakMap<Board, Needs>();
-export function needsOf(goal: Board, data: SetData): Needs {
-  const hit = needsCache.get(goal);
-  if (hit) return hit;
+// Per goal, per current board (or none), per stage.
+const needsCache = new WeakMap<Board, { avg?: Needs; byNow: WeakMap<Board, Map<string, Needs>> }>();
+/**
+ * `now` (with its `stage`): the player's board when known. Copies of goal units they already hold and items already on
+ * their units count as progress; without it an average game's holdings at the roll are assumed.
+ */
+export function needsOf(goal: Board, data: SetData, now?: Board, stage?: string): Needs {
+  let entry = needsCache.get(goal);
+  if (!entry) needsCache.set(goal, (entry = { byNow: new WeakMap() }));
+  let perStage: Map<string, Needs> | undefined;
+  if (now) {
+    perStage = entry.byNow.get(now);
+    if (!perStage) entry.byNow.set(now, (perStage = new Map()));
+    const hit = perStage.get(stage ?? "");
+    if (hit) return hit;
+  } else if (entry.avg) return entry.avg;
   const arche = archetypeOf(goal, data);
   const plan = PLANS[arche];
   const [spike, spikeLevel] = plan.spike;
@@ -132,9 +144,17 @@ export function needsOf(goal: Board, data: SetData): Needs {
   }
   // Copies to hit by the spike: the reroll's 3-stars, or a fast board's 2-star 4/5-costs.
   const rerollCost = arche === "reroll1" ? 1 : arche === "reroll2" ? 2 : arche === "reroll3" ? 3 : 0;
-  const targets = rerollCost
-    ? us.filter((u) => u.star === 3 && u.cost <= rerollCost).map((u) => ({ cost: u.cost, need: 9 - NEEDS.held[u.cost] }))
-    : us.filter((u) => u.star >= 2 && u.cost >= 4).map((u) => ({ cost: u.cost, need: 3 - NEEDS.held[u.cost] }));
+  // Copies held at the roll: the player's (3 per star step) when ahead of an average game, else an average game's.
+  const heldOf = (id: string, cost: number) => {
+    if (!now) return NEEDS.held[cost];
+    const mine = now.units.filter((u) => u.id === id).reduce((a, u) => a + 3 ** (u.star - 1), 0);
+    // By the roll an average game has picked up NEEDS.held copies anyway; a board already ahead keeps its lead.
+    return Math.max(mine, NEEDS.held[cost]);
+  };
+  const targets = (rerollCost
+    ? us.filter((u) => u.star === 3 && u.cost <= rerollCost).map((u) => ({ cost: u.cost, need: 9 - heldOf(u.id, u.cost) }))
+    : us.filter((u) => u.star >= 2 && u.cost >= 4).map((u) => ({ cost: u.cost, need: 3 - heldOf(u.id, u.cost) }))
+  ).filter((t) => t.need > 0);
   const odds = SHOP_ODDS[Math.min(10, Math.max(3, spikeLevel))];
   const per = targets.map((t) => (5 * (odds[t.cost - 1] ?? 0)) / 100 / Math.max(1, unitsOfCost[t.cost] ?? 1));
   let rolls = 0;
@@ -156,6 +176,10 @@ export function needsOf(goal: Board, data: SetData): Needs {
   const shortfall = Math.max(0, rollGold * NEEDS.hitMargin + levelGold + NEEDS.boardGold - earned);
   const capable = us.filter((u) => u.items.length >= 2 || u.star === 3 || (u.cost >= 4 && u.star >= 2)).length;
   const itemDemand = 3 * Math.min(capable, 3) + Math.max(0, capable - 3) + 2;
+  // Items a game will have by the end: an average game's, or what the player holds now plus what's still to come.
+  const holdable = new Set(data.items.filter((i) => ["completed", "emblem", "artifact", "radiant"].includes(i.kind)).map((i) => i.apiName));
+  const heldItems = now ? now.units.reduce((a, u) => a + u.items.filter((i) => holdable.has(i)).length, 0) : 0;
+  const itemsEnd = now ? Math.max(NEEDS.itemsBy.end, heldItems + NEEDS.itemsBy.end - (NEEDS.itemsBy[stage ?? "2-1"] ?? 0)) : NEEDS.itemsBy.end;
   const n: Needs = {
     archetype: arche,
     label: plan.label,
@@ -163,14 +187,16 @@ export function needsOf(goal: Board, data: SetData): Needs {
     shortfall,
     perCopy: copies ? rollGold / copies : 0,
     itemDemand,
-    itemRoom: Math.max(0, itemDemand - NEEDS.itemsBy.end),
+    itemRoom: Math.max(0, itemDemand - itemsEnd),
     notes: [
       `${plan.label}: spike at ${spike} on level ${spikeLevel}`,
+      ...(now ? [`from your board at ${stage}: ${heldItems} item${heldItems === 1 ? "" : "s"} held`] : []),
       `${Math.round(earned)} gold earned by then − ${Math.round(levelGold)} for levels − ${NEEDS.boardGold} in the board, against ~${Math.round(rollGold * NEEDS.hitMargin)} to hit ${copies} copies: ${shortfall > 0 ? `${Math.round(shortfall)} short` : "covered"}`,
-      `${itemDemand} items wanted (${capable} units can carry items), an average game makes ~${NEEDS.itemsBy.end}`,
+      `${itemDemand} items wanted (${capable} units can carry items), ${now ? `you'll have ~${Math.round(itemsEnd)}` : `an average game makes ~${NEEDS.itemsBy.end}`}`,
     ],
   };
-  needsCache.set(goal, n);
+  if (perStage) perStage.set(stage ?? "", n);
+  else entry.avg = n;
   return n;
 }
 
@@ -182,8 +208,8 @@ interface Taken {
   direction: number;
 }
 
-function supplyOf(fx: AugmentEffects, goal: Board, data: SetData, stage: string, needs: Needs): { s: Supply; t: Taken } {
-  const s = augmentSupply(fx, goal, data, stage);
+function supplyOf(fx: AugmentEffects, goal: Board, data: SetData, stage: string, needs: Needs, now?: Board): { s: Supply; t: Taken } {
+  const s = augmentSupply(fx, goal, data, stage, now);
   const arche = needs.archetype;
   const rate = NEEDS.goldRate[stage] ?? 1;
   const copiesGold = needs.perCopy ? s.copies * needs.perCopy : 0;
@@ -228,6 +254,7 @@ export function scoreByNeeds(
   stage: string,
   given: string[] = [],
   effects: Record<string, AugmentEffects> = EFFECTS,
+  now?: Board,
 ): AugmentScore {
   const base: AugmentScore = { apiName: aug.apiName, name: aug.name, tier: aug.tier, dp: null, impact: null, statLift: 0, confidence: "none", parts: [], caveats: [] };
   const fx = effects[aug.apiName];
@@ -235,13 +262,13 @@ export function scoreByNeeds(
     base.caveats.push(goal.units.length === 0 ? "put units on the board first" : "this augment's effect isn't modelled");
     return base;
   }
-  const needs = needsOf(goal, data);
+  const needs = needsOf(goal, data, now, now ? stage : undefined);
   let before = ZERO;
   given.forEach((id, i) => {
     const g = effects[id];
-    if (g && g.confidence !== "none" && id !== aug.apiName) before = add(before, supplyOf(g, goal, data, STAGES[i] ?? stage, needs).t);
+    if (g && g.confidence !== "none" && id !== aug.apiName) before = add(before, supplyOf(g, goal, data, STAGES[i] ?? stage, needs, now).t);
   });
-  const { s, t } = supplyOf(fx, goal, data, stage, needs);
+  const { s, t } = supplyOf(fx, goal, data, stage, needs, now);
   const v0 = valueOf(before, needs);
   const v1 = valueOf(add(before, t), needs);
   const P = NEEDS.placementPerItem;
@@ -277,8 +304,8 @@ export function scoreByNeeds(
   return { ...base, dp, impact: dp, statLift: s.statLift, confidence, parts, caveats, ...(alone !== undefined ? { alone } : {}) };
 }
 
-export function rankByNeeds(augments: { apiName: string; name: string; tier: number }[], goal: Board, data: SetData, stage: string, given: string[] = [], effects: Record<string, AugmentEffects> = EFFECTS): AugmentScore[] {
+export function rankByNeeds(augments: { apiName: string; name: string; tier: number }[], goal: Board, data: SetData, stage: string, given: string[] = [], effects: Record<string, AugmentEffects> = EFFECTS, now?: Board): AugmentScore[] {
   return augments
-    .map((a) => scoreByNeeds(a, goal, data, stage, given, effects))
+    .map((a) => scoreByNeeds(a, goal, data, stage, given, effects, now))
     .sort((a, b) => (b.impact ?? -Infinity) - (a.impact ?? -Infinity) || a.name.localeCompare(b.name));
 }

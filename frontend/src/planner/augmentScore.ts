@@ -990,6 +990,21 @@ function rawScore(fx: AugmentEffects, board: Board, data: SetData, stage: string
   return { raw: parts.reduce((a, p) => a + p.dp, 0), parts, statLift, confidence: parts.length === 0 ? "none" : confidence, caveats };
 }
 
+/**
+ * The player's board laid out like the goal (the same units at the same index), so plans that compare a board with its
+ * goal unit by unit work: goal units the player doesn't have yet count as not bought (1-star, no items, wanting copies).
+ */
+function alignTo(now: Board, goal: Board): Board {
+  const left = [...now.units];
+  const units = goal.units.map((g) => {
+    const i = left.findIndex((u) => u.id === g.id);
+    if (i < 0) return { ...g, star: 1 as const, items: [] };
+    const [u] = left.splice(i, 1);
+    return { ...g, star: Math.min(u.star, g.star) as 1 | 2 | 3, items: u.items };
+  });
+  return { ...goal, level: now.level, units };
+}
+
 /** What an augment supplies, by type, for the needs model (planner/augmentNeeds.ts): read with this file's readers. */
 export interface Supply {
   /** Completed items' worth, after the fit to the goal's build. */
@@ -1009,12 +1024,13 @@ export interface Supply {
   trait: "none" | "played" | "unplayed";
 }
 
-export function augmentSupply(fx: AugmentEffects, goal: Board, data: SetData, stage: string): Supply {
+/** `now`: the player's board at the stage when known ("what I have now" with a suggested goal); else a typical position. */
+export function augmentSupply(fx: AugmentEffects, goal: Board, data: SetData, stage: string, now?: Board): Supply {
   const A = ASSUMPTIONS;
   const f = stageFactors(stage);
   const res = fx.resources ?? {};
   const rec = fx.recurring;
-  const at = boardAtStage(goal, stage, data);
+  const at = now ? alignTo(now, goal) : boardAtStage(goal, stage, data);
   // Items, with Living Forge's later anvils.
   const moreAnvils = rec?.artifacts?.everyCombats ? Math.floor((f.stages * A.combatsPerStage) / rec.artifacts.everyCombats) : 0;
   const items = itemEquivalents({ ...res, artifacts: (res.artifacts ?? 0) + moreAnvils }, rec, at, data, goal);
