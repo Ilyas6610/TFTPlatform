@@ -17,6 +17,17 @@ export const EMBLEM_BOARD = {
   unitPerCost: 0.35,
   /** A cost the shop offers at least this often at the level counts fully; rarer ones in proportion. */
   fullOdds: 15,
+  /**
+   * A unit the shop rarely offers at the level is a board you probably won't reach: it costs up to this much, in
+   * proportion to how rare its cost is (a 5-cost at level 7 or 8: Lux's forms otherwise lead every board).
+   */
+  rarityPenalty: 1.5,
+  /**
+   * A unit whose trait is chosen by luck (Lux: the first Avatar comes with a random one of her traits, and every later
+   * one copies it; only Master of All Origins lets you choose from 3): planning on one trait costs this much, in
+   * proportion to how unlikely that trait is (1 − 1/forms). The bare unit, whatever trait she brings, has no such cost.
+   */
+  formLuckPenalty: 4,
   /** While searching: share of the next tier's value credited for progress towards it. */
   progressShare: 0.5,
   beam: 40,
@@ -63,9 +74,11 @@ function candidates(data: SetData, level: number): Candidate[] {
   const out: Candidate[] = [];
   for (const u of data.units) {
     if (u.cost < 1 || u.cost > 5 || u.traits.length === 0) continue;
-    // Lux: her trait forms are the choices; the bare unit (only Avatar) adds nothing.
-    if (forms.forms.has(u.apiName) && forms.forms.get(u.apiName)!.length > 0) continue;
+    // Lux: each trait form is a separate choice, with the luck of rolling that trait; the bare unit counts as a 5-cost
+    // whose trait isn't planned on.
     const chosen = forms.chosen.get(u.apiName);
+    const base = forms.baseOf.get(u.apiName);
+    const formCount = base ? (forms.forms.get(base)?.length ?? 1) : 0;
     const rule = slotRules.get(u.apiName);
     const avail = Math.min(1, (o[u.cost - 1] ?? 0) / EMBLEM_BOARD.fullOdds);
     out.push({
@@ -74,7 +87,10 @@ function candidates(data: SetData, level: number): Candidate[] {
       base: forms.baseOf.get(u.apiName) ?? u.apiName,
       traits: u.traits.map((t) => ({ name: t, weight: t === chosen ? 2 : t === rule?.trait ? (rule.traitCount ?? 1) : 1 })),
       slots: rule?.slots ?? 1,
-      value: EMBLEM_BOARD.unitPerCost * u.cost * avail,
+      value:
+        EMBLEM_BOARD.unitPerCost * u.cost * avail -
+        EMBLEM_BOARD.rarityPenalty * (1 - avail) -
+        (formCount > 1 ? EMBLEM_BOARD.formLuckPenalty * (1 - 1 / formCount) : 0),
     });
   }
   return out;
