@@ -4,7 +4,7 @@
 // its active traits (an emblem adds its trait to a unit that lacks it) and by how strong its units are at that level.
 
 import { SetData, SetTrait } from "../api/client";
-import { Board, COLS, TraitCount, buildFormIndex, buildSlotRules, computeTraits } from "./board";
+import { Board, COLS, TraitCount, buildFormIndex, buildSlotRules, canHoldItem, computeTraits } from "./board";
 
 export const EMBLEM_BOARD = {
   /** Value of an active trait tier by its style (1 bronze, 3 silver, 5 gold, 6 prismatic; 4 is a one-unit trait). */
@@ -161,13 +161,25 @@ function toBoard(units: Candidate[], emblems: string[], emblemTraits: string[], 
   const placed = units.map((u) => {
     const melee = (defs.get(u.id)?.stats.range ?? 1) <= 1;
     const pos = melee && front < COLS ? front++ : back < 4 * COLS ? back++ : mid++;
-    const items = emblems.filter((_, i) => hs[i]?.id === u.id).slice(0, 3);
-    return { id: u.id, star: (u.cost >= 4 ? 1 : 2) as 1 | 2 | 3, pos, items, extra: [] as string[] };
+    return { id: u.id, star: (u.cost >= 4 ? 1 : 2) as 1 | 2 | 3, pos, items: [] as string[], extra: [] as string[] };
   });
-  return {
-    board: { set: data.setNumber, title: "", level, augments: [null, null, null], units: placed },
-    holders: emblems.flatMap((e, i) => (hs[i] ? [{ emblem: e, unit: hs[i]!.id }] : [])),
-  };
+  const board: Board = { set: data.setNumber, title: "", level, augments: [null, null, null], units: placed };
+  // Place each emblem with the planner's own rule (canHoldItem: not on a unit that already has the trait, evolved or
+  // chosen, nor a fourth item), on the chosen holder or else the next strongest unit that can take it.
+  const byStrength = [...units].sort((a, b) => b.cost - a.cost).map((u) => u.id);
+  const holders: EmblemBoard["holders"] = [];
+  emblems.forEach((e, i) => {
+    const order = [hs[i]?.id, ...byStrength].filter((x): x is string => !!x);
+    for (const id of order) {
+      const u = placed.find((p) => p.id === id)!;
+      if (canHoldItem(board, u.pos, e, data).ok) {
+        u.items.push(e);
+        holders.push({ emblem: e, unit: id });
+        return;
+      }
+    }
+  });
+  return { board, holders };
 }
 
 /**

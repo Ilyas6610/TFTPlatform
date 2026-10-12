@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SetData } from "../api/client";
-import { suggestEmblemBoards } from "./emblemBoards";
+import { EMBLEM_BOARD, suggestEmblemBoards } from "./emblemBoards";
 
 const stats = { hp: 800, damage: 60, armor: 40, magicResist: 40, attackSpeed: 0.7, critChance: 0.25, critMultiplier: 1.4, range: 1 };
 const unit = (apiName: string, cost: number, traits: string[]) => ({ apiName, name: apiName, cost, traits, stats, ability: { name: "", desc: "", values: {} } });
@@ -59,5 +59,67 @@ describe("boards for held emblems", () => {
   it("builds around the emblems held: Fae boards reach 4 Fae", () => {
     const [best] = suggestEmblemBoards(["FaeEmblem"], 7, data);
     expect(count(best, "Fae")).toBeGreaterThanOrEqual(4);
+  });
+});
+
+// A Lux-like unit with one form per trait ("Star (Wood)", "Star (Fae)"), whose chosen trait counts twice, and a unit
+// that takes two team slots and counts twice for Wood ("Big takes up 2 team slots and grants +2 to the Wood trait.").
+const special = {
+  ...data,
+  units: [
+    ...data.units,
+    unit("Star", 5, ["Avatar"]),
+    unit("Star (Wood)", 5, ["Wood", "Avatar"]),
+    unit("Star (Fae)", 5, ["Fae", "Avatar"]),
+    unit("Big", 4, ["Apex", "Wood"]),
+  ],
+  traits: [
+    ...data.traits,
+    { ...trait("Avatar", [1], [4]), desc: "An Avatar's chosen Trait is counted twice for Trait bonuses." },
+    { ...trait("Apex", [1], [4]), desc: "Big takes up 2 team slots and grants +2 to the Wood trait." },
+  ],
+} as unknown as SetData;
+
+describe("boards for held emblems: special units", () => {
+  it("a two-slot unit takes two of the level's slots", () => {
+    for (const level of [8, 9]) {
+      for (const b of suggestEmblemBoards(["WoodEmblem"], level, special)) {
+        const slots = b.board.units.reduce((a, u) => a + (u.id === "Big" ? 2 : 1), 0);
+        expect(slots).toBe(level);
+      }
+    }
+  });
+
+  it("fields at most one form of a multi-form unit", () => {
+    for (const b of suggestEmblemBoards(["WoodEmblem", "FaeEmblem"], 9, special)) {
+      expect(b.board.units.filter((u) => u.id.startsWith("Star")).length).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("a specific form costs the luck of rolling it", () => {
+    const best = (penalty: number) => {
+      const was = EMBLEM_BOARD.formLuckPenalty;
+      EMBLEM_BOARD.formLuckPenalty = penalty;
+      try {
+        return suggestEmblemBoards(["WoodEmblem"], 9, special)[0];
+      } finally {
+        EMBLEM_BOARD.formLuckPenalty = was;
+      }
+    };
+    const free = best(0);
+    expect(free.board.units.some((u) => u.id === "Star (Wood)" || u.id === "Star (Fae)")).toBe(true); // the form is worth it for free
+    // Two forms: planning on one costs penalty × (1 − 1/2); the best board then scores less (by at most that).
+    const costed = best(4);
+    expect(costed.value).toBeLessThan(free.value);
+    expect(free.value - costed.value).toBeLessThanOrEqual(4 * (1 - 1 / 2) + 1e-9);
+  });
+
+  it("never places an emblem the planner would refuse (a unit that already has the trait)", () => {
+    for (const b of suggestEmblemBoards(["WoodEmblem", "WoodEmblem"], 9, special)) {
+      for (const h of b.holders) {
+        const placed = b.board.units.find((u) => u.id === h.unit)!;
+        expect(special.units.find((u) => u.apiName === placed.id)!.traits).not.toContain("Wood");
+      }
+    }
   });
 });

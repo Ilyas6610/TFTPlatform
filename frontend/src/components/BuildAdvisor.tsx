@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   ApiError,
   ExploreOptions,
@@ -285,9 +285,9 @@ function EmblemBoards({ emblems, setData, names }: { emblems: string[]; setData:
                     </span>
                   ))}
                 </div>
-                <a className="muted" href={`/planner?${encodeBoard(b.board).toString()}`}>
+                <Link className="muted" to={`/planner?${encodeBoard(b.board).toString()}`}>
                   Open in planner
-                </a>
+                </Link>
               </div>
             );
           })}
