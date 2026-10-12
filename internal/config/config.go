@@ -4,6 +4,7 @@
 package config
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"strconv"
@@ -50,6 +51,61 @@ type Config struct {
 	// in a cache shared by all its replicas; empty keeps each replica's
 	// results in its own memory.
 	RedisURL string
+
+	// Budget splits the key between the kinds of traffic that share it
+	// (RIOT_BUDGET_SPLIT), so their caps can't add up to more than the key.
+	Budget BudgetSplit
+}
+
+// BudgetSplit is how the Riot key is shared, in percent of its limits:
+//   - Sync: riotsync's background crawling, seeding and name resolution;
+//   - OnDemand: Riot calls a page request triggers on the API server
+//     (profile and match lookups, history and rank syncs, ladder refresh);
+//   - Backfill: "Load whole set" history loads;
+//   - Reserve: left unused, for other processes and Riot's own slack.
+//
+// The shares must add up to at most 100.
+type BudgetSplit struct {
+	Sync, OnDemand, Backfill, Reserve int
+}
+
+// DefaultBudgetSplit is RIOT_BUDGET_SPLIT's default.
+const DefaultBudgetSplit = "sync:40,ondemand:30,backfill:20,reserve:10"
+
+// Share is pct percent of the key's limits, at least 1 request each.
+func (c Config) Share(pct int) (perSec, per2Min int) {
+	return max(1, c.RiotAppRateLimitPerSec*pct/100), max(1, c.RiotAppRateLimitPer2Min*pct/100)
+}
+
+// parseBudgetSplit reads "sync:40,ondemand:30,backfill:20,reserve:10".
+// Every class must be named exactly once.
+func parseBudgetSplit(v string) (BudgetSplit, error) {
+	var b BudgetSplit
+	fields := map[string]*int{"sync": &b.Sync, "ondemand": &b.OnDemand, "backfill": &b.Backfill, "reserve": &b.Reserve}
+	seen := map[string]bool{}
+	for _, part := range strings.Split(v, ",") {
+		name, num, ok := strings.Cut(strings.TrimSpace(part), ":")
+		name = strings.ToLower(strings.TrimSpace(name))
+		dst, known := fields[name]
+		if !ok || !known {
+			return b, fmt.Errorf("RIOT_BUDGET_SPLIT=%q: want class:percent pairs for sync, ondemand, backfill and reserve", v)
+		}
+		n, err := strconv.Atoi(strings.TrimSpace(num))
+		if err != nil || n < 0 || seen[name] {
+			return b, fmt.Errorf("RIOT_BUDGET_SPLIT=%q: %s needs one non-negative whole percentage", v, name)
+		}
+		*dst, seen[name] = n, true
+	}
+	if len(seen) != len(fields) {
+		return b, fmt.Errorf("RIOT_BUDGET_SPLIT=%q: name all of sync, ondemand, backfill and reserve", v)
+	}
+	if sum := b.Sync + b.OnDemand + b.Backfill + b.Reserve; sum > 100 {
+		return b, fmt.Errorf("RIOT_BUDGET_SPLIT=%q adds up to %d%%; the shares can't exceed the key (100)", v, sum)
+	}
+	if b.Sync == 0 || b.OnDemand == 0 || b.Backfill == 0 {
+		return b, fmt.Errorf("RIOT_BUDGET_SPLIT=%q: sync, ondemand and backfill each need a share above 0", v)
+	}
+	return b, nil
 }
 
 // Load reads the configuration. A malformed value (RIOT_APP_RATE_LIMIT_PER_2MIN=1OO)
@@ -69,6 +125,11 @@ func Load() (Config, error) {
 		DBStatementTimeout:      e.duration("DB_STATEMENT_TIMEOUT", 20*time.Second),
 		DBMaxConns:              e.int("DB_MAX_CONNS", 10),
 		RedisURL:                e.str("REDIS_URL", ""),
+	}
+	if b, err := parseBudgetSplit(cmp.Or(e.str("RIOT_BUDGET_SPLIT", ""), DefaultBudgetSplit)); err != nil {
+		e.errs = append(e.errs, err.Error())
+	} else {
+		cfg.Budget = b
 	}
 
 	// Range problems are reported together with the malformed values.

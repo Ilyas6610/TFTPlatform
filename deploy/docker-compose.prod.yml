@@ -34,6 +34,8 @@ x-backend-env: &backend-env
   RIOT_API_KEY_FILE: /run/secrets/riot_api_key
   RIOT_APP_RATE_LIMIT_PER_SEC: ${RIOT_APP_RATE_LIMIT_PER_SEC:-20}
   RIOT_APP_RATE_LIMIT_PER_2MIN: ${RIOT_APP_RATE_LIMIT_PER_2MIN:-100}
+  # How the key is shared (sync / on-demand / backfill / reserve, percent).
+  RIOT_BUDGET_SPLIT: ${RIOT_BUDGET_SPLIT:-}
 
 services:
   postgres:
@@ -193,8 +195,9 @@ services:
       RIOTSYNC_CRAWL_INTERVAL: ${RIOTSYNC_CRAWL_INTERVAL:-5m}
       RIOTSYNC_NAMES_INTERVAL: ${RIOTSYNC_NAMES_INTERVAL:-10m}
       RIOTSYNC_AGGREGATE_INTERVAL: ${RIOTSYNC_AGGREGATE_INTERVAL:-1h}
-      RIOTSYNC_RATE_LIMIT_PER_SEC: ${RIOTSYNC_RATE_LIMIT_PER_SEC:-10}
-      RIOTSYNC_RATE_LIMIT_PER_2MIN: ${RIOTSYNC_RATE_LIMIT_PER_2MIN:-50}
+      # Empty: riotsync's share of RIOT_BUDGET_SPLIT; set only to go below it.
+      RIOTSYNC_RATE_LIMIT_PER_SEC: ${RIOTSYNC_RATE_LIMIT_PER_SEC:-}
+      RIOTSYNC_RATE_LIMIT_PER_2MIN: ${RIOTSYNC_RATE_LIMIT_PER_2MIN:-}
     secrets:
       - riot_api_key
     depends_on:

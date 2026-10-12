@@ -19,6 +19,34 @@ type Client struct {
 	httpClient *http.Client
 	keySource  KeySource
 	limiter    *RateLimiter
+	// budget, when set (WithBudget), is this view's share of the key; every
+	// attempt draws from it before the shared limiter.
+	budget        *Budget
+	budgetMaxWait time.Duration
+	// fallback, when set (WithFallback), is another share the view may use
+	// when its own is used up.
+	fallback *Budget
+}
+
+// WithFallback returns a view of c that, when its own budget has no send
+// free right now, draws from another share instead (waiting up to the
+// view's maxWait for it). The view's own share stays a floor nothing else
+// can take; the fallback only lends what its owner isn't using.
+func (c *Client) WithFallback(b *Budget) *Client {
+	v := *c
+	v.fallback = b
+	return &v
+}
+
+// WithBudget returns a view of c whose requests also draw from budget, a
+// fixed share of the key, before the shared RateLimiter (which still
+// guards the key as a whole). maxWait > 0 makes a request fail with
+// *ErrBudgetExhausted instead of waiting longer than that for the share
+// (for interactive lookups); 0 waits as long as the context allows.
+func (c *Client) WithBudget(budget *Budget, maxWait time.Duration) *Client {
+	v := *c
+	v.budget, v.budgetMaxWait = budget, maxWait
+	return &v
 }
 
 type Option func(*Client)
@@ -60,6 +88,17 @@ func (c *Client) do(ctx context.Context, methodKey, url string, out interface{})
 	var lastErr error
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if c.budget != nil {
+			if c.fallback != nil && c.budget.Reserve() == 0 {
+				// own share had a slot
+			} else if c.fallback != nil {
+				if err := c.fallback.Acquire(ctx, c.budgetMaxWait); err != nil {
+					return err
+				}
+			} else if err := c.budget.Acquire(ctx, c.budgetMaxWait); err != nil {
+				return err
+			}
+		}
 		if err := c.limiter.Acquire(ctx, methodKey); err != nil {
 			return err
 		}

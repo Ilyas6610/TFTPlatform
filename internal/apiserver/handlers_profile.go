@@ -75,7 +75,7 @@ func (s *Server) handlePlayerProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	defer release()
 
-	riotAccount, err := s.Riot.GetAccountByRiotID(ctx, routing, gameName, tagLine)
+	riotAccount, err := s.liveRiot().GetAccountByRiotID(ctx, routing, gameName, tagLine)
 	if err != nil {
 		var notFound *riotapi.ErrNotFound
 		if errors.As(err, &notFound) {
@@ -84,7 +84,7 @@ func (s *Server) handlePlayerProfile(w http.ResponseWriter, r *http.Request) {
 		writeRiotError(w, err)
 		return
 	}
-	riotSummoner, err := s.Riot.GetTFTSummonerByPUUID(ctx, platform, riotAccount.PUUID)
+	riotSummoner, err := s.liveRiot().GetTFTSummonerByPUUID(ctx, platform, riotAccount.PUUID)
 	if err != nil {
 		writeRiotError(w, err)
 		return
