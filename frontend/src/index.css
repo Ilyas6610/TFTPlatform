@@ -2540,3 +2540,35 @@ table.partners td:first-child {
 .rank-badges + .profile-update {
   margin-left: 0;
 }
+
+/* Explorer advisor: boards built around the held emblems. */
+.emblem-boards .mode-tabs {
+  margin: 6px 0 10px;
+}
+
+.emblem-board-traits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 0.85rem;
+}
+
+.emblem-board-trait {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.adv-unit {
+  position: relative;
+}
+
+.emblem-mark {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  font-size: 0.7rem;
+  line-height: 1;
+  color: var(--accent);
+  text-shadow: 0 0 2px var(--bg);
+}
