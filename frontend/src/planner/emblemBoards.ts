@@ -18,14 +18,10 @@ export const EMBLEM_BOARD = {
   /** A cost the shop offers at least this often at the level counts fully; rarer ones in proportion. */
   fullOdds: 15,
   /**
-   * A unit the shop rarely offers at the level is a board you probably won't reach: it costs up to this much, in
-   * proportion to how rare its cost is (a 5-cost at level 7 or 8: Lux's forms otherwise lead every board).
-   */
-  rarityPenalty: 1.5,
-  /**
-   * A unit whose trait is chosen by luck (Lux: the first Avatar comes with a random one of her traits, and every later
-   * one copies it; only Master of All Origins lets you choose from 3): planning on one trait costs this much, in
-   * proportion to how unlikely that trait is (1 − 1/forms). The bare unit, whatever trait she brings, has no such cost.
+   * Lux comes in one copy per trait (Lux (Fae), Lux (Elderwood)...), so the Lux with the trait a board wants is far
+   * rarer than another 5-cost: the shop offers that one form about 1/forms as often. (Once one is held, the shop's
+   * other Avatars copy her trait, so the rest comes easier.) Planning on one form costs this much × (1 − 1/forms); the
+   * bare Lux, whatever trait she brings, has no such cost.
    */
   formLuckPenalty: 4,
   /** While searching: share of the next tier's value credited for progress towards it. */
@@ -89,7 +85,6 @@ function candidates(data: SetData, level: number): Candidate[] {
       slots: rule?.slots ?? 1,
       value:
         EMBLEM_BOARD.unitPerCost * u.cost * avail -
-        EMBLEM_BOARD.rarityPenalty * (1 - avail) -
         (formCount > 1 ? EMBLEM_BOARD.formLuckPenalty * (1 - 1 / formCount) : 0),
     });
   }
