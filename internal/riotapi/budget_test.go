@@ -91,3 +91,35 @@ func TestClient_WithBudget(t *testing.T) {
 		t.Errorf("the unbudgeted client: %v", err)
 	}
 }
+
+// A view with a fallback spends its own share first, then borrows from the
+// fallback; the fallback's owner still sees what was borrowed, and once
+// both are used up the request is refused.
+func TestClient_WithFallback(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	base := testClient()
+	own, lent := NewBudget(10, 1), NewBudget(10, 2)
+	live := base.WithBudget(own, time.Second).WithFallback(lent)
+	ctx := context.Background()
+
+	for i := 0; i < 3; i++ {
+		if err := live.do(ctx, "m", srv.URL, nil); err != nil {
+			t.Fatalf("request %d: %v", i+1, err)
+		}
+	}
+	if calls.Load() != 3 {
+		t.Errorf("%d requests reached Riot, want 3", calls.Load())
+	}
+	var ex *ErrBudgetExhausted
+	if err := live.do(ctx, "m", srv.URL, nil); !errors.As(err, &ex) {
+		t.Fatalf("fourth request: %v, want ErrBudgetExhausted", err)
+	}
+	if d := lent.Reserve(); d <= 0 {
+		t.Error("the lent share should have been spent by the view")
+	}
+}

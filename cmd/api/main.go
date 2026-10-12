@@ -50,7 +50,8 @@ func main() {
 	// (RIOT_BUDGET_SPLIT). The on-demand share is split again: a third is
 	// reserved for live lookups (a visitor waiting on a profile or match),
 	// which fail fast rather than wait long, so the request-triggered
-	// background work (history syncs) can't crowd them out. Whole-set loads
+	// background work (history syncs) can't crowd them out; a live lookup
+	// whose share is used up borrows from the jobs share. Whole-set loads
 	// have their own share.
 	liveShare := max(1, cfg.Budget.OnDemand/3)
 	live := riotapi.NewBudget(cfg.Share(liveShare))
@@ -61,7 +62,7 @@ func main() {
 
 	server := &apiserver.Server{
 		Riot:          riotClient.WithBudget(jobs, 0),
-		RiotLive:      riotClient.WithBudget(live, apiserver.LiveBudgetWait),
+		RiotLive:      riotClient.WithBudget(live, apiserver.LiveBudgetWait).WithFallback(jobs),
 		RiotBackfill:  riotClient.WithBudget(backfill, 0),
 		Store:         st,
 		StatsCacheTTL: cfg.StatsCacheTTL,

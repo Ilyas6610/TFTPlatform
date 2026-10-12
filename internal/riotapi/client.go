@@ -23,6 +23,19 @@ type Client struct {
 	// attempt draws from it before the shared limiter.
 	budget        *Budget
 	budgetMaxWait time.Duration
+	// fallback, when set (WithFallback), is another share the view may use
+	// when its own is used up.
+	fallback *Budget
+}
+
+// WithFallback returns a view of c that, when its own budget has no send
+// free right now, draws from another share instead (waiting up to the
+// view's maxWait for it). The view's own share stays a floor nothing else
+// can take; the fallback only lends what its owner isn't using.
+func (c *Client) WithFallback(b *Budget) *Client {
+	v := *c
+	v.fallback = b
+	return &v
 }
 
 // WithBudget returns a view of c whose requests also draw from budget, a
@@ -76,7 +89,13 @@ func (c *Client) do(ctx context.Context, methodKey, url string, out interface{})
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		if c.budget != nil {
-			if err := c.budget.Acquire(ctx, c.budgetMaxWait); err != nil {
+			if c.fallback != nil && c.budget.Reserve() == 0 {
+				// own share had a slot
+			} else if c.fallback != nil {
+				if err := c.fallback.Acquire(ctx, c.budgetMaxWait); err != nil {
+					return err
+				}
+			} else if err := c.budget.Acquire(ctx, c.budgetMaxWait); err != nil {
 				return err
 			}
 		}
