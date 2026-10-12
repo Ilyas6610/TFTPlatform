@@ -220,6 +220,30 @@ func TestAdvise_CompsWeighOwnedUnitsByCostAndStar(t *testing.T) {
 	}
 }
 
+func TestAdvise_OwnedUnitsTakeItemsBeforeUnownedCarries(t *testing.T) {
+	// B (owned) and Z (not owned, earlier on the board) both want IE; the inventory makes one.
+	r := Advise(Input{
+		Units: []string{"A", "B"}, Items: []string{"Sword", "Glove"}, Recipes: rec,
+		Comps: []comps.Comp{comp(4, 50, comps.BoardUnit{ID: "Z", Items: []string{"IE"}}, comps.BoardUnit{ID: "A"}, comps.BoardUnit{ID: "B", Items: []string{"IE"}})},
+	})
+	if len(r.Comps) != 1 {
+		t.Fatalf("comps = %+v", r.Comps)
+	}
+	for _, f := range r.Comps[0].Fits {
+		if f.Unit == "B" && len(f.Missing) != 0 {
+			t.Errorf("B's IE went to Z: %+v", r.Comps[0].Fits)
+		}
+	}
+}
+
+func TestAdvise_SingleOwnedUnitCountsOnceWhenRepeated(t *testing.T) {
+	// The same unit given twice is still one owned unit: any comp with it qualifies.
+	r := Advise(Input{Units: []string{"A", "A"}, Comps: []comps.Comp{comp(3, 10, comps.BoardUnit{ID: "A"}, comps.BoardUnit{ID: "B"})}})
+	if len(r.Comps) != 1 {
+		t.Fatalf("comps = %+v", r.Comps)
+	}
+}
+
 func TestAdvise_SingleOwnedUnitStillMatchesComps(t *testing.T) {
 	r := Advise(Input{
 		Units: []string{"A"},

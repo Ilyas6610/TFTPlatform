@@ -386,7 +386,13 @@ func matchComps(in Input, owned []string, inv inventory) []CompMatch {
 	}
 	var out []CompMatch
 	for _, c := range in.Comps {
-		f := fitItems(in, c, inv)
+		// Owned units are served first from the shared inventory, so a carry
+		// the player hasn't bought yet can't take the pieces their own unit's
+		// build needs; the rest follow in board order (carries first).
+		served := c
+		served.Board = append([]comps.BoardUnit(nil), c.Board...)
+		sort.SliceStable(served.Board, func(i, j int) bool { return own[served.Board[i].ID] && !own[served.Board[j].ID] })
+		f := fitItems(in, served, inv)
 		m := CompMatch{Comp: c, Have: []string{}, Need: []string{}, Fits: f.fits, Emblems: f.emblems}
 		score := itemMadeWeight*float64(f.made) + enablerWeight*float64(f.enabled)
 		for _, bu := range c.Board {
