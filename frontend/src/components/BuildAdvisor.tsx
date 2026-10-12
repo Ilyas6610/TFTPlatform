@@ -15,7 +15,9 @@ import {
 import { GameIcon } from "../assets/tft";
 import { CompName } from "./CompName";
 import { Picker, PickerOption } from "./Picker";
-import { Names, avg, placementTone, pct } from "./stats";
+import { Names, TIER_STYLE, avg, placementTone, pct } from "./stats";
+import { suggestEmblemBoards } from "../planner/emblemBoards";
+import { encodeBoard } from "../planner/board";
 
 // "What can I build?": the player lists the units they hold and the items in
 // their inventory (whole or still components) and gets builds from real
@@ -219,6 +221,76 @@ export function BuildAdvisor({
               <Comps comps={result.comps} names={names} ownedUnits={[]} byItems />
             </>
           )}
+        </div>
+      )}
+      {setData && <EmblemBoards emblems={items.filter((i) => setData.items.some((d) => d.apiName === i && d.kind === "emblem"))} setData={setData} names={names} />}
+    </div>
+  );
+}
+
+const EMBLEM_LEVELS = [7, 8, 9, 10];
+
+/**
+ * Boards built around the held emblems (planner/emblemBoards.ts): for each level, units that make the most of them,
+ * with each emblem on a unit that lacks its trait. Constructed, not looked up: stored games rarely hold the same
+ * emblems at once.
+ */
+function EmblemBoards({ emblems, setData, names }: { emblems: string[]; setData: SetData; names: Names }) {
+  const [level, setLevel] = useState(8);
+  const key = emblems.join(",");
+  const boards = useMemo(() => (emblems.length ? suggestEmblemBoards(emblems, level, setData) : []), [key, level, setData]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (emblems.length === 0) return null;
+  const counts = new Map<string, number>();
+  emblems.forEach((e) => counts.set(e, (counts.get(e) ?? 0) + 1));
+  return (
+    <div className="advisor-section emblem-boards">
+      <h3>Boards for your {emblems.length > 1 ? "emblems" : "emblem"}</h3>
+      <p className="muted">
+        Built around {[...counts].map(([e, n]) => `${n > 1 ? `${n} × ` : ""}${names.name(e)}`).join(", ")}: units that reach the strongest traits with
+        each emblem on a unit that lacks its trait, and units the shop offers at that level. A starting point to adapt, not
+        boards from stored games.
+      </p>
+      <div className="mode-tabs" role="tablist" aria-label="Level">
+        {EMBLEM_LEVELS.map((lv) => (
+          <button key={lv} type="button" role="tab" aria-selected={lv === level} onClick={() => setLevel(lv)}>
+            Level {lv}
+          </button>
+        ))}
+      </div>
+      {boards.length === 0 ? (
+        <p className="muted">No board found for these emblems at this level.</p>
+      ) : (
+        <div className="advisor-comps">
+          {boards.map((b, i) => {
+            const holders = new Map(b.holders.map((h) => [h.unit, h.emblem]));
+            const traits = b.traits.filter((t) => t.style !== 4); // one-unit traits (Avatar) say nothing here
+            return (
+              <div className="advisor-comp" key={i}>
+                <div className="emblem-board-traits">
+                  {traits.map((t) => (
+                    <span key={t.name} className="emblem-board-trait" title={`${t.count} ${t.name}`}>
+                      <span className={`trait-badge trait-style-${TIER_STYLE[t.style] ?? 1}`}>{t.count}</span> {t.name}
+                    </span>
+                  ))}
+                </div>
+                <div className="advisor-comp-units">
+                  {b.board.units.map((u) => (
+                    <span key={u.id} className="adv-unit have" title={`${names.name(u.id)}${holders.has(u.id) ? ` — holds ${b.holders.filter((h) => h.unit === u.id).map((h) => names.name(h.emblem)).join(", ")}` : ""}`}>
+                      <GameIcon kind="champions" id={u.id} size={30} fallbackSrc={names.icon(u.id)} fallbackName={names.name(u.id)} />
+                      {holders.has(u.id) && (
+                        <span className="emblem-mark" aria-label="holds an emblem">
+                          ◆
+                        </span>
+                      )}
+                    </span>
+                  ))}
+                </div>
+                <a className="muted" href={`/planner?${encodeBoard(b.board).toString()}`}>
+                  Open in planner
+                </a>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
