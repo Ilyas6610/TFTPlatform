@@ -19,9 +19,14 @@ type Recipes map[string][2]string
 
 // Input is everything a suggestion is computed from.
 type Input struct {
-	Units   []string // owned units
-	Items   []string // inventory; repeat an id for each copy
-	Recipes Recipes
+	Units []string // owned units
+	// Stars, when known, are the owned units' star levels (1 if absent).
+	Stars map[string]int
+	// UnitCosts are the set's unit costs; owned units weigh by them when
+	// matching comps (a 4-cost says more about the final board than a 1-cost).
+	UnitCosts map[string]int
+	Items     []string // inventory; repeat an id for each copy
+	Recipes   Recipes
 	// EmblemTraits maps each emblem item to the trait it grants, so an
 	// emblem can match boards that play its trait.
 	EmblemTraits map[string]string
@@ -88,9 +93,12 @@ type ItemFit struct {
 // CompMatch is a comp that fits the player's units.
 type CompMatch struct {
 	Comp comps.Comp `json:"comp"`
-	Have []string   `json:"have"` // owned units on the comp's board
-	Need []string   `json:"need"` // board units not owned yet
-	Fits []ItemFit  `json:"fits"`
+	// Score is how strongly the units and items held point at this comp
+	// (unit matches: compFitScore).
+	Score float64   `json:"score,omitempty"`
+	Have  []string  `json:"have"` // owned units on the comp's board
+	Need  []string  `json:"need"` // board units not owned yet
+	Fits  []ItemFit `json:"fits"`
 	// Emblems (items-only boards) are held or makeable emblems whose trait
 	// the board plays, after its carries took their items.
 	Emblems []EmblemFit `json:"emblems"`
@@ -325,6 +333,49 @@ func Advise(in Input) Result {
 	return res
 }
 
+// Weights for matching owned units and items to comps. Early boards are full
+// of cheap units the final board won't keep, so a unit says more the more it
+// costs; a cheap unit at 3 stars is a reroll and says a lot; a unit the comp
+// itemizes (a carry) more than filler. Items made toward a comp's carries are
+// the strongest signal: they decide the carries.
+var (
+	unitCostWeight = map[int]float64{1: 0.15, 2: 0.3, 3: 0.6, 4: 1.2, 5: 1.6}
+	carryWeight    = 1.5
+	itemMadeWeight = 1.2
+	enablerWeight  = 1.0
+	minCompScore   = 1.0
+	// A comp seen on fewer boards than this may be luck: its score is scaled
+	// by boards/compSampleFull (comps above it compare on the evidence, then
+	// on placement).
+	compSampleFull = 20.0
+)
+
+// unitWeight is what holding unit id (at star) says about a comp where it
+// appears (carry: the comp itemizes it).
+func unitWeight(in Input, id string, carry bool) float64 {
+	cost := in.UnitCosts[id]
+	w, ok := unitCostWeight[cost]
+	if !ok {
+		w = 0.6
+	}
+	switch star := in.Stars[id]; {
+	case star >= 3 && cost > 0 && cost <= 3:
+		w = 2 // a 3-star cheap unit is a reroll: it decides the board
+	case star >= 3:
+		w *= 2
+	case star == 2:
+		w *= 1.5
+	}
+	if carry {
+		w *= carryWeight
+	}
+	return w
+}
+
+// matchComps ranks comps by how strongly the held units and items point at
+// them: owned units weighed by cost, star and role (unitWeight), plus the
+// items the inventory makes toward the comp's carries (fitItems), whether or
+// not those carries are owned yet.
 func matchComps(in Input, owned []string, inv inventory) []CompMatch {
 	if len(owned) == 0 {
 		return []CompMatch{}
@@ -333,40 +384,46 @@ func matchComps(in Input, owned []string, inv inventory) []CompMatch {
 	for _, u := range owned {
 		own[u] = true
 	}
-	// Enough overlap to be about the player's board rather than one stray
-	// unit; with a single owned unit, that one is enough.
-	minHave := min(2, len(owned))
-
 	var out []CompMatch
 	for _, c := range in.Comps {
-		m := CompMatch{Comp: c, Have: []string{}, Need: []string{}, Fits: []ItemFit{}, Emblems: []EmblemFit{}}
+		// Owned units are served first from the shared inventory, so a carry
+		// the player hasn't bought yet can't take the pieces their own unit's
+		// build needs; the rest follow in board order (carries first).
+		served := c
+		served.Board = append([]comps.BoardUnit(nil), c.Board...)
+		sort.SliceStable(served.Board, func(i, j int) bool { return own[served.Board[i].ID] && !own[served.Board[j].ID] })
+		f := fitItems(in, served, inv)
+		m := CompMatch{Comp: c, Have: []string{}, Need: []string{}, Fits: f.fits, Emblems: f.emblems}
+		score := itemMadeWeight*float64(f.made) + enablerWeight*float64(f.enabled)
 		for _, bu := range c.Board {
 			if !own[bu.ID] {
 				m.Need = append(m.Need, bu.ID)
 				continue
 			}
 			m.Have = append(m.Have, bu.ID)
-			if len(bu.Items) > 0 {
-				steps, missing, _ := craft(bu.Items, inv, in.Recipes)
-				m.Fits = append(m.Fits, ItemFit{Unit: bu.ID, Items: bu.Items, Steps: nonNil(steps), Missing: nonNilStr(missing)})
-			}
+			score += unitWeight(in, bu.ID, len(bu.Items) > 0)
 		}
-		if len(m.Have) >= minHave {
+		m.Score = score * min(1, float64(c.Boards)/compSampleFull)
+		// With a single owned unit (asking which comps play it), any comp
+		// that has it qualifies.
+		// The threshold is on what the held units and items say; the sample
+		// discount only orders the comps that pass it.
+		if len(m.Have) >= 1 && (score >= minCompScore || len(owned) == 1) {
 			out = append(out, m)
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		a, b := out[i], out[j]
-		if len(a.Have) != len(b.Have) {
-			return len(a.Have) > len(b.Have)
+		if a.Score != b.Score {
+			return a.Score > b.Score
 		}
 		if less, ok := lessSampled(a.Comp.AvgPlacement, a.Comp.Boards, b.Comp.AvgPlacement, b.Comp.Boards); ok {
 			return less
 		}
 		return a.Comp.Boards > b.Comp.Boards
 	})
-	// Variants of one comp are anchored separately and can overlap the
-	// player's units identically; keep the best of each so the slots show
+	// Variants of one comp are anchored separately and can match the held
+	// units and items identically; keep the best of each so the slots show
 	// different directions.
 	seen := map[string]bool{}
 	kept := []CompMatch{}
@@ -374,6 +431,11 @@ func matchComps(in Input, owned []string, inv inventory) []CompMatch {
 		have := append([]string(nil), m.Have...)
 		sort.Strings(have)
 		key := strings.Join(have, ",")
+		for _, f := range m.Fits {
+			if len(f.Steps) > 0 {
+				key += ";" + f.Unit
+			}
+		}
 		if seen[key] {
 			continue
 		}

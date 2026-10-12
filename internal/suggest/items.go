@@ -207,6 +207,58 @@ func crafts(in Input, inv inventory) []Craft {
 	return out
 }
 
+// itemFit is what an inventory does for one comp's carries.
+type itemFit struct {
+	fits                []ItemFit
+	emblems             []EmblemFit
+	need                []string
+	made, missing       int
+	enabled, traitUnits int // units given a build because of a held emblem or artifact; units in the traits emblems add to
+}
+
+// fitItems serves comp c's carries from one shared inventory: emblems and
+// artifacts first (they are the reason to build a particular unit: Master Yi
+// with a Brawler Emblem), then each itemized unit's usual build in board
+// order (carries first), then emblems for traits the board plays.
+func fitItems(in Input, c comps.Comp, inv inventory) itemFit {
+	left := inv.clone()
+	fits := map[string]ItemFit{}
+	out := itemFit{fits: []ItemFit{}, need: []string{}}
+	for _, bu := range c.Board {
+		if f, after, ok := enablerFit(in, bu, left); ok {
+			fits[bu.ID], left = f, after
+		}
+	}
+	for _, bu := range c.Board {
+		out.need = append(out.need, bu.ID)
+		if _, done := fits[bu.ID]; done || len(bu.Items) == 0 {
+			continue
+		}
+		steps, miss, after := craft(bu.Items, left, in.Recipes)
+		fits[bu.ID], left = ItemFit{Unit: bu.ID, Items: bu.Items, Steps: nonNil(steps), Missing: nonNilStr(miss)}, after
+	}
+	out.emblems, _ = emblemFits(in, c, left)
+	for _, bu := range c.Board {
+		if f, ok := fits[bu.ID]; ok {
+			out.fits = append(out.fits, f)
+			out.made += len(f.Steps)
+			out.missing += len(f.Missing)
+			if len(f.Enablers) > 0 {
+				out.enabled++
+			}
+		}
+	}
+	out.made += len(out.emblems)
+	for _, e := range out.emblems {
+		for _, t := range c.Traits {
+			if t.ID == e.Trait {
+				out.traitUnits += t.Units
+			}
+		}
+	}
+	return out
+}
+
 // itemComps ranks comps (final boards) by how much of their carries' items
 // the inventory makes. The anchor board's itemized units are served in
 // board order (carries first) from one shared inventory, so no piece is
@@ -221,54 +273,10 @@ func itemComps(in Input, inv inventory) []CompMatch {
 	}
 	var all []scored
 	for _, c := range in.Comps {
-		m := CompMatch{Comp: c, Have: []string{}, Need: []string{}, Fits: []ItemFit{}, Emblems: []EmblemFit{}}
-		left := inv.clone()
-		fits := map[string]ItemFit{}
-
-		// Emblems and artifacts first: they are the reason to build a
-		// particular unit, so a board unit with a real build using one
-		// takes that build (Master Yi with a Brawler Emblem).
-		for _, bu := range c.Board {
-			if f, after, ok := enablerFit(in, bu, left); ok {
-				fits[bu.ID], left = f, after
-			}
-		}
-		// Then each itemized unit's usual build from what's left.
-		for _, bu := range c.Board {
-			m.Need = append(m.Need, bu.ID)
-			if _, done := fits[bu.ID]; done || len(bu.Items) == 0 {
-				continue
-			}
-			steps, miss, after := craft(bu.Items, left, in.Recipes)
-			fits[bu.ID], left = ItemFit{Unit: bu.ID, Items: bu.Items, Steps: nonNil(steps), Missing: nonNilStr(miss)}, after
-		}
-		// Finally emblems for traits the board plays.
-		m.Emblems, left = emblemFits(in, c, left)
-
-		var made, missing int
-		for _, bu := range c.Board {
-			if f, ok := fits[bu.ID]; ok {
-				m.Fits = append(m.Fits, f)
-				made += len(f.Steps)
-				missing += len(f.Missing)
-			}
-		}
-		made += len(m.Emblems)
-		var enabled, traitUnits int
-		for _, f := range m.Fits {
-			if len(f.Enablers) > 0 {
-				enabled++
-			}
-		}
-		for _, e := range m.Emblems {
-			for _, t := range c.Traits {
-				if t.ID == e.Trait {
-					traitUnits += t.Units
-				}
-			}
-		}
-		if made > 0 {
-			all = append(all, scored{m, made, missing, enabled, traitUnits})
+		f := fitItems(in, c, inv)
+		m := CompMatch{Comp: c, Have: []string{}, Need: f.need, Fits: f.fits, Emblems: f.emblems}
+		if f.made > 0 {
+			all = append(all, scored{m, f.made, f.missing, f.enabled, f.traitUnits})
 		}
 	}
 	sort.SliceStable(all, func(i, j int) bool {

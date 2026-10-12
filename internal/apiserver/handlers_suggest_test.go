@@ -21,6 +21,8 @@ func TestExploreSuggest_Rejects(t *testing.T) {
 	for _, q := range []string{
 		"set=0&have_unit=A",
 		"set=18&have_unit=bad%20id",
+		"set=18&have_unit=A*4",
+		"set=18&have_unit=A*x",
 		"set=18&have_unit=A&have_item=x%3Bdrop",
 		"set=18&queue=x&have_unit=A",
 		"set=18&have_unit=A&have_unit=B&have_unit=C&have_unit=D&have_unit=E&have_unit=F&have_unit=G&have_unit=H&have_unit=I&have_unit=J&have_unit=K&have_unit=L&have_unit=M&have_unit=N&have_unit=O&have_unit=P",

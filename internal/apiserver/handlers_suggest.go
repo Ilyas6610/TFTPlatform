@@ -27,8 +27,9 @@ const (
 //
 //	set=18                  required
 //	queue=1100, level=8-    scope of the boards the advice comes from
-//	have_unit=ID            repeatable: units on the board and bench; with
-//	                        none, the units the items fit best are suggested
+//	have_unit=ID[*STAR]     repeatable: units on the board and bench, with an
+//	                        optional star level (DA_Vi18*3); with none, the
+//	                        units the items fit best are suggested
 //	have_item=ID            repeatable, once per copy: inventory, completed
 //	                        items or components
 func (s *Server) handleExploreSuggest(w http.ResponseWriter, r *http.Request) {
@@ -42,7 +43,7 @@ func (s *Server) handleExploreSuggest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_filter", err.Error())
 		return
 	}
-	units, err := parseIDList(q["have_unit"], "have_unit", suggestMaxUnits)
+	units, stars, err := parseUnitList(q["have_unit"])
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_filter", err.Error())
 		return
@@ -81,10 +82,35 @@ func (s *Server) handleExploreSuggest(w http.ResponseWriter, r *http.Request) {
 		builds[u.ID] = u.Builds
 	}
 	writeJSON(w, http.StatusOK, suggest.Advise(suggest.Input{
-		Units: units, Items: items, Recipes: itemData.recipes, EmblemTraits: itemData.emblemTraits,
+		Units: units, Stars: stars, UnitCosts: itemData.unitCosts, Items: items, Recipes: itemData.recipes, EmblemTraits: itemData.emblemTraits,
 		Enablers: itemData.enablers,
 		Builds:   builds, Comps: compList.Comps,
 	}))
+}
+
+// parseUnitList validates have_unit values, ID or ID*STAR (star 1-3), and
+// returns the ids and the stars given.
+func parseUnitList(vals []string) ([]string, map[string]int, error) {
+	if len(vals) > suggestMaxUnits {
+		return nil, nil, tooManyError("have_unit", suggestMaxUnits)
+	}
+	ids := make([]string, 0, len(vals))
+	stars := map[string]int{}
+	for _, v := range vals {
+		id, star, hasStar := strings.Cut(v, "*")
+		if !exploreID.MatchString(id) {
+			return nil, nil, invalidIDError("have_unit", v)
+		}
+		if hasStar {
+			n, err := strconv.Atoi(star)
+			if err != nil || n < 1 || n > 3 {
+				return nil, nil, invalidIDError("have_unit", v)
+			}
+			stars[id] = max(stars[id], n)
+		}
+		ids = append(ids, id)
+	}
+	return ids, stars, nil
 }
 
 // parseIDList validates repeated id parameters (duplicates are kept: an item
@@ -118,6 +144,7 @@ type setItems struct {
 	recipes      suggest.Recipes   // completed item -> its two components
 	emblemTraits map[string]string // emblem item -> the trait it grants
 	enablers     map[string]bool   // emblems and artifacts
+	unitCosts    map[string]int    // unit -> cost
 }
 
 // setItemData returns the set's item recipes and emblem traits from the
@@ -131,11 +158,14 @@ func (s *Server) setItemData(ctx context.Context, set int) (setItems, error) {
 		if err != nil {
 			return nil, err
 		}
-		out := setItems{recipes: suggest.Recipes{}, emblemTraits: map[string]string{}, enablers: map[string]bool{}}
+		out := setItems{recipes: suggest.Recipes{}, emblemTraits: map[string]string{}, enablers: map[string]bool{}, unitCosts: map[string]int{}}
 		if len(snaps) == 0 {
 			return out, nil
 		}
 		newest := snaps[len(snaps)-1]
+		for _, u := range newest.Units {
+			out.unitCosts[u.APIName] = u.Cost
+		}
 		traitByName := map[string]string{}
 		for _, t := range newest.Traits {
 			traitByName[strings.ToLower(t.Name)] = t.APIName
